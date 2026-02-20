@@ -401,7 +401,7 @@ create_frame_datas :: () -> bool {
         if !validate(vkCreateFence(logical.obj, *fence_info, null, *transfer_fence), "failed to create the transfer fence") then return false;
     }
 
-    render_log("created frame datas. max frames in flight: %", frames.count);
+    render_log("created frame datas. max frames in flight %", frames.count);
     return true;
 }
 

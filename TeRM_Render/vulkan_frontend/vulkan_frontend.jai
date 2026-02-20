@@ -51,6 +51,10 @@ Renderer :: struct {
     shader_table: Linear_Table(string, VkShaderModule);
 }
 
+Render_Init_Options :: struct {
+    copy_shader_data_into_working_directory := true;
+}
+
 Queue_Family_Capability_Flags :: enum_flags {
     PRESENT;
     GRAPHICS;
@@ -196,12 +200,14 @@ U32_MAX :: 0xffff_ffff;
 #import "Basic";
 #import "Math";
 #import "File";
+#import "File_Utilities";
 
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Array";
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Storage";
 #import "TeRM/TeRM_Color";
+#import "TeRM/TeRM_File";
 #import "TeRM/TeRM_Render/vulkan-jai";
 
 // Copyright (c) 2026 Trace Myers

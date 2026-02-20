@@ -1,3 +1,8 @@
+#module_parameters()(
+    // must be true if you want to use TeRM vulkan renderer
+    IMPORT_VULKAN := false
+);
+
 // -- sections --
 // Misc
 // Bit_Array
@@ -1107,6 +1112,10 @@ U32_MAX_VALUE :: 0xffff_ffff;
 #import "Basic";
 #import "String";
 #import "Hash";
+
+#if IMPORT_VULKAN {
+    #import "TeRM/TeRM_Render/vulkan-jai";
+}
 
 // MIT License
 // Copyright (c) 2026 Trace Myers

@@ -14,9 +14,9 @@ trm_warning :: (fmt: string, args: ..Any, log_location := true, caller_loc := #c
     report_impl(fmt, ..args, log_context=log_context, log_location, caller_loc, "WARNING");
 }
 
-trm_log :: (fmt: string, args: ..Any, log_location := false, caller_loc := #caller_location, header := "LOG") #expand {
+trm_log :: (fmt: string, args: ..Any, log_location := false, caller_loc := #caller_location, header := "LOG", add_newline := true) #expand {
     log_context := #procedure_name();
-    report_impl(fmt, ..args, log_context=log_context, log_location, caller_loc, header);
+    report_impl(fmt, ..args, log_context=log_context, log_location, caller_loc, header, add_newline);
 }
 
 #scope_file
@@ -27,7 +27,8 @@ report_impl :: (
     log_context: string, 
     log_location: bool, 
     caller_loc: Source_Code_Location, 
-    header: string
+    header: string,
+    add_newline := true
 ) {
     auto_release_temp();
 
@@ -54,7 +55,11 @@ report_impl :: (
         term_log_passthrough_callback(fully_processed_text);
     }
     if !call_term_log_passthrough_only {
-        log(fully_processed_text);
+        if add_newline {
+            log(fully_processed_text);
+        } else {
+            print(fully_processed_text);
+        }
     }
 }
 

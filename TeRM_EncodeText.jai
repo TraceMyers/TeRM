@@ -74,9 +74,10 @@ ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, 
 }
 
 // your procedure is responsible for reading bytes, translating, writing bytes, validating that
-// a read and write are safe (convenience macro provided), validating that the input is not 
-// malformed, and returning values as such: bytes read or intended to read if no error, bytes
-// written or intended to write if no error, and 0 or error code. 
+// a read and write are safe (some convenience macros are provided for default encodings),
+// validating that the input is not malformed, and returning values as such: bytes read or 
+// intended to read if no error, bytes written or intended to write if no error, and 0 
+// or error code. 
 
 // null bytes are appended to the end of all strings as per the 'terminating_null_byte_count' 
 // field on the encoder. a 0 can be passed in if you don't want a terminating null.
@@ -87,7 +88,7 @@ ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, 
 MY_UTF8_TO_UTF16 :: Text_Encoder.{.UTF8,  .UTF16, utf8_to_utf16,  0};
 
 // user-defined error codes can also be added at import, and returned by your function so that 
-// they can be logged when something goes wrong.
+// they will be logged when something goes wrong.
 
 */
 

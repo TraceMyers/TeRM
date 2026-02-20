@@ -82,7 +82,11 @@ Enumarray_Create_Info :: struct {
     props: Code;
 }
 
-generate_parallel_enum_and_array :: ($create_infos: ..Enumarray_Create_Info, enum_name: string, $enum_backing_type: Type, array_name: string, $struct_type: Type, array_is_constant: bool) -> string {
+generate_parallel_enum_and_array :: ($create_infos: ..Enumarray_Create_Info, enum_name: string, $enum_backing_type: Type, array_name: string, $array_item_type: Type, array_is_constant: bool) -> string {
+    generate_parallel_enum_and_array(..create_infos, enum_name, enum_backing_type, array_name, tprint("%", array_item_type), array_is_constant);
+}
+
+generate_parallel_enum_and_array :: ($create_infos: ..Enumarray_Create_Info, enum_name: string, $enum_backing_type: Type, array_name: string, $array_item_type_name: string, array_is_constant: bool) -> string {
     builder: String_Builder;
     print_to_builder(*builder, "% :: enum % {\n", enum_name, enum_backing_type);
     for create_infos {
@@ -91,7 +95,7 @@ generate_parallel_enum_and_array :: ($create_infos: ..Enumarray_Create_Info, enu
     print_to_builder(*builder, "}\n\n");
 
     assignment_operator := ifx array_is_constant then "::" else ":=";
-    print_to_builder(*builder, "% % %.[\n", array_name, assignment_operator, struct_type);
+    print_to_builder(*builder, "% % %.[\n", array_name, assignment_operator, array_item_type_name);
 
     for create_infos {
         code_str := code_string(it.props);
@@ -103,11 +107,17 @@ generate_parallel_enum_and_array :: ($create_infos: ..Enumarray_Create_Info, enu
                 c.* = #char " ";
             }
         }
-        print_to_builder(*builder, "\t%,\n", code_str);
+        if it_index == create_infos.count - 1 {
+            print_to_builder(*builder, "\t%\n", code_str);
+        } else {
+            print_to_builder(*builder, "\t%,\n", code_str);
+        }
     }
     print_to_builder(*builder, "];");
-
-    return builder_to_string(*builder);
+    
+    out_str := builder_to_string(*builder);
+    log(out_str);
+    return out_str;
 }
 
 #scope_file
@@ -117,6 +127,7 @@ S64_MAX :: 0x7fff_ffff_ffff_ffff;
 Compiler :: #import "Compiler";
 Program_Print :: #import "Program_Print";
 #import "Basic";
+#import "String";
 
 // MIT License
 // Copyright (c) 2026 Trace Myers

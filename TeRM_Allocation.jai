@@ -1,4 +1,5 @@
-// an extension of allocators what ship with the compiler. it's a well-rounded collection on its own, but I wouldn't be leaving Flat_Pool out of my programs.
+// an extension of allocators what ship with the compiler. it's a well-rounded collection 
+// on its own, but I wouldn't be leaving Flat_Pool out of my programs.
 
 // --- sections ---
 // Bump_Allocator
@@ -23,15 +24,14 @@ Bump_Allocator_Heap :: struct {
     end: s32;
 }
 
-bump_allocator_initialize :: (using bump: *Bump_Allocator, in_parent_allocator := context.default_allocator, heaps_tracking_array_ct := 32, in_heap_size := BUMP_ALLOCATOR_DEFAULT_HEAP_SIZE) {
-    parent_allocator = in_parent_allocator;
-    scope_set_allocator(parent_allocator);
+bump_allocator_initialize :: (using bump: *Bump_Allocator, in_heap_size := BUMP_ALLOCATOR_DEFAULT_HEAP_SIZE) {
+    parent_allocator = context.allocator;
     assert(in_heap_size > 0);
     in_heap_size = ceil_to_power_of_two_multiple(in_heap_size, 8);
     proc = bump_allocator_proc;
     data = bump;
     heap = .{};
-    heap.bytes = make_static_array(u8, in_heap_size,, parent_allocator);
+    heap.bytes = make_static_array(u8, in_heap_size);
 }
 
 bump_allocator_proc :: (mode: Allocator_Mode, size: s64, old_size: s64, old_memory: *void, allocator_data: *void) -> *void {
@@ -75,9 +75,8 @@ bump_allocator_reset :: (using bump: *Bump_Allocator, keep_memory := true) {
     if keep_memory {
         heap.end = 0;
     } else {
-        scope_set_allocator(parent_allocator);
         if heap.bytes.count > 0 {
-            free(heap.bytes.data);
+            free(heap.bytes.data,,parent_allocator);
         }
         bump.* = .{};
     }
@@ -224,21 +223,25 @@ super_allocator_proc_impl :: inline (mode: Allocator_Mode, size: s64, old_size: 
     return null;
 }
 
-
 initialize_super_allocator :: (using allocator: *Super_Allocator, in_default_chunk_list_size := 0, add_chunk_lists := 1) {
     in_parent_allocator := context.allocator;
     assert(chunk_lists.count == 0 && chunk_lists.data == null);
+
     allocator.* = .{};
     allocator.super_base.data = allocator;
     allocator.super_base.proc = super_allocator_proc;
     parent_allocator = in_parent_allocator;
+
     if in_default_chunk_list_size > 0 {
         default_reserve_size = xx in_default_chunk_list_size;
     } else {
-        default_reserve_size = xx (CHUNK_SIZE * 64);
+        default_reserve_size = xx (CHUNK_SIZE * 8);
     }
-    if add_chunk_lists > 0 then for 0..add_chunk_lists - 1 {
-        add_chunk_list(allocator, default_reserve_size, false,,parent_allocator);
+
+    if add_chunk_lists > 0 {
+        for 0..add_chunk_lists - 1 {
+            add_chunk_list(allocator, default_reserve_size, true,,parent_allocator);
+        }
     }
 }
 
@@ -254,15 +257,24 @@ shutdown_super_allocator :: (using allocator: *Super_Allocator) {
 add_chunk_list :: (using allocator: *Super_Allocator, min_bytes: s64, remake_books := true) {
     chunk_list := array_add(*chunk_lists);
     alloc_chunk_count := max(div_ceil(min_bytes, CHUNK_SIZE), 2);
+
     // Super_Allocation_Header requirements
     assert(chunk_lists.count <= S16_MAX);
     assert(alloc_chunk_count <= U16_MAX);
+
     if alloc_chunk_count < 8 && !did_small_chunk_count_warning {
         log("[Super_Allocator::add_chunk_list()] min bytes % leads to only % chunks being allocated per super allocator heap. the number of chunks per heap should probably be somewhere between 8 and 128", min_bytes, alloc_chunk_count);
         did_small_chunk_count_warning = true;
     }
+
     chunk_list.* = make_static_array(Super_Allocator_Outer_Chunk(allocator.MIN_ALLOCATION_SIZE), alloc_chunk_count);
-    grow_super_allocator_books(allocator,,parent_allocator);
+
+    // removing this option because currently grow_allocator_books assumes only one list is
+    // added at a time. so, if you don't grow the books after this list was added, 
+    // it will cause problems.
+    // if remake_books {
+        grow_super_allocator_books(allocator,,parent_allocator);
+    // }
 }
 
 basic_validity_check :: inline (using header: Allocation_Header) -> bool {
@@ -456,17 +468,31 @@ try_super_alloc_large :: (using allocator: *Super_Allocator, alloc_inner_chunk_c
     return out_header;
 }
 
+// todo: this function assumes ONE new list is being appended to the allocator data
+// if I want this to be able to grow once after multiple lists are added (which would be 
+// preferable for init), then this needs to be edited / rewritten.
 grow_super_allocator_books :: (using allocator: *Super_Allocator) {
+    // ---
+
+    // for debuggging with memory view, set bytes to something nonzero and repeating
+    write_debug_bytes_for_memory_view :: (bytes: *u8, byte_count: s64) {
+        memset(bytes, 0xaf, byte_count);
+    }
+
+    // ---
+
     auto_release_temp();
     assert(chunk_lists.count > 0);
 
     reader: []u8;
     reader.data = books.largest_gap_per_list;
     reader.count = books_allocated_size;
-    reader_head: s64;
+    reader_head: s64 = 0;
 
-    writer := make_dynamic_array(u8, max(reader.count * 2, 1024),,temp);
-    writer_head: s64;
+    writer := make_dynamic_array(u8, max(reader.count * 2, 2048),,temp);
+    writer_head: s64 = 0;
+
+    // write_debug_bytes_for_memory_view(writer.data, writer.allocated);
 
     do_copy := old_list_count > 0;
     if do_copy {
@@ -680,7 +706,8 @@ gp_allocator_proc :: (mode: Allocator_Mode, size: s64, old_size: s64, old_memory
     return null;
 }
 
-initialize_gp_allocator :: (using allocator: *GP_Allocator) {
+// last checked, defaults give ~70MB
+initialize_gp_allocator :: (using allocator: *GP_Allocator, add_medium_chunk_lists := 4, add_large_chunk_lists := 1) {
     in_parent_allocator := context.allocator;
     allocator.* = .{parent_allocator=in_parent_allocator};
     base.data = allocator;
@@ -691,8 +718,8 @@ initialize_gp_allocator :: (using allocator: *GP_Allocator) {
             gp_allocator_add_list(allocator, bin_index);
         }
     }
-    initialize_super_allocator(*med_allocator,, parent_allocator);
-    initialize_super_allocator(*lrg_allocator,, parent_allocator);
+    initialize_super_allocator(allocator=*med_allocator, add_chunk_lists=add_medium_chunk_lists,, parent_allocator);
+    initialize_super_allocator(allocator=*lrg_allocator, add_chunk_lists=add_large_chunk_lists,, parent_allocator);
 }
 
 gp_allocator_add_list :: (using allocator: *GP_Allocator, bin_index: s64) {
@@ -898,7 +925,7 @@ make_dynamic_array :: inline ($T: Type, reserve_count := 0) -> [..]T {
 // tiny serializer implementation for Super_Allocator stuff
 // -----------------------------------------------------------------------------------
 
-write_bytes :: (record: *[..]u8, record_head: *s64, bytes: *u8, byte_count: s64, align : s8 = 1}) {
+write_bytes :: (record: *[..]u8, record_head: *s64, bytes: *u8, byte_count: s64, align : s8 = 1) {
     if byte_count == 0 {
         return;
     }
@@ -932,7 +959,7 @@ write_and_read_bytes :: (writer: *[..]u8, reader: []u8, writer_head: *s64, reade
 
 serial_writer_resize_if_needed :: (record: *[..]u8, new_head: s64) {
     if new_head >= record.count {
-        array_resize(record, new_head);
+        array_resize(record, new_head, false);
     }
 }
 

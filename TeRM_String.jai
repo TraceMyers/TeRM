@@ -20,6 +20,15 @@ as_array :: inline (str: string, $T: Type) -> []T {
     return t_array;
 }
 
+to_string_safe :: inline (str: *u8, max_read_count: s64) -> string {
+    for 0..max_read_count-1 {
+        if str[it] == 0 {
+            return string.{it, str};
+        }
+    }
+    return string.{max_read_count, str};
+}
+
 as_string :: inline (array: []$T) -> string {
     return string.{array.count * size_of(T), xx array.data};
 }

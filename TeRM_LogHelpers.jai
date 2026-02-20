@@ -25,3 +25,6 @@ _fmt_verbose :: (x: $T, draw_type_name := true) -> FormatStruct #expand #modify 
 #scope_file
 
 #import "Basic";
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

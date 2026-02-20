@@ -190,3 +190,6 @@ U32_MAX :: 0xffff_ffff;
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Storage";
 #import "TeRM/TeRM_Render/vulkan-jai";
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

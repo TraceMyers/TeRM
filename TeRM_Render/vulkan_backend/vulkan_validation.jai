@@ -15,3 +15,6 @@ validate :: (result: $T, error_msg: string, msg_args: ..Any, caller_loc := #call
     }
     return true;
 }
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

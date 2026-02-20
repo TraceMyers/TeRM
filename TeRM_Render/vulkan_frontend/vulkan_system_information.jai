@@ -65,3 +65,6 @@ make_string :: (driver_version: Physical_Device_Driver_Version) -> string {
 make_string :: (using api_version: Graphics_API_Version) -> string {
     return sprint("%.%.%", major, minor, patch);
 }
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

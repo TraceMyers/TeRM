@@ -437,3 +437,6 @@ required_device_extensions := (*u8).[
     "VK_KHR_buffer_device_address",
     "VK_KHR_dynamic_rendering",
 ];
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

@@ -69,3 +69,6 @@ init_renderer_unique_data :: (thread_local_renderer: *Renderer) -> bool {
 
     return true;
 }
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

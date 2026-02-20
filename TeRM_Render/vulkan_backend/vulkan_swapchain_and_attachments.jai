@@ -60,7 +60,7 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
         // layers per image
         imageArrayLayers = 1,
         // render directly to the image
-        imageUsage = .COLOR_ATTACHMENT_BIT | .TRANSFER_DST_BIT,
+        imageUsage = .COLOR_ATTACHMENT_BIT /*| .TRANSFER_DST_BIT*/,
         // how to transform the image before... presenting?
         preTransform = support_info.capabilities.currentTransform,
         // whether the alpha channel should blend with other windows

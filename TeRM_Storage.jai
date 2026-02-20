@@ -851,9 +851,9 @@ table_init :: (table: *Linear_Table, reserve_count := 64) {
 }
 
 // return true if the value was added
-table_set :: (table: *Linear_Table, key: table.key_type, value: table.value_type, edit_if := Table_Edit_Condition.ADD_OR_CHANGE) -> made_edit: bool, added_item: bool {
+table_set :: (table: *Linear_Table, key: table.key_type, value: table.value_type, $edit_if := Table_Edit_Condition.ADD_OR_CHANGE) -> made_edit: bool, added_item: bool {
     key_hash := table_hash(table, key);
-    existing_value := table_get_by_hash(table, key_hash);
+    existing_value := table_get_by_key_hash(table, key_hash);
     made_edit: bool;
     added_item: bool;
 
@@ -875,12 +875,12 @@ table_set :: (table: *Linear_Table, key: table.key_type, value: table.value_type
 
 table_get :: (table: *Linear_Table, key: table.key_type) -> *table.value_type {
     key_hash := table_hash(table, key);
-    return table_get_with_key_hash(table, key_hash); 
+    return table_get_by_key_hash(table, key_hash); 
 }
 
 table_get_by_key_hash :: (table: *Linear_Table, key_hash: u32) -> *table.value_type {
     for table.key_hashes {
-        if key_hash == key_hash {
+        if it == key_hash {
             return *table.values[it_index];
         }
     }
@@ -893,7 +893,7 @@ table_remove_by_key :: (table: *Linear_Table, key: table.key_type) -> bool {
 }
 
 table_remove_by_key_hash :: (table: *Linear_Table, key_hash: u32) -> bool {
-    value := table_get_with_key_hash(table, key_hash);
+    value := table_get_by_key_hash(table, key_hash);
     if value != null {
         index := value - table.values.data;
         soa_unordered_remove_by_index(table, index);
@@ -950,7 +950,7 @@ table_init :: (table: *CT_Table, reserve_count := 256) {
 
 table_set :: (table: *CT_Table, key: table.key_type, value: table.value_type, edit_if := Table_Edit_Condition.ADD_OR_CHANGE) -> made_edit: bool, added_item: bool {
     key_hash := table_hash(table, key);
-    existing_value, searched_up_to_index := table_get_by_hash(table, key_hash);
+    existing_value, searched_up_to_index := table_get_by_key_hash(table, key_hash);
     made_edit: bool;
     added_item: bool;
 
@@ -988,7 +988,7 @@ table_set :: (table: *CT_Table, key: table.key_type, value: table.value_type, ed
 
 table_get :: (table: *CT_Table, key: table.key_type) -> *table.value_type {
     key_hash := table_hash(table, key);
-    return table_get_with_key_hash(table, key_hash); 
+    return table_get_by_key_hash(table, key_hash); 
 }
 
 table_get_by_key_hash :: (table: *CT_Table, key_hash: u32) -> value: *table.value_type, searched_up_to_index: s32 {

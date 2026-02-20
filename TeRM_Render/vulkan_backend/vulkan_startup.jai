@@ -405,6 +405,18 @@ create_frame_datas :: () -> bool {
     return true;
 }
 
+create_default_descriptors :: () -> bool {
+    using context.renderer;
+    auto_release_temp();
+    return true;
+}
+
+create_default_pipelines :: () -> bool {
+    if !create_device_space_mesh_pipeline() then return false;
+    render_log("created default pipelines");
+    return true;
+}
+
 // -----------------------------------------------------------------------------------
 #scope_file
 

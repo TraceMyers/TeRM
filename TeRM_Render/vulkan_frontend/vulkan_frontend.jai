@@ -1,6 +1,8 @@
 // todo: when more APIs are added, can figure out the generic versions rather than the 
 // vk versions of these things. some of that is already started (e.g. Physical_Device_Properties);
 
+MIN_DEPTH :: 0.0;
+MAX_DEPTH :: 1.0;
 VK_API_VERSION_1_3 :: #run VK_MAKE_VERSION(1, 3, 0);
 TERM_RENDERER_VERSION :: #run VK_MAKE_VERSION(
     TERM_RENDER_VERSION_MAJOR, TERM_RENDER_VERSION_MINOR, 0
@@ -31,6 +33,9 @@ Renderer :: struct {
         transfer_command_pool: VkCommandPool;
         transfer_command_buffer: VkCommandBuffer;
         transfer_fence: VkFence;
+
+        device_space_mesh_pipeline: VkPipeline;
+        device_space_mesh_pipeline_layout: VkPipelineLayout;
 
         graphics_queue: VkQueue; // per thread?
         transfer_queue: VkQueue; // per thread?
@@ -159,6 +164,11 @@ Graphics_Pipeline_Build_Info :: struct {
     color_attachment_format:    VkFormat;
 }
 
+Simple_Vertex :: struct {
+    position: Vector2;
+    color: Color3f;
+}
+
 renderer_version_string :: (version: u32) -> string {
     major := VK_API_VERSION_MAJOR(version);
     minor := VK_API_VERSION_MINOR(version);
@@ -180,15 +190,18 @@ U32_MAX :: 0xffff_ffff;
 #load "../vulkan_backend/vulkan_swapchain_and_attachments.jai";
 #load "../vulkan_backend/vulkan_create_data.jai";
 #load "../vulkan_backend/vulkan_pipelines.jai";
+#load "../vulkan_backend/vulkan_shaders.jai";
 
 #import "Window_Creation";
 #import "Basic";
 #import "Math";
+#import "File";
 
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Array";
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Storage";
+#import "TeRM/TeRM_Color";
 #import "TeRM/TeRM_Render/vulkan-jai";
 
 // Copyright (c) 2026 Trace Myers

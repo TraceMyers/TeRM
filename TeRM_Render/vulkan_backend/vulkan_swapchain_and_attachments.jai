@@ -18,9 +18,14 @@ create_swapchain_and_attachments :: () -> bool {
     reset_swapchain_images();
     old_swapchain_obj := swapchain.obj;
 
+    vkQueueWaitIdle(transfer_queue);
+    vkQueueWaitIdle(graphics_queue);
+
     if !validate(create_swapchain(old_swapchain_obj), "failed creating swapchain") then return false;
     if !validate(create_render_target(), "failed creating render target") then return false;
     if !validate(create_depth_buffer(), "failed creating depth buffer") then return false;
+
+    should_recreate_swapchain = false;
 
     render_log("created swapchain and attachments");
     return true;
@@ -259,16 +264,6 @@ create_depth_buffer :: () -> bool {
     memory_properties: VkPhysicalDeviceMemoryProperties = ---;
     vkGetPhysicalDeviceMemoryProperties(physical.obj, *memory_properties);
 
-    memory_type_index: u32 = 0xffff_ffff;
-    for 0..memory_properties.memoryTypeCount-1 {
-        if (memory_properties.memoryTypes[it].propertyFlags & .DEVICE_LOCAL_BIT) != 0 {
-            memory_type_index = xx it;
-            break;
-        }
-    }
-
-    if !validate(memory_type_index != 0xffff_ffff, "unable to find a memory type that was device local") return false;
-
     depth_buffer.format = depth_buffer_format(physical.obj);
     depth_buffer_usage : VkImageUsageFlags = .DEPTH_STENCIL_ATTACHMENT_BIT | .SAMPLED_BIT;
     create_info := image_create_info(depth_buffer.format, depth_buffer_usage, depth_buffer.extent);
@@ -277,6 +272,10 @@ create_depth_buffer :: () -> bool {
 
     memory_requirements: VkMemoryRequirements = ---;
     vkGetImageMemoryRequirements(logical.obj, depth_buffer.obj, *memory_requirements);
+
+    memory_type_index := find_index_of_memory_type(memory_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
+
+    if !validate(memory_type_index != INVALID_MEMORY_TYPE_INDEX, "unable to find a memory type that was device local") return false;
 
     allocate_info := VkMemoryAllocateInfo.{
         allocationSize=memory_requirements.size,

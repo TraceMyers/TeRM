@@ -5,6 +5,7 @@
 // physical device
 // logical device
 // frame data
+// scratch
 
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------------- :vk instance
@@ -418,6 +419,16 @@ create_default_pipelines :: () -> bool {
 }
 
 // -----------------------------------------------------------------------------------
+// -------------------------------------------------------------------------- :scratch
+
+create_scratch_data :: () -> bool {
+    using context.renderer;
+    simple_vertex_buffer = create_simple_vertex_buffer(scratch_vertices);
+    return true;
+}
+
+// -----------------------------------------------------------------------------------
+
 #scope_file
 
 #if VALIDATION_ON {

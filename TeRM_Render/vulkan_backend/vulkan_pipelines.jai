@@ -130,7 +130,8 @@ create_device_space_mesh_pipeline :: () -> bool {
 
     if !validate(vkCreatePipelineLayout(logical.obj, *pipeline_layout_info, null, *device_space_mesh_pipeline_layout), "failed to create device space mesh pipeline layout") then return false;
 
-    color_attachment_format := VkFormat.R16G16B16A16_SFLOAT;
+    // color_attachment_format := VkFormat.R16G16B16A16_SFLOAT;
+    color_attachment_format := VkFormat.R8G8B8A8_UNORM;
     rendering_create_info := VkPipelineRenderingCreateInfo.{
         colorAttachmentCount=1,
         pColorAttachmentFormats = *color_attachment_format,

@@ -17,6 +17,7 @@ case "DIRECT3D";
 
 render_target_width: u32;
 render_target_height: u32;
+should_recreate_swapchain: bool;
 
 #add_context renderer: *Renderer;
 
@@ -29,6 +30,8 @@ scope_set_renderer :: (in_renderer: *Renderer) #expand {
     Win32 :: #import "Windows";
 }
 
+NANOSECONDS_PER_MILLISECOND :: 1_000_000;
+NANOSECONDS_PER_SECOND :: 1_000_000_000;
 VALIDATION_LEVEL_NONE   :: 0;
 VALIDATION_LEVEL_MEDIUM :: 1;
 VALIDATION_LEVEL_HIGH   :: 2;

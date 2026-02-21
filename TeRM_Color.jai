@@ -4,13 +4,15 @@ COLOR4F_GREEN       :: Color4f.{0,1,0,1};
 COLOR4F_BLUE        :: Color4f.{0,0,1,1};
 COLOR4F_BLACK       :: Color4f.{0,0,0,1};
 
+COLOR4F_BRIGHT_PURPLE      :: Color4f.{0.65, 0.1, 0.82, 1};
+
 Color2f :: struct {
     r: float32;
     g: float32;
 
 #overlay(r) vec2: Vector2 = ---;
-
 #overlay(r) component: [2]float = ---;
+#overlay(r) array: [2]float32 = ---;
 }
 
 Color3f :: struct {
@@ -21,6 +23,7 @@ Color3f :: struct {
 #overlay(r) rg: Color2f = ---;
 #overlay(g) gb: Color2f = ---;
 #overlay(r) using #as vec3: Vector3 = ---;
+#overlay(r) array: [3]float32 = ---;
 }
 
 Color4f :: struct {
@@ -34,6 +37,7 @@ Color4f :: struct {
 #overlay(g) gb: Color2f = ---;
 #overlay(b) ba: Color2f = ---;
 #overlay(r) using #as vec4: Vector4 = ---;
+#overlay(r) array: [4]float32 = ---;
 }
 
 Color4b :: struct {

@@ -8,6 +8,7 @@ TERM_RENDERER_VERSION :: #run VK_MAKE_VERSION(
     TERM_RENDER_VERSION_MAJOR, TERM_RENDER_VERSION_MINOR, 0
 );
 DEPTH_FORMAT :: VkFormat.D24_UNORM_S8_UINT;
+INVALID_MEMORY_TYPE_INDEX : u32 : 0xffff_ffff;
 
 Renderer :: struct {
     API :: "vulkan";
@@ -40,19 +41,51 @@ Renderer :: struct {
         graphics_queue: VkQueue; // per thread?
         transfer_queue: VkQueue; // per thread?
 
-        swapchain_image_index: s32;
-        frame_index: s32;
+        rendered_frame_count: s32;
 
         depth_buffer: Texture;
 
         init_success: bool;
+        
+        // scratch space (or more scratchy than the rest)
+        simple_vertex_buffer: GPU_Buffer;
+        scratch_vertices := Simple_Vertex.[
+            // front face
+            {{-0.5, -0.5, 0.25}, {1, 0, 0}},
+            {{ 0.5, -0.5, 0.25}, {1, 0, 0}},
+            {{ 0.5,  0.5, 0.25}, {1, 0, 0}},
+            {{-0.5, -0.5, 0.25}, {1, 0, 0}},
+            {{ 0.5,  0.5, 0.25}, {1, 0, 0}},
+            {{-0.5,  0.5, 0.25}, {1, 0, 0}},
+            // back face
+            {{-0.5, -0.5, 0.75}, {0, 1, 0}},
+            {{ 0.5, -0.5, 0.75}, {0, 1, 0}},
+            {{ 0.5,  0.5, 0.75}, {0, 1, 0}},
+            {{-0.5, -0.5, 0.75}, {0, 1, 0}},
+            {{ 0.5,  0.5, 0.75}, {0, 1, 0}},
+            {{-0.5,  0.5, 0.75}, {0, 1, 0}},
+            // left face
+            {{-0.5, -0.5, 0.25}, {0, 0, 1}},
+            {{-0.5,  0.5, 0.25}, {0, 0, 1}},
+            {{-0.5,  0.5, 0.75}, {0, 0, 1}},
+            {{-0.5, -0.5, 0.25}, {0, 0, 1}},
+            {{-0.5,  0.5, 0.75}, {0, 0, 1}},
+            {{-0.5, -0.5, 0.75}, {0, 0, 1}},
+            // right face
+            {{ 0.5, -0.5, 0.25}, {0, 0, 1}},
+            {{ 0.5,  0.5, 0.25}, {0, 0, 1}},
+            {{ 0.5,  0.5, 0.75}, {0, 0, 1}},
+            {{ 0.5, -0.5, 0.25}, {0, 0, 1}},
+            {{ 0.5,  0.5, 0.75}, {0, 0, 1}},
+            {{ 0.5, -0.5, 0.75}, {0, 0, 1}},
+        ];
     };
 
     shader_table: Linear_Table(string, VkShaderModule);
 }
 
 Render_Init_Options :: struct {
-    copy_shader_data_into_working_directory := true;
+    populate_shader_data_in_working_directory := true;
 }
 
 Queue_Family_Capability_Flags :: enum_flags {
@@ -105,6 +138,12 @@ Graphics_API_Version :: struct {
     major: u32;
     minor: u32;
     patch: u32;
+}
+
+GPU_Buffer :: struct {
+    obj: VkBuffer;
+    memory: VkDeviceMemory;
+    size: VkDeviceSize;
 }
 
 Physical_Device_Properties :: struct {
@@ -169,7 +208,7 @@ Graphics_Pipeline_Build_Info :: struct {
 }
 
 Simple_Vertex :: struct {
-    position: Vector2;
+    position: Vector3;
     color: Color3f;
 }
 
@@ -201,6 +240,8 @@ U32_MAX :: 0xffff_ffff;
 #import "Math";
 #import "File";
 #import "File_Utilities";
+#import "Process";
+#import "Sort";
 
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Array";
@@ -208,6 +249,8 @@ U32_MAX :: 0xffff_ffff;
 #import "TeRM/TeRM_Storage";
 #import "TeRM/TeRM_Color";
 #import "TeRM/TeRM_File";
+#import "TeRM/TeRM_Window";
+#import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_Render/vulkan-jai";
 
 // Copyright (c) 2026 Trace Myers

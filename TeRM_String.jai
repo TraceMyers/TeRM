@@ -118,7 +118,7 @@ to_upper :: inline (str: string) -> string {
     return out_str;
 }
 
-// for expansion. process a string per line. usage: for:lines your_string { .. }
+// for expansion. process a string per line. usage: for :per_line your_string { .. }
 per_line :: (str: *string, body: Code, flags: For_Flags) #expand {
     // todo: could implement going over lines from last to first line
     assert((flags & .REVERSE) == 0);

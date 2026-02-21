@@ -148,10 +148,9 @@ per_line :: (str: *string, body: Code, flags: For_Flags) #expand {
         }
 
         `it_index := line_count;
+        line_count += 1;
 
         #insert body;
-
-        line_count += 1;
     }
 }
 

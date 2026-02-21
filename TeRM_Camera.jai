@@ -12,8 +12,8 @@ Camera_Info :: struct {
     orthographic_scale := 1.0;
     perspective_vertical_fov := 100.0; // degrees
     aspect_ratio := 0.0; // 0 for default
-    near_plane := 10.0;
-    far_plane := 100_000.0;
+    near_plane := 1.0;
+    far_plane := 10_000.0;
 }
 
 make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaternion) -> Matrix4 {
@@ -43,6 +43,47 @@ get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which 
     } else {
         return ifx aspect_ratio == 0.0 then viewport.y / viewport.x else 1.0 / aspect_ratio;
     }
+}
+
+// for learning. just doing things in the most intuitive way for me, then moving into using matrices
+transform_point_with_camera :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, point: Vector3) -> Vector3 {
+    relative_position := point - camera_center;
+
+    camera_view_matrix := make_camera_view_matrix(camera_center, camera_orientation);
+    camera_forward     := Vector3.{camera_view_matrix._21, camera_view_matrix._22, camera_view_matrix._23};
+    camera_right       := Vector3.{camera_view_matrix._11, camera_view_matrix._12, camera_view_matrix._13};
+    camera_up          := Vector3.{camera_view_matrix._31, camera_view_matrix._32, camera_view_matrix._33};
+
+    relative_distance := length(relative_position);
+    relative_direction := relative_position / relative_distance;
+
+    cos_theta_xy := dot(relative_direction.xy, camera_forward.xy);
+    cos_zeta_xy  := dot(relative_direction.xy, camera_right.xy);
+    cos_theta_yz := dot(relative_direction.yz, camera_forward.yz);
+    cos_zeta_yz  := dot(relative_direction.yz, camera_up.yz);
+    
+    theta_xy := acos(cos_theta_xy);
+    point_is_to_right := cos_zeta_xy > 0;
+    if !point_is_to_right then theta_xy *= -1;
+
+    theta_yz := acos(cos_theta_yz);
+    point_is_above := cos_zeta_yz > 0;
+    if !point_is_above then theta_yz *= -1;
+
+    phi_yz := PI / 180 * perspective_vertical_fov * 0.5;
+    phi_xy := phi_yz * aspect_ratio;
+
+    norm_signed_distance_xy := theta_xy / phi_xy;
+    norm_signed_distance_yz := theta_yz / phi_yz;
+
+    distance_to_centerline_projection := abs(norm_signed_distance_xy) / tan(theta_xy);
+
+    near_to_far_difference := far_plane - near_plane;
+    near_to_projection_difference := distance_to_centerline_projection - near_plane;
+    // using reverse depth to put more precision in the distance, near 0
+    reverse_depth := 1.0 - near_to_projection_difference / near_to_far_difference;
+
+    return Vector3.{norm_signed_distance_xy, norm_signed_distance_yz, depth};
 }
 
 make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) -> Matrix4 {

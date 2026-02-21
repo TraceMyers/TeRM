@@ -58,16 +58,6 @@ array_init :: inline (array: *[]$T) {
     init_range(array.data, 0, array.count);
 }
 
-array_resize_copy :: (array: *[]$T, new_count: s64) {
-    new_array := make_static_array(T, new_count);
-    copy_count := min(new_count, array.count);
-    if copy_count > 0 {
-        copy_items(new_array.data, array.data, copy_count);
-    }
-    array_free(array);
-    array.* = new_array;
-}
-
 copy_range_inside_array :: (array: *[]$T, dst: s64, src: s64, count: s64) {
     assert(count > 0 && dst != src);
     diff := dst - src;

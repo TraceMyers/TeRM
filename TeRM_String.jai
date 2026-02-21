@@ -118,31 +118,41 @@ to_upper :: inline (str: string) -> string {
     return out_str;
 }
 
-// user-defined per_line_proc is called for every line in the string. 
-// if per_line_proc returns false, the loop exits
-process_per_line :: (str: string, per_line_proc: (line: *string, line_index: s64, in_data: *void) -> bool, in_data: *void) -> line_count: s64 {
+// for expansion. process a string per line. usage: for:lines your_string { .. }
+per_line :: (str: *string, body: Code, flags: For_Flags) #expand {
+    // todo: could implement going over lines from last to first line
+    assert((flags & .REVERSE) == 0);
     line_count: s64;
     left, right: string;
-    right = str;
+    right = str.*;
     success: bool;
     end_loop: bool;
     while !end_loop {
         prev_right := right;
         success, left, right = split_from_left(right, #char "\n");
-        if !success {
-            if prev_right.count > 0 {
-                per_line_proc(*prev_right, line_count, in_data); 
-                line_count += 1;
+
+        `it: string = ---;
+
+        if success {
+            if left.count > 0 && left[left.count-1] == #char "\r" {
+                left.count -= 1;
             }
-            break;
-        } else if left.count > 0 && left[left.count-1] == #char "\r" {
-            left.count -= 1;
+            `it = left;
+        } else {
+            if prev_right.count > 0 {
+                end_loop = true;
+                `it = prev_right;
+            } else {
+                break;
+            }
         }
 
-        end_loop = !per_line_proc(*left, line_count, in_data);
+        `it_index := line_count;
+
+        #insert body;
+
         line_count += 1;
     }
-    return line_count;
 }
 
 c_strings_equal :: (a: *u8, b: *u8, max_read_count: s64) -> bool {

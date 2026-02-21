@@ -8,7 +8,8 @@ run_all_tests :: () {
         pool_test,
         serializer_test,
         gp_allocator_test,
-        super_allocator_test
+        super_allocator_test,
+        string_test
     ]);
 }
 
@@ -36,147 +37,6 @@ run_tests :: (header: string, tests: []Test_Proc) {
     }
     log("passed % / % tests\n   ", passed_test_ct, tests.count);
     a := 0;
-}
-
-bit_array_test :: () -> bool, string {
-    single_bits: Bit_Array(1);
-    set_capacity(*single_bits, 97);
-
-    test_condition(single_bits.items.count == 2);
-
-    test_condition(find_first_set_bit(*single_bits) == -1);
-    set_bit(*single_bits, 33);
-    test_condition(find_first_set_bit(*single_bits) == 33);
-    test_condition(find_last_set_bit(*single_bits) == 33);
-    set_bit(*single_bits, 35);
-    test_condition(find_last_set_bit(*single_bits) == 35);
-    set_bit(*single_bits, 92);
-    test_condition(find_first_set_bit(*single_bits) == 33);
-    set_bit(*single_bits, 93);
-    set_bit(*single_bits, 94);
-    set_bit(*single_bits, 95);
-    set_bit(*single_bits, 96);
-
-    test_condition(is_bit_set(*single_bits, 33));
-    test_condition(is_bit_set(*single_bits, 35));
-    test_condition(is_bit_set(*single_bits, 92));
-    test_condition(is_bit_set(*single_bits, 93));
-    test_condition(is_bit_set(*single_bits, 94));
-    test_condition(is_bit_set(*single_bits, 95));
-    test_condition(is_bit_set(*single_bits, 96));
-
-    test_condition(find_last_unset_bit(*single_bits) == 91);
-    unset_bit(*single_bits, 92);
-    test_condition(find_last_unset_bit(*single_bits) == 92);
-    unset_bit(*single_bits, 35);
-    unset_bit(*single_bits, 36);
-
-    unset_bit(*single_bits, 33);
-    test_condition(find_first_set_bit(*single_bits) == 93);
-    set_bit(*single_bits, 33);
-
-    test_condition(find_last_set_bit(*single_bits) == 96);
-    unset_bit(*single_bits, 96);
-    test_condition(find_last_set_bit(*single_bits) == 95);
-
-    test_condition(is_bit_set(*single_bits, 33));
-    test_condition(!is_bit_set(*single_bits, 35));
-    test_condition(!is_bit_set(*single_bits, 36));
-    test_condition(!is_bit_set(*single_bits, 92));
-
-    for 0..20 {
-        if it == 10 || it == 15 {
-            continue;
-        }
-        set_bit_group(*single_bits, it);
-    }
-    test_condition(find_first_unset_bit(*single_bits) == 10);
-    test_condition(find_first_unset_bit(*single_bits, -1, 11) == 15);
-    test_condition(find_first_unset_bit(*single_bits, -1, 15) == 15);
-    test_condition(find_first_unset_bit(*single_bits, -1, 16) == 21);
-
-    MULTI_BIT_CT :: 16;
-    multi_bit_capacity := 97;
-    multi_bits: Bit_Array(MULTI_BIT_CT);
-
-    set_capacity(*multi_bits, multi_bit_capacity);
-
-    bit_ct := MULTI_BIT_CT * multi_bit_capacity;
-    u64_ct := bit_ct / 64;
-    u64_ct += ifx (u64_ct * 64 == bit_ct) then 0 else 1;
-    test_condition(multi_bits.items.count == u64_ct);
-
-    set_bit(*multi_bits, 33);
-    test_condition(find_last_group_with_set_bits(*multi_bits) == 33);
-    test_condition(find_first_group_with_set_bits(*multi_bits) == 33);
-    set_bit(*multi_bits, 35, 3);
-    test_condition(find_first_group_with_set_bits(*multi_bits) == 33);
-    set_bit(*multi_bits, 92, 15);
-    test_condition(find_last_group_with_set_bits(*multi_bits, 3) == 35);
-    test_condition(find_last_group_with_set_bits(*multi_bits) == 92);
-    set_bit_group(*multi_bits, 93);
-    set_bit_group(*multi_bits, 91);
-
-    set_bit_group(*multi_bits, 94);
-    set_bit_group(*multi_bits, 95);
-    set_bit_group(*multi_bits, 96);
-
-    unset_bit(*multi_bits, 94, 1);
-    test_condition(find_last_group_with_unset_bits(*multi_bits, 1) == 94);
-    set_bit(*multi_bits, 94, 1);
-
-    test_condition(find_last_group_with_unset_bits(*multi_bits) == 92);
-    unset_bit_group(*multi_bits, 94);
-    test_condition(find_last_group_with_unset_bits(*multi_bits) == 94);
-    unset_bit_group(*multi_bits, 95);
-    unset_bit_group(*multi_bits, 96);
-
-    test_condition(is_bit_set(*multi_bits, 33));
-    test_condition(is_bit_set(*multi_bits, 35, 3));
-    test_condition(is_bit_set(*multi_bits, 92, 15));
-    test_condition(all_bits_in_group_set(*multi_bits, 93));
-    test_condition(all_bits_in_group_set(*multi_bits, 91));
-    test_condition(!any_bits_in_group_set(*multi_bits, 94));
-
-    unset_bit(*multi_bits, 35, 3);
-    unset_bit(*multi_bits, 36, 5);
-    unset_bit(*multi_bits, 33);
-    test_condition(find_first_group_with_set_bits(*multi_bits) == 91);
-    set_bit(*multi_bits, 33);
-    unset_bit(*multi_bits, 92, 15);
-
-    test_condition(is_bit_set(*multi_bits, 33));
-    test_condition(!any_bits_in_group_set(*multi_bits, 35));
-    test_condition(!any_bits_in_group_set(*multi_bits, 36));
-    test_condition(!any_bits_in_group_set(*multi_bits, 92));
-
-    unset_bit(*multi_bits, 33);
-
-    for 0..13 {
-        if it == 9 || it == 12 {
-            continue;
-        }
-        set_bit_group(*multi_bits, it);
-    }
-    test_condition(find_first_group_with_unset_bits(*multi_bits) == 9);
-    test_condition(find_first_group_with_unset_bits(*multi_bits, -1, 10) == 12);
-    test_condition(find_first_group_with_unset_bits(*multi_bits, -1, 12) == 12);
-    test_condition(find_first_group_with_unset_bits(*multi_bits, -1, 13) == 14);
-
-    unset_bit(*multi_bits, 2, 0);
-    test_condition(find_first_group_with_unset_bits(*multi_bits) == 2);
-
-    set_bit_group(*multi_bits, 9);
-    set_bit_group(*multi_bits, 12);
-     for 0..11 {
-        unset_bit(*multi_bits, it, it);
-    }
-    test_condition(find_first_group_with_unset_bits(*multi_bits, 9) == 9);
-
-    reset(*single_bits);
-    reset(*multi_bits);
-
-    return_test_success();
 }
 
 text_encoding_test :: () -> bool, string {
@@ -524,7 +384,6 @@ pool_test :: () -> bool, string {
         }
     }
 
-    test_condition(find_last_set_bit(*p.in_use) == 99);
     shuffle_array(indices);
 
     for indices {
@@ -885,6 +744,29 @@ super_allocator_test :: () -> bool, string {
     return_test_success();
 }
 
+string_test :: () -> bool, string {
+
+    lines := string.[
+        "",
+        "hey there",
+        "",
+        "this is a line",
+        "and this is another line"
+    ];
+
+    builder: String_Builder;
+    for lines {
+        print(*builder, "%\n", it);
+    }
+    test_str := builder_to_string(*builder);
+    
+    for :per_line test_str {
+        assert(it == lines[it_index]);
+    }
+
+    return_test_success();
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 #scope_file // ---------------------------------------------------------------------------------------------- SCOPE_FILE
 // ---------------------------------------------------------------------------------------------------------------------
@@ -982,8 +864,6 @@ serializer_test_body :: (checksum: *Serializer_Checksum_Type = null, load_checks
 }
 
 #scope_file
-
-#load "testing.jai";
 
 #import "Basic";
 #import "String";

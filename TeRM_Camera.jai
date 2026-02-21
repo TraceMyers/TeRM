@@ -1,4 +1,6 @@
 // basis is y forward, x right, z up
+// this file is still only halfway converted from being a part of a video game into being a module, so
+// it's not ready for use yet
 
 Camera_Projection :: enum {
     PERSPECTIVE;

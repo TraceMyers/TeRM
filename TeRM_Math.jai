@@ -965,12 +965,12 @@ get_box_points :: inline (position: Vector3, length_vec: Vector3, height_vec: Ve
     out_points.*[Box_Point.TOP_UPPER_RIGHT]    = position + length_vec + height_vec + width_vec;
 }
 
-is_closest_point_in_aabb :: inline (position: Vector3, aabb: AABB) -> Vector3 {
+get_closest_point_in_aabb :: inline (position: Vector3, aabb: AABB) -> Vector3 {
     diff := position - aabb.center;
     return aabb.center + clamp(diff, aabb.extent);
 }
 
-is_closest_point_in_box :: inline (position: Vector3, box: Box) -> Vector3 {
+get_closest_point_in_box :: inline (position: Vector3, box: Box) -> Vector3 {
     diff := position - box.center;
     dist_along_axes := Vector3.{dot(diff, box.right), dot(diff, box.fore), dot(diff, box.up)};
     return box.center + clamp(dist_along_axes, box.extent);

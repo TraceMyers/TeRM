@@ -212,20 +212,12 @@ Simple_Vertex :: struct {
     color: Color3f;
 }
 
-renderer_version_string :: (version: u32) -> string {
-    major := VK_API_VERSION_MAJOR(version);
-    minor := VK_API_VERSION_MINOR(version);
-    patch := VK_API_VERSION_PATCH(version);
-    return tprint("%.%.%", major, minor, patch);
-}
 
 #load "vulkan_renderer_initialization.jai";
 #load "vulkan_system_information.jai";
 #load "vulkan_renderer_update.jai";
 
 #scope_module
-
-U32_MAX :: 0xffff_ffff;
 
 #load "../vulkan_backend/vulkan_getters.jai";
 #load "../vulkan_backend/vulkan_startup.jai";
@@ -252,6 +244,7 @@ U32_MAX :: 0xffff_ffff;
 #import "TeRM/TeRM_Window";
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_Render/vulkan-jai";
+#import "TeRM/TeRM_Camera";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

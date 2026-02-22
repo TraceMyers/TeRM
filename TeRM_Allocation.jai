@@ -802,7 +802,7 @@ gp_free :: (using allocator: *GP_Allocator, addr: *u8) {
         header.(*s32).* = bin.first_available;
         item_index := (header.(*u8) - list_data_begin) / item_size;
         bin.first_available = xx (list_index * ITEMS_PER_LIST + item_index);
-    } else if identifier == {
+    } else if identifier == { 
     case .GP_ALLOCATOR_SUPER_MED;
         // this id was overwritten so it could be directed to the medium allocator. need to fix it so the super allocator can validate
         header.id = xx (Allocator_Identifier.SUPER_ALLOCATOR.(s32) | ALLOCATOR_VALIDATION_PATTERN);

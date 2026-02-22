@@ -66,5 +66,12 @@ make_string :: (using api_version: Graphics_API_Version) -> string {
     return sprint("%.%.%", major, minor, patch);
 }
 
+renderer_version_string :: (version: u32) -> string {
+    major := VK_API_VERSION_MAJOR(version);
+    minor := VK_API_VERSION_MINOR(version);
+    patch := VK_API_VERSION_PATCH(version);
+    return tprint("%.%.%", major, minor, patch);
+}
+
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

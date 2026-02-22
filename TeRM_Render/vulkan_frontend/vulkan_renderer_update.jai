@@ -33,10 +33,10 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     cmd := begin_command_buffer(current_frame);
 
     // note: UNDEFINED treats the previous data in the image as garbage, which doesn't allow
-    // reading from it at this stage. used for temporal accumulation of data.
+    // reading from it at this stage. probably want to change this in the future.
     transition_image(cmd, render_target, .UNDEFINED, .COLOR_ATTACHMENT_OPTIMAL);
 
-    // clears render target (among other things)
+    // clear render target, among other things
     begin_rendering(cmd, render_target_view);
 
     // model - local transformations 
@@ -44,6 +44,8 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     // projection - closer things are larger, or in other words, all points are scaled toward
     // the camera center line, I think in a log_2 relationship with distance, or in a linear
     // relationship with the square distance
+
+    camera: Camera_Info;
 
     time := cast(float) seconds_since_init();
     scratch_vertices_copy := array_copy(scratch_vertices,,temp);
@@ -63,18 +65,6 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
             it.position.x = cos(time + t) * circle_radius * 2;
             it.position.z = (sin(time + t) * 0.5 + 0.5);
         }
-
-        // yz_pos_local := Vector2.{it.position.y, original_z * 2 - 1};
-        // yz_pos_local_norm := normalize(yz_pos_local);
-        // cos_t2 := yz_pos_local_norm.x;
-        // sin_t2 := yz_pos_local_norm.y;
-        // t2 := acos(cos_t2); 
-        // if sin_t2 < 0 {
-        //     t2 = 2.0 * PI - t2;
-        // }
-
-        // it.position.y = cos(time + t2) * circle_radius * 2;
-        // it.position.z = (sin(time + t2) * 0.5 + 0.5);
     }
 
     triangle_view: [][3]Simple_Vertex;

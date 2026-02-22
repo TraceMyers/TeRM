@@ -13,7 +13,7 @@ Camera_Info :: struct {
     perspective_vertical_fov := 100.0; // degrees
     aspect_ratio := 0.0; // 0 for default
     near_plane := 1.0;
-    far_plane := 10_000.0;
+    far_plane := 1_000.0;
 }
 
 make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaternion) -> Matrix4 {
@@ -45,8 +45,12 @@ get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which 
     }
 }
 
-// for learning. just doing things in the most intuitive way for me, then moving into using matrices
-transform_point_with_camera :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, point: Vector3) -> Vector3 {
+// for learning. tired of not understanding projection intuitively.
+// so, just doing things in the most intuitive way for me, then linking it to matrices
+transform_point_with_camera :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, point: Vector3) -> Vector3 {
+
+    // view
+
     relative_position := point - camera_center;
 
     camera_view_matrix := make_camera_view_matrix(camera_center, camera_orientation);
@@ -54,37 +58,34 @@ transform_point_with_camera :: (using camera: Camera_Info, camera_center: Vector
     camera_right       := Vector3.{camera_view_matrix._11, camera_view_matrix._12, camera_view_matrix._13};
     camera_up          := Vector3.{camera_view_matrix._31, camera_view_matrix._32, camera_view_matrix._33};
 
-    relative_distance := length(relative_position);
-    relative_direction := relative_position / relative_distance;
+    based_position := Vector3.{
+        dot(relative_position, camera_right),
+        dot(relative_position, camera_forward),
+        dot(relative_position, camera_up)
+    };
 
-    cos_theta_xy := dot(relative_direction.xy, camera_forward.xy);
-    cos_zeta_xy  := dot(relative_direction.xy, camera_right.xy);
-    cos_theta_yz := dot(relative_direction.yz, camera_forward.yz);
-    cos_zeta_yz  := dot(relative_direction.yz, camera_up.yz);
-    
-    theta_xy := acos(cos_theta_xy);
-    point_is_to_right := cos_zeta_xy > 0;
-    if !point_is_to_right then theta_xy *= -1;
+    // projection
 
-    theta_yz := acos(cos_theta_yz);
-    point_is_above := cos_zeta_yz > 0;
-    if !point_is_above then theta_yz *= -1;
+    relative_distance := length(based_position);
+    relative_direction := based_position / relative_distance;
 
     phi_yz := PI / 180 * perspective_vertical_fov * 0.5;
-    phi_xy := phi_yz * aspect_ratio;
+    aspect := get_camera_aspect_ratio(camera, viewport);
+    phi_xy := phi_yz * aspect;
 
-    norm_signed_distance_xy := theta_xy / phi_xy;
-    norm_signed_distance_yz := theta_yz / phi_yz;
+    theta_xy := PI/2 - acos(relative_direction.x);
+    theta_yz := PI/2 - acos(relative_direction.z);
 
-    distance_to_centerline_projection := abs(norm_signed_distance_xy) / tan(theta_xy);
+    norm_signed_distance_x := theta_xy / phi_xy;
+    norm_signed_distance_z := theta_yz / phi_yz;
 
     near_to_far_difference := far_plane - near_plane;
-    near_to_projection_difference := distance_to_centerline_projection - near_plane;
+    near_to_projection_difference := based_position.y - near_plane;
+
     // using reverse depth to put more precision in the distance, near 0
     // subtraction before division to preserve precision before compressing into [0,1]
-    reverse_depth := (near_to_far_projection_distance - near_to_projection_difference) / near_to_far_difference;
-
-    return Vector3.{norm_signed_distance_xy, norm_signed_distance_yz, depth};
+    reverse_depth := (near_to_far_difference - near_to_projection_difference) / near_to_far_difference;
+    return Vector3.{norm_signed_distance_x, norm_signed_distance_z, reverse_depth};
 }
 
 // make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) -> Matrix4 {

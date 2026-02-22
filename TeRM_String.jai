@@ -118,7 +118,7 @@ to_upper :: inline (str: string) -> string {
     return out_str;
 }
 
-// for expansion. process a string per line. usage: for :per_line your_string { .. }
+// for expansion. process a string per line. usage = 'for :per_line your_string { .. }'
 per_line :: (str: *string, body: Code, flags: For_Flags) #expand {
     // todo: could implement going over lines from last to first line
     assert((flags & .REVERSE) == 0, "reverse per_line for loop not implemented");
@@ -145,8 +145,8 @@ per_line :: (str: *string, body: Code, flags: For_Flags) #expand {
             line = left;
         } else {
             if prev_right.count > 0 {
-                end_loop = true;
                 line = prev_right;
+                end_loop = true;
             } else {
                 break;
             }

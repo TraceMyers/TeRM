@@ -49,22 +49,20 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
 
     time := cast(float) seconds_since_init();
     scratch_vertices_copy := array_copy(scratch_vertices,,temp);
-    circle_radius := sqrt(0.25 * 0.25 + 0.25 * 0.25);
-    for *scratch_vertices_copy {
-        original_z := it.position.z;
-        {
-            xz_pos_local := Vector2.{it.position.x, it.position.z * 2 - 1};
-            xz_pos_local_norm := normalize(xz_pos_local);
-            cos_t := xz_pos_local_norm.x;
-            sin_t := xz_pos_local_norm.y;
-            t := acos_approx(cos_t); 
-            if sin_t < 0 {
-                t = 2.0 * PI - t;
-            }
 
-            it.position.x = cos(time + t) * circle_radius * 2;
-            it.position.z = (sin(time + t) * 0.5 + 0.5);
-        }
+    camera_position := Vector3.{cos(time), sin(time), 0} * 3;
+    // camera_position := Vector3.{cos(time), 0, sin(time)} * 3;
+    // camera_position := Vector3.{0, 0, 3};
+    camera_fore := normalize(-camera_position);
+    camera_up := Vector3.{0,0,1};
+    camera_orientation := make_quat(camera_fore, camera_up);
+
+    // render_log("camera pos: %", camera_position);
+
+    // todo before moving on: solve the mystery of the depth sorting issue
+
+    for *scratch_vertices_copy {
+        it.position = transform_point_with_camera(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, it.position);
     }
 
     triangle_view: [][3]Simple_Vertex;

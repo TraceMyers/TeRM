@@ -392,7 +392,12 @@ pool_test :: () -> bool, string {
 
     test_condition(p.top == -1);
     test_condition(p.items.count == 0);
-    test_condition(find_first_set_bit(*p.in_use) == -1);
+    first_set_bit: s64 = -1;
+    for :only_set_bits p.in_use {
+        first_set_bit = it_index;
+        break;
+    }
+    test_condition(first_set_bit == -1);
 
     p.shrink_to_min = 12;
     for 0..99 {

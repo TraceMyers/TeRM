@@ -53,71 +53,87 @@ largest_gap_in_bit_sequence_lsb :: inline (bits: $T) -> size: s8 {
 
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------- :Bit_Array Helpers
-// here lies the ghost of an implementation that allowed for groups of bits, rather than
-// just single bits, to be referred to as the items of a bit array. i haven't found
-// that application useful outside of a specific video game, so I deleted it and
-// kept the helpers that I like to use.
+// just a couple of for expansions for iterating over only cleared or only set bits. reverse
+// iteration was also added, where the base for expansion did not implement that.
+//
+// this is particularly useful for allocation algorithms that want to find the first or last bit
+// that is set or cleared, since they will exit the loop on the first valid slot.
+//
+// in other words...
+//
+// for bit arrays that looks something like this (imagining slots are 8 bits instead of 64)
+// 
+// [ 1 1 1 1 1 1 1 1 ] [ 1 1 1 1 1 1 1 1 ] [ 1 1 0 1 1 0 1 0 ]
+//
+// and given you want to find the first cleared bit, you clearly don't need to search
+// into the first two slots. only when you reach slot 3 should you search the bits to find a 0.
+//
+// when the bit array becomes hundreds or thousands of slots long, this two stage search
+// save a lot of time.
 
-find_first_set_bit     :: #bake_arguments find_first_set_or_cleared_bit(set_or_cleared=.SET);
-find_first_cleared_bit :: #bake_arguments find_first_set_or_cleared_bit(set_or_cleared=.CLEARED);
-find_last_set_bit      :: #bake_arguments find_last_set_or_cleared_bit(set_or_cleared=.SET);
-find_last_cleared_bit  :: #bake_arguments find_last_set_or_cleared_bit(set_or_cleared=.CLEARED);
+// for expansion for iterating over only '1' bits in a bit array. 
+// usage looks like...
+// for :only_set_bits your_bit_array { ... }
+only_set_bits     :: #bake_arguments only_set_or_only_cleared_bits(set_or_cleared=.SET);
+// for expansion for iterating over only '0' bits in a bit array. 
+// usage looks like...
+// for :only_cleared_bits your_bit_array { ... }
+only_cleared_bits :: #bake_arguments only_set_or_only_cleared_bits(set_or_cleared=.CLEARED);
 
-find_first_set_or_cleared_bit :: (bit_array: *Bit_Array, start_bit_index := 0, $set_or_cleared: enum {SET; CLEARED;}) -> int {
-    start_slot_index := start_bit_index / BIT_ARRAY_SLOT_BIT_COUNT;
-    start_bit_index_in_first_slot := start_bit_index - start_slot_index * BIT_ARRAY_SLOT_BIT_COUNT;
+// definition for the above for expansions
+only_set_or_only_cleared_bits :: (array: *Bit_Array, body: Code, flags: For_Flags, $set_or_cleared: enum {SET; CLEARED;}) #expand {
+    #assert((flags & .POINTER) == 0);
 
-    if bit_array.slots.count <= start_slot_index {
-        return -1;
-    }
+    // the other reason this exists is to add reverse iteration, which the pool uses.
+    for <=((flags & .REVERSE) != 0) slot, slot_index: array.slots {
 
-    for i : start_slot_index..bit_array.slots.count-1 {
+        // primary reason this expansion exists. skip over slots that have no candidate bits.
+        // for algorithms finding, say, the first set bit, that code will be able to
+        // exit the loop the first time this is true.
         #if set_or_cleared == .SET {
-            use_slot := bit_array.slots[i];
+            if slot == 0 then continue;
         } else {
-            use_slot := ~bit_array.slots[i];
+            if slot == BIT_ARRAY_SLOT_MAX_VALUE then continue;
         }
-        if use_slot != 0 {
-            start_bit_index_in_slot := ifx i == start_slot_index then start_bit_index_in_first_slot else 0;
-            for start_bit_index_in_slot..BIT_ARRAY_SLOT_BIT_COUNT-1 {
-                if ((1 << it) & use_slot) != 0 {
-                    bit_index := i * BIT_ARRAY_SLOT_BIT_COUNT + it;
-                    if bit_index < bit_array.count {
-                        return bit_index;
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    return -1;
-}
+        
+        base_index := slot_index * BIT_ARRAY_SLOT_BIT_COUNT;
+        limit      := min(array.count - base_index - 1, BIT_ARRAY_SLOT_BIT_COUNT - 1);  // Don't go past the number of bits that are actually stored.
 
-find_last_set_or_cleared_bit :: (bit_array: *Bit_Array, $set_or_cleared: enum {SET; CLEARED;}) -> int {
-    if bit_array.slots.count == 0 {
-        return -1;
-    }
-    for < i : 0..bit_array.slots.count-1 {
-        #if set_or_cleared == .SET {
-            use_slot := bit_array.slots[i];
+        #if (flags & .REVERSE) != 0 {
+            bit := 1 << limit;
         } else {
-            use_slot := ~bit_array.slots[i];
+            bit := 1;
         }
-        if use_slot != 0 {
-            for < 0..BIT_ARRAY_SLOT_BIT_COUNT-1 {
-                if ((1 << it) & use_slot) != 0 {
-                    bit_index := i * BIT_ARRAY_SLOT_BIT_COUNT + it;
-                    if bit_index >= bit_array.count {
-                        continue;
-                    } else {
-                        return bit_index;
-                    }
-                }
+
+        for i: 0..limit {
+            #if set_or_cleared == .SET {
+                found_set_or_cleared_bit := (slot & bit) != 0;
+            } else { // CLEARED
+                found_set_or_cleared_bit := (slot & bit) == 0;
             }
-        }
+
+            #if (flags & .REVERSE) != 0 {
+                bit >>= 1;
+            } else {
+                bit <<= 1;
+            }
+
+            if found_set_or_cleared_bit {
+                // you already know whether it's set or cleared, so this is sort of performative,
+                // but I figured it makes sense to keep it this way for consistency with
+                // the base for expansion def
+                `it := #ifx set_or_cleared == .SET then 1 else 0;
+
+                #if (flags & .REVERSE) != 0 {
+                    `it_index := base_index + (limit - i);
+                } else {
+                    `it_index := base_index + i;
+                }
+
+                #insert (remove=#assert(false), break=break slot) body;
+            }
+        }            
     }
-    return -1;
 }
 
 // -----------------------------------------------------------------------------------
@@ -169,10 +185,17 @@ pool_reset :: (using pool: *Pool($T), deinit_item_proc: (*T) = null) {
 }
 
 pool_acquire :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavior := Pool_Resize_Behavior.DEFAULT) -> s64 {
-    index := ifx items.data == null then -1 else find_first_cleared_bit(*in_use);
+    index: s64 = -1;
+
+    if items.data != null then for :only_cleared_bits in_use {
+        index = it_index;
+        break;
+    }
+
     if index != -1 {
         set_bit(*in_use, index);
         if index > top then top = index;
+        items[index] = {};
         if init_item_proc then init_item_proc(*items[index]);
         return index;
     }
@@ -188,6 +211,7 @@ pool_acquire :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavi
     new_item_count := max(items.count * 2, 8);
     pool_set_capacity(pool, new_item_count);
     set_bit(*in_use, index);
+    items[index] = {};
     if init_item_proc then init_item_proc(*items[index]);
 
     return index;
@@ -199,7 +223,12 @@ pool_release :: (using pool: *Pool($T), i: s64, deinit_item_proc: (*T) = null, s
     clear_bit(*in_use, i);
 
     if i == top {
-        top = find_last_set_bit(*in_use);
+        top = -1;
+        for < :only_set_bits in_use {
+            top = it_index;
+            break;
+        }
+
         do_allow_shrink := ifx shrink_behavior == .DEFAULT 
             then allow_shrink_default 
             else shrink_behavior == .ALLOW;
@@ -236,12 +265,8 @@ pool_get :: inline (using pool: *Pool($T), i: s64) -> *T {
 
 pool_find :: (using pool: *Pool($T1), user_data: $T2, compare_proc: (*T1, T2) -> bool) -> s64 {
     i := -1;
-    while true {
-        pre_iter_i := i;
-        i = find_first_set_bit(*in_use, i+1);
-        if i == -1 then break;
-        if compare_proc(*items[i], user_data) then return i;
-        if i == pre_iter_i then i += 1;
+    for :only_set_bits in_use {
+        if compare_proc(*items[it_index], user_data) then return it_index;
     }
     return -1;
 }

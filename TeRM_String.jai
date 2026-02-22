@@ -121,10 +121,9 @@ to_upper :: inline (str: string) -> string {
 // for expansion. process a string per line. usage = 'for :per_line your_string { .. }'
 per_line :: (str: *string, body: Code, flags: For_Flags) #expand {
     // todo: could implement going over lines from last to first line
-    assert((flags & .REVERSE) == 0, "reverse per_line for loop not implemented");
     // getting a pointer to a local string instantiation doesn't do anything helpful.
     // you can modify the data and the count regardless
-    assert((flags & .POINTER) == 0, "pointer flag is not allowed in per_line for loop because it doesn't do anything helpful");
+    #assert(flags == 0, "reverse per_line for loop not implemented. pointer flag is not allowed in per_line for loop because it doesn't do anything helpful");
 
     line_count: s64;
     left, right: string;

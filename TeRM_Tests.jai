@@ -760,13 +760,8 @@ string_test :: () -> bool, string {
     }
     test_str := builder_to_string(*builder);
     
-    for < :per_line line : test_str {
-        log("[%] [%]", line, lines[it_index]);
+    for :per_line line : test_str {
         assert(line == lines[it_index]);
-        if line.count > 0 {
-            line.count -= 1;
-            log("shortened line: %", line);
-        }
     }
 
     return_test_success();

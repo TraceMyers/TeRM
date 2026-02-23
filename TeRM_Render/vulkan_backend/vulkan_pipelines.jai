@@ -135,20 +135,20 @@ create_device_space_mesh_pipeline :: () -> bool {
     rendering_create_info := VkPipelineRenderingCreateInfo.{
         colorAttachmentCount=1,
         pColorAttachmentFormats = *color_attachment_format,
-        // depthAttachmentFormat = DEPTH_FORMAT
+        depthAttachmentFormat = DEPTH_FORMAT
     };
 
-    // depth_stencil_info := VkPipelineDepthStencilStateCreateInfo.{
-    //     depthTestEnable = VK_TRUE,
-    //     depthWriteEnable = VK_TRUE,
-    //     depthCompareOp = DEPTH_COMPARE_OP,
-    //     depthBoundsTestEnable = VK_FALSE,
-    //     stencilTestEnable = VK_FALSE,
-    //     // front:                 VkStencilOpState;
-    //     // back:                  VkStencilOpState;
-    //     // minDepthBounds:        float;
-    //     // maxDepthBounds:        float;
-    // };
+    depth_stencil_info := VkPipelineDepthStencilStateCreateInfo.{
+        depthTestEnable = VK_TRUE,
+        depthWriteEnable = VK_TRUE,
+        depthCompareOp = .GREATER, // this renderer has 1=near, 0=far
+        depthBoundsTestEnable = VK_FALSE,
+        stencilTestEnable = VK_FALSE,
+        // front:                 VkStencilOpState;
+        // back:                  VkStencilOpState;
+        // minDepthBounds:        float;
+        // maxDepthBounds:        float;
+    };
 
     pipeline_create := VkGraphicsPipelineCreateInfo.{
         pNext = *rendering_create_info,
@@ -160,7 +160,7 @@ create_device_space_mesh_pipeline :: () -> bool {
         pViewportState = *viewport_create_info,
         pRasterizationState = *rasterizer_create_info,
         pMultisampleState = *multisample_create_info,
-        // pDepthStencilState = *depth_stencil_info,
+        pDepthStencilState = *depth_stencil_info,
         pColorBlendState = *color_blend_create,
         pDynamicState = *dynamic_state,
         layout = device_space_mesh_pipeline_layout,

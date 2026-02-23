@@ -47,12 +47,9 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
 
     camera: Camera_Info;
 
-    time := cast(float) seconds_since_init();
     scratch_vertices_copy := array_copy(scratch_vertices,,temp);
 
-    camera_position := Vector3.{cos(time), sin(time), 0} * 3;
-    // camera_position := Vector3.{cos(time), 0, sin(time)} * 3;
-    // camera_position := Vector3.{0, 0, 3};
+    camera_position := Vector3.{cos(scratch_time), sin(scratch_time), 0} * 3;
     camera_fore := normalize(-camera_position);
     camera_up := Vector3.{0,0,1};
     camera_orientation := make_quat(camera_fore, camera_up);

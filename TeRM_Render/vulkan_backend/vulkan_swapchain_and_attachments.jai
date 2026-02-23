@@ -177,7 +177,8 @@ choose_swapchain_present_mode :: (info: *Swapchain_Support_Info) -> VkPresentMod
     // FIFO          : on present, push image into the queue.
     // FIFO_RELAXED  : like FIFO, but if the program didn't submit an image for one whole vblank period, the next image replaces the image being drawn immediately.
     // MAILBOX       : on present, push image into the queue. if the queue is occupied by another image, move that image into the available pool and replace it with the new one.
-    return .FIFO_KHR, true; // vblank syncing with the most freedom and responsibility to manually frame-pace. probably better for low power devices than mailbox.
+    // return .FIFO_KHR, true; // vblank syncing with the most freedom and responsibility to manually frame-pace. probably better for low power devices than mailbox.
+    return .IMMEDIATE_KHR, true;
 }
 
 choose_swapchain_extent :: (using info: *Swapchain_Support_Info) -> VkExtent2D, bool {

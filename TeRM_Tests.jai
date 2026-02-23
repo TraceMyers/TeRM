@@ -9,7 +9,8 @@ run_all_tests :: () {
         serializer_test,
         gp_allocator_test,
         super_allocator_test,
-        string_test
+        string_test,
+        thread_test
     ]);
 }
 
@@ -750,7 +751,6 @@ super_allocator_test :: () -> bool, string {
 }
 
 string_test :: () -> bool, string {
-
     lines := string.[
         "",
         "hey there",
@@ -772,9 +772,88 @@ string_test :: () -> bool, string {
     return_test_success();
 }
 
+thread_test :: () -> bool, string {
+    // making a bunch of threads intentionally collide a bunch on a few rw locks and seeing
+    // if it causes lockups. not the most thorough test, but important.
+    job_finished_counter: s32;
+    data_items: [3]Job_Data_Item;
+    data_items[0].name = "Mark";
+    data_items[1].name = "Steve";
+    data_items[2].name = "Bill";
+    data_items[0].job_finished_counter = *job_finished_counter;
+    data_items[1].job_finished_counter = *job_finished_counter;
+    data_items[2].job_finished_counter = *job_finished_counter;
+
+    threads: Thread_Group;
+    threads.logging = false;
+    init(*threads, 6, thread_group_proc, true);
+
+    jobs: [job_count]Job;
+    for 0..job_count-1 {
+        rand_norm := random_get_zero_to_one_new();
+        rand_int := round(random_get_within_range(-0.4999, (cast(float) data_items.count) - 0.4999));
+        if rand_norm >= 0.9 {
+            jobs[it] = {.WRITE, *data_items[rand_int]};
+        } else {
+            jobs[it] = {.READ, *data_items[rand_int]};
+        }
+        add_work(*threads, *jobs[it]);
+    }
+
+    start(*threads);
+
+    while job_finished_counter < job_count {
+        sleep_milliseconds(10);
+    }
+
+    shutdown(*threads, 10_000);
+
+    return_test_success();
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 #scope_file // ---------------------------------------------------------------------------------------------- SCOPE_FILE
 // ---------------------------------------------------------------------------------------------------------------------
+
+job_count :: 10_000;
+#add_context thread_output_dump: []s32;
+#add_context thread_output_dump_counter: int;
+
+Job_Data_Item :: struct {
+    name: string;
+    age: int; // it's just a number
+    bytes: [..]u8;
+    lock: s32;
+    job_finished_counter : *s32;
+}
+
+Job :: struct {
+    rw_type: RW_Lock_Type;
+    data: *Job_Data_Item;
+}
+
+thread_group_proc :: (group: *Thread_Group, thread: *Thread, work: *void) -> Thread_Continue_Status {
+    if context.thread_output_dump.count == 0 {
+        array_resize(*context.thread_output_dump, job_count);
+    }
+    job := cast(*Job) work;
+    data := job.data;
+    if job.rw_type == .WRITE {
+        scope_read_write_lock(*data.lock, .WRITE);
+        data.age += 1;
+        array_add(*data.bytes, cast(u8) (data.age & 0xff));
+    } else {
+        scope_read_write_lock(*data.lock, .READ);
+        // we're not expecting ordered operations here. just trying to make sure the data is read.
+        context.thread_output_dump[context.thread_output_dump_counter] += xx data.age;
+        if data.bytes.count > 0 {
+            context.thread_output_dump[context.thread_output_dump_counter] += xx data.bytes[data.bytes.count-1];
+        }
+        context.thread_output_dump_counter += 1;
+    }
+    atomic_increment(data.job_finished_counter);
+    return .CONTINUE;
+}
 
 serializer_test_body :: (checksum: *Serializer_Checksum_Type = null, load_checksum := false) #expand {
     s := `ser;
@@ -875,6 +954,8 @@ serializer_test_body :: (checksum: *Serializer_Checksum_Type = null, load_checks
 #import "Math";
 #import "Random";
 #import "File";
+#import "Thread";
+#import "Atomics";
 
 #import "TeRM/TeRM_Allocation";
 #import "TeRM/TeRM_Array";
@@ -892,6 +973,7 @@ serializer_test_body :: (checksum: *Serializer_Checksum_Type = null, load_checks
 #import "TeRM/TeRM_Serialize";
 #import "TeRM/TeRM_Storage";
 #import "TeRM/TeRM_String";
+#import "TeRM/TeRM_Threads";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

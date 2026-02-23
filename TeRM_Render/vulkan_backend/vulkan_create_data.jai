@@ -77,7 +77,7 @@ transition_image :: (cmd: VkCommandBuffer, image: VkImage, old_layout: VkImageLa
 }
 
 begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
-
+    using context.renderer;
 // random_color4f :: inline (r_bounds := Vector2.{0.2, 0.8}, g_bounds := Vector2.{0.2, 0.8}, b_bounds := Vector2.{0.2, 0.8}, a := 1.0, random_state : *Random_State = null) -> Color4f {
     color_attachment := VkRenderingAttachmentInfo.{
         // sType:              VkStructureType = .RENDERING_ATTACHMENT_INFO;
@@ -92,13 +92,13 @@ begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
         clearValue = {color={_float32=COLOR4F_BRIGHT_PURPLE.array}}
     };
 
-    // depth_attachment := VkRenderingAttachmentInfo.{
-    //     imageView = depth_image.image_view,
-    //     imageLayout = .DEPTH_ATTACHMENT_OPTIMAL,
-    //     loadOp = .CLEAR,
-    //     storeOp = .STORE,
-    //     clearValue.depthStencil = .{DEPTH_CLEAR_VALUE, 0}
-    // };
+    depth_attachment := VkRenderingAttachmentInfo.{
+        imageView = depth_buffer.image_view,
+        imageLayout = .DEPTH_ATTACHMENT_OPTIMAL,
+        loadOp = .CLEAR,
+        storeOp = .STORE,
+        clearValue.depthStencil = .{0, 0}
+    };
 
     rendering_info := VkRenderingInfo.{
         // pNext:                *void;
@@ -111,7 +111,7 @@ begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
         // viewMask:             u32;
         colorAttachmentCount = 1,
         pColorAttachments = *color_attachment,
-        // pDepthAttachment = *depth_attachment,
+        pDepthAttachment = *depth_attachment,
         // pStencilAttachment:   *VkRenderingAttachmentInfo;
     };
 

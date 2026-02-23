@@ -48,6 +48,7 @@ Renderer :: struct {
         init_success: bool;
         
         // scratch space (or more scratchy than the rest)
+        scratch_time: float;
         simple_vertex_buffer: GPU_Buffer;
         scratch_vertices := Simple_Vertex.[
             // front face

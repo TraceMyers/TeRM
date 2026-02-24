@@ -46,20 +46,24 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     // relationship with the square distance
 
     camera: Camera_Info;
+    camera.projection = camera_projection;
 
     scratch_vertices_copy := array_copy(scratch_vertices,,temp);
 
-    camera_position := Vector3.{cos(scratch_time), sin(scratch_time), 0} * 3;
+    camera_position := Vector3.{cos(scratch_time), 0, sin(scratch_time)} * 3;
     camera_fore := normalize(-camera_position);
-    camera_up := Vector3.{0,0,1};
+    camera_up := Vector3.{0,1,0};
     camera_orientation := make_quat(camera_fore, camera_up);
 
-    // render_log("camera pos: %", camera_position);
-
-    // todo before moving on: solve the mystery of the depth sorting issue
+    if scratch_update_position {
+        ray_origin, ray_direction, success := get_camera_ray_passing_through_mouse_pointer_position(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, window);
+        // render_log("origin: %, direction: %, success: %", ray_origin, ray_direction, success);
+        scratch_position = ray_origin + ray_direction * 3;
+        scratch_update_position = false;
+    }
 
     for *scratch_vertices_copy {
-        it.position = transform_point_with_camera(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, it.position);
+        it.position = transform_to_normalized_device_coordinates(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, scratch_position + it.position);
     }
 
     triangle_view: [][3]Simple_Vertex;

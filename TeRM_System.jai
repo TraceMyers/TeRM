@@ -1,3 +1,4 @@
+
 is_window_open :: (window: Window_Type) -> bool {
     #if OS == .WINDOWS {
         return xx IsWindow(window);

@@ -1,6 +1,4 @@
 // basis is y forward, x right, z up
-// this file is still only halfway converted from being a part of a video game into being a module, so
-// it's not ready for use yet
 
 Camera_Projection :: enum {
     PERSPECTIVE;
@@ -16,27 +14,6 @@ Camera_Info :: struct {
     far_plane := 1_000.0;
 }
 
-make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaternion) -> Matrix4 {
-    UP    :: Vector3.{0,0,1};
-    RIGHT :: Vector3.{1,0,0};
-    FORE  :: Vector3.{0,1,0};
-    return make_camera_view_matrix(
-        camera_center,
-        rotate(UP,    camera_orientation),
-        rotate(RIGHT, camera_orientation),
-        rotate(FORE,  camera_orientation)
-    );
-}
-
-make_camera_view_matrix :: (camera_center: Vector3, camera_up: Vector3, camera_right: Vector3, camera_fore: Vector3) -> Matrix4 {
-    // making inverse of transform that tr
-    // we can get this effect by just passing the relative normalized axes of the camera
-    // world (x right, y forward, z up) -> camera (x right, y forward, z up)
-    rotation := make_matrix_from_rows(camera_right, camera_fore, camera_up);
-    // 'moving the world' into place by removing the camera's position
-    return translate(rotation, -camera_center);
-}
-
 get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which := enum { X_OVER_Y; Y_OVER_X; }.X_OVER_Y) -> float {
     if which == .X_OVER_Y {
         return ifx aspect_ratio == 0.0 then viewport.x / viewport.y else aspect_ratio;
@@ -45,131 +22,120 @@ get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which 
     }
 }
 
-// for learning. tired of not understanding projection intuitively.
-// so, just doing things in the most intuitive way for me, then linking it to matrices
-transform_point_with_camera :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, point: Vector3) -> Vector3 {
-
-    // view
-
-    relative_position := point - camera_center;
-
-    camera_view_matrix := make_camera_view_matrix(camera_center, camera_orientation);
-    camera_forward     := Vector3.{camera_view_matrix._21, camera_view_matrix._22, camera_view_matrix._23};
-    camera_right       := Vector3.{camera_view_matrix._11, camera_view_matrix._12, camera_view_matrix._13};
-    camera_up          := Vector3.{camera_view_matrix._31, camera_view_matrix._32, camera_view_matrix._33};
-
-    based_position := Vector3.{
-        dot(relative_position, camera_right),
-        dot(relative_position, camera_forward),
-        dot(relative_position, camera_up)
-    };
-
-    // projection
-
-    relative_distance := length(based_position);
-    relative_direction := based_position / relative_distance;
-
-    phi_yz := PI / 180 * perspective_vertical_fov * 0.5;
-    aspect := get_camera_aspect_ratio(camera, viewport);
-    phi_xy := phi_yz * aspect;
-
-    theta_xy := PI/2 - acos(relative_direction.x);
-    theta_yz := PI/2 - acos(relative_direction.z);
-
-    norm_signed_distance_x := theta_xy / phi_xy;
-    norm_signed_distance_z := theta_yz / phi_yz;
-
-    near_to_far_difference := far_plane - near_plane;
-    near_to_projection_difference := based_position.y - near_plane;
-
-    // using reverse depth to put more precision in the distance, near 0
-    // subtraction before division to preserve precision before compressing into [0,1]
-    reverse_depth := (near_to_far_difference - near_to_projection_difference) / near_to_far_difference;
-    return Vector3.{norm_signed_distance_x, norm_signed_distance_z, reverse_depth};
+make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaternion) -> Matrix4 {
+    // vpos = R * (p - C); (or, rotate the point's position relative to the camera)
+    // rotated = R * p
+    inverse_camera_orientation :=  Quaternion.{xyz=-camera_orientation.xyz, w=camera_orientation.w};
+    view := rotation_matrix(Matrix4, inverse_camera_orientation);
+    // x, y, z -> x, z, y, because y is forward, and the depth axis is axis[2] here
+    view.v[1], view.v[2] = view.v[2], view.v[1];
+    // vpos = R * p - R * C (to translate, the -C has to be rotated as well)
+    translate(*view, -camera_center);
+    return view;
 }
 
-// make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) -> Matrix4 {
-//     aspect := get_camera_aspect_ratio(camera, viewport);
-//     if camera.projection == .ORTHOGRAPHIC {
-//         width := orthographic_scale * aspect;
-//         height := orthographic_scale;
-//         return orthographic_projection_matrix(
-//             -width, width, -height, height, near_plane, far_plane, true
-//         );
-//     } else { // PERSPECTIVE
-//         fov_radians := perspective_vertical_fov * (PI / 180.0);
-//         #if PROJECTION_REVERSE_Z {
-//             return make_reverse_z_projection_matrix(fov_radians, aspect, NEAR_PLANE, FAR_PLANE);
-//         } else {
-//             return make_projection_matrix(fov_radians, aspect, NEAR_PLANE, FAR_PLANE, 0, 0, true);
-//         }
-//     }
-// }
+make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) -> Matrix4 {
+    aspect := get_camera_aspect_ratio(camera, viewport);
+    near_to_far_difference := far_plane - near_plane;
+    near_ratio := near_plane / near_to_far_difference;
 
-// view_projection_matrix :: (camera: *Entity, viewport: Vector2) -> Matrix4 {
-//     assert(is_set(*camera.flags, .USES_CAMERA));
-//     view := view_matrix(camera);
-//     proj := projection_matrix(camera, viewport);
-//     return proj * view;
-// }
+    if camera.projection == .PERSPECTIVE {
+        half_vertical_angle_radians := PI / 180 * perspective_vertical_fov * 0.5;
+        cot_y := 1 / tan(half_vertical_angle_radians);
+        cot_x := cot_y / aspect;
 
-// get_mouse_cursor_ray :: (camera: *Entity, viewport: Vector2) -> Ray3, success: bool {
-//     assert(is_set(*camera.flags, .USES_CAMERA));
-//     theta := (camera.perspective.vertical_fov * 0.5) * (PI / 180.0);
-//     half_y_dist := NEAR_PLANE * tan(theta); // tan(theta) = opp / adj
-//     clip_rect_height := half_y_dist * 2.0;
-//     clip_rect_width := get_aspect_ratio(camera, viewport) * clip_rect_height;
+        perspective := Matrix4.{
+            // scale
+            _11 = cot_x,
+            _22 = cot_y,
+            _33 = -near_ratio,
+            // translation post-scale (removing near plane distance)
+            _34 = far_plane * near_ratio, 
+            _43 = 1
+        };
 
-//     p: Win32.POINT;
-//     Win32.GetCursorPos(*p);
-//     success := Win32.ScreenToClient(window, *p) != 0;
-//     cursor_position: Vector2i;
-//     cursor_norm_position: Vector2;
-//     if success {
-//         cursor_position.x = p.x;
-//         cursor_position.y = p.y;
-//         cursor_norm_position.x = p.x.(float) / viewport.x.(float);
-//         cursor_norm_position.y = p.y.(float) / viewport.y.(float);
-//     } else {
-//         return .{}, false;
-//     }
+        return perspective;
+    } else {
+        half_width := orthographic_scale * aspect;
+        half_height := orthographic_scale;
 
-//     norm_clip_rect_center := Vector2.{0.5,0.5};
-//     norm_center_diff := cursor_norm_position - norm_clip_rect_center;
-//     world_clip_rect_diff := norm_center_diff * Vector2.{clip_rect_width, -clip_rect_height};
+        orthographic := Matrix4.{
+            // scale
+            _11 = 1 / half_width,
+            _22 = 1 / half_height,
+            _33 = -near_ratio,
+            // translation post-scale (removing near plane distance)
+            _34 = far_plane * near_ratio, 
+            _44 = 1
+        };
 
-//     world_clip_rect_center := camera.center + camera.axes.fore * NEAR_PLANE;
-//     world_clip_rect_cursor_pos := world_clip_rect_center + world_clip_rect_diff.x * camera.axes.right + world_clip_rect_diff.y * camera.axes.up;
-//     cursor_raycast_dir := normalize(world_clip_rect_cursor_pos - camera.center);
+        return orthographic;
+    }
+}
 
-//     return .{look_origin(camera), cursor_raycast_dir}, true;
-// }
+// useful for experimentation at early stages (where I am atm), or possibly for debug?
+transform_to_normalized_device_coordinates :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, point: Vector3) -> Vector3 {
+    view_mat := make_camera_view_matrix(camera_center, camera_orientation);
+    projection_mat := make_camera_projection_matrix(camera, viewport);
+    clip_coords := projection_mat * view_mat * Vector4.{xyz=point,w=1};
+    ndc := clip_coords.xyz / clip_coords.w;
+    return ndc;
+}
 
-// copied from make_projection_matrix()
-// $todo: actually probably don't need this...? I think all it actually does is assume 0-to-1 and flip z_near and z_far.
-// make_reverse_z_projection_matrix :: (fov_vertical: float, aspect_ratio_horizontal_over_vertical: float, z_near: float, z_far: float, x_offset:=0.0, y_offset:=0.0) -> Matrix4 {
-//     result := Matrix4_Identity;
+// returns the ray passing through the camera's near plane at the location of the 
+// mouse cursor. origin is camera center if projection is perspective. if orthographic, the origin
+// is the point on the camera plane at the mouse cursor location.
+get_camera_ray_passing_through_mouse_pointer_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window: Window_Type) -> origin: Vector3, direction: Vector3, success: bool {
+    cursor_pos_x, cursor_pos_y, success := get_mouse_pointer_position(window, false);
+    if success {
+        origin, direction := get_camera_ray_passing_through_window_position(camera, camera_center, camera_orientation, viewport, {xx cursor_pos_x, xx cursor_pos_y}, window);
+        return origin, direction, true;
+    } else {
+        return {}, {}, false;
+    }
+}
 
-//     tan_theta := tan(fov_vertical * 0.5);
-//     cot_theta := 1 / tan_theta;
+// returns the ray passing through the camera's near plane at the given window position.
+// origin is camera center if projection is perspective. if orthographic, the origin
+// is the point on the camera plane at the given window position.
+get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window_pos: Vector2, window: Window_Type) -> origin: Vector3, direction: Vector3 {
+    norm_position := window_pos / viewport;
+    norm_clip_rect_center := Vector2.{0.5,0.5};
+    norm_center_diff := norm_position - norm_clip_rect_center;
 
-//     f := z_far;
-//     n := z_near;
-//     denom := 1 / (n - f);
+    WORLD_AXIS_FORE  :: Vector3.{0, 1, 0};
+    WORLD_AXIS_RIGHT :: Vector3.{1, 0, 0};
+    camera_axis_fore := rotate(WORLD_AXIS_FORE, camera_orientation);
+    camera_axis_right := rotate(WORLD_AXIS_RIGHT, camera_orientation);
+    camera_axis_up := normalize(cross(camera_axis_right, camera_axis_fore));
 
-//     result._11 = cot_theta / aspect_ratio_horizontal_over_vertical;
-//     result._22 = cot_theta;
-//     result._33 = n * denom;
-//     result._43 = 1;
-//     result._34 = (f * n) * denom;
-//     result._44 = 0;
+    if camera.projection == .PERSPECTIVE {
+        theta := (perspective_vertical_fov * 0.5) * (PI / 180.0);
+        half_y_dist := near_plane * tan(theta); // tan(theta) = opp / adj
+        clip_rect_height := half_y_dist * 2.0;
+        clip_rect_width := get_camera_aspect_ratio(camera, viewport) * clip_rect_height;
 
-//     result._13 = x_offset; // w;
-//     result._23 = y_offset; // h;
+        world_clip_rect_diff := norm_center_diff * Vector2.{clip_rect_width, clip_rect_height};
 
-//     return result;
-// }
+        world_clip_rect_center := camera_center + camera_axis_fore * near_plane;
+        world_clip_rect_cursor_pos := world_clip_rect_center + world_clip_rect_diff.x * camera_axis_right + world_clip_rect_diff.y * camera_axis_up;
+        ray_direction := normalize(world_clip_rect_cursor_pos - camera_center);
+
+        return camera_center, ray_direction;
+    } else {
+        aspect := get_camera_aspect_ratio(camera, viewport);
+        half_width := orthographic_scale * aspect;
+        half_height := orthographic_scale;
+
+        world_clip_rect_diff := norm_center_diff * Vector2.{2*half_width, 2*half_height};   
+
+        origin := camera_center + world_clip_rect_diff.x * camera_axis_right + world_clip_rect_diff.y * camera_axis_up;
+        return origin, camera_axis_fore;
+    }
+}
 
 #scope_file
 
 #import "Math";
+#import "Window_Creation";
+#import "Basic";

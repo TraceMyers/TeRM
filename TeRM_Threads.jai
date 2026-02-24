@@ -27,8 +27,8 @@ scope_read_write_lock :: (lock: *s32, type: RW_Lock_Type) #expand {
 
 read_write_lock :: (lock: *s32, type: RW_Lock_Type) {
     // think of positive numbers as 'read' territory, and -100,000 as 'write'
-    // -100,001  -100,000   -99,999  ...  -2    -1     0     1     2      3      4   ...
-    //               w                                 |     r     r      r      r
+    // -100,001  -100,000   -99,999  ...  -2    -1     0     1      2      3      4   ...
+    //               w                                 |     r      r      r      r
     // if a thread that wants to read adds 1 to the lock and gets back a value > 0, read ok
     // if a thread that wants to write subtracts 100,000 and gets back a value = -100,000, write ok
     // using +1 and -100,000 to make it impossible for +1's to push the lock above 0 if writing.

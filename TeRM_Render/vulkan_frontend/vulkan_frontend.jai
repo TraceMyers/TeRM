@@ -48,6 +48,9 @@ Renderer :: struct {
         init_success: bool;
         
         // scratch space (or more scratchy than the rest)
+        camera_projection: Camera_Projection;
+        scratch_position: Vector3;
+        scratch_update_position: bool;
         scratch_time: float;
         simple_vertex_buffer: GPU_Buffer;
         scratch_vertices := Simple_Vertex.[
@@ -242,7 +245,7 @@ Simple_Vertex :: struct {
 #import "TeRM/TeRM_Storage";
 #import "TeRM/TeRM_Color";
 #import "TeRM/TeRM_File";
-#import "TeRM/TeRM_Window";
+#import "TeRM/TeRM_System";
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_Render/vulkan-jai";
 #import "TeRM/TeRM_Camera";

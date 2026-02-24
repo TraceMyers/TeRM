@@ -11,7 +11,7 @@ Camera_Info :: struct {
     perspective_vertical_fov := 100.0; // degrees
     aspect_ratio := 0.0; // 0 for default
     near_plane := 1.0;
-    far_plane := 1_000.0;
+    far_plane := 100_000.0;
 }
 
 get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which := enum { X_OVER_Y; Y_OVER_X; }.X_OVER_Y) -> float {

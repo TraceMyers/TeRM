@@ -39,12 +39,6 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     // clear render target, among other things
     begin_rendering(cmd, render_target_view);
 
-    // model - local transformations 
-    // view - adding camera position/rotation/scale transformations
-    // projection - closer things are larger, or in other words, all points are scaled toward
-    // the camera center line, I think in a log_2 relationship with distance, or in a linear
-    // relationship with the square distance
-
     camera: Camera_Info;
     camera.projection = camera_projection;
 

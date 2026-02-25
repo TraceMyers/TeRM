@@ -33,9 +33,6 @@ Serializer :: struct($alloc_mode: Serializer_Alloc_Mode = .STATIC, $align_mode: 
     parameter_align : u8 = 1; // must be power of 2 if used
     rw_mode: Rw_Mode;
     pad_for_checksum := false;
-#overlay(memory) // for debug
-    memory_count: s64; 
-    memory_data: *u8;
     reverse_byte_order: bool;
 }
 
@@ -53,15 +50,20 @@ Serializer_Align_Mode :: enum u8 {
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :Init
 
-initialize :: (using buffer: *Serializer, use_checksum := false, reverse_primitive_byte_order := false) {
-    head = 0;
-    rw_mode = .WRITE;
+// avoid calling this repeatedly unless you're certain it's the right call
+initialize :: (using buffer: *Serializer, init_rw_mode: Rw_Mode, static_memory := "", use_checksum := false, reverse_primitive_byte_order := false) {
+    rw_mode = init_rw_mode;
     pad_for_checksum = use_checksum;
     reverse_byte_order = reverse_primitive_byte_order;
+    if static_memory != "" {
+        assert(alloc_mode == .STATIC);
+        memory = static_memory;
+    }
+    reset_head_with_mode(buffer, init_rw_mode);
 }
 
-// should be called after pad_for_checksum is set, if it is being set
-set_rw_mode :: (using buffer: *Serializer, m: Rw_Mode) {
+// call any time you want to reset the head and/or switch mode
+reset_head_with_mode :: (using buffer: *Serializer, m: Rw_Mode) {
     rw_mode = m;
     if pad_for_checksum {
         head = SERIALIZER_CHECKSUM_SIZE;
@@ -111,144 +113,166 @@ read_out :: inline (using buffer: *Serializer, $T: Type) -> T
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------- :Primitives
 
-serialize :: (using buffer: *Serializer, item: *$T) 
+serialize :: (using buffer: *Serializer, item: *$T) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     if rw_mode == .WRITE {
-        serialize_primitive(buffer, item, .WRITE);
+        return serialize_primitive(buffer, item, .WRITE);
     } else {
-        serialize_primitive(buffer, item, .READ);
+        return serialize_primitive(buffer, item, .READ);
     }
 }
 
-serialize_primitive :: (using buffer: *Serializer, item: *$T, $mode: Rw_Mode) 
+serialize_primitive :: (using buffer: *Serializer, item: *$T, $mode: Rw_Mode) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     validate_read_write();
-    align_head_up_for_type(buffer, T);
+    if !align_head_up_for_type(buffer, T) {
+        return false;
+    }
     new_head := head + size_of(T);
-    check_new_head(buffer, new_head);
+    if !check_new_head(buffer, new_head) {
+        return false;
+    }
     
     #if mode == .WRITE {
-        write_primitive(buffer, item);
+        internal_write_primitive(buffer, item);
     } else {
-        read_primitive(buffer, item);
+        internal_read_primitive(buffer, item);
     }
 
     head = new_head;
+    return true;
 }
 
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------- :Dynamic Arrays
 
-serialize :: (using buffer: *Serializer, array: *[..]$T) 
+serialize :: (using buffer: *Serializer, array: *[..]$T) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     if rw_mode == .WRITE {
-        serialize_dynamic_array(buffer, array, .WRITE);
+        return serialize_dynamic_array(buffer, array, .WRITE);
     } else {
-        serialize_dynamic_array(buffer, array, .READ);
+        return serialize_dynamic_array(buffer, array, .READ);
     }
 }
 
-serialize :: (using buffer: *Serializer, array: *[..]$T, array_count: s64) 
+serialize :: (using buffer: *Serializer, array: *[..]$T, array_count: s64) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     if rw_mode == .WRITE {
-        serialize_dynamic_array_data(buffer, array, array_count, .WRITE);
+        return serialize_dynamic_array_data(buffer, array, array_count, .WRITE);
     } else {
-        serialize_dynamic_array_data(buffer, array, array_count, .READ);
+        return serialize_dynamic_array_data(buffer, array, array_count, .READ);
     }
 }
 
-serialize_dynamic_array :: (using buffer: *Serializer, array: *[..]$T, $mode: Rw_Mode)
+serialize_dynamic_array :: (using buffer: *Serializer, array: *[..]$T, $mode: Rw_Mode) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     array_count: s64 = xx array.count;
-    serialize_primitive(buffer, *array_count, mode);
-    serialize_dynamic_array_data(buffer, array, array_count, mode);
+    if !serialize_primitive(buffer, *array_count, mode) then return false;
+    return serialize_dynamic_array_data(buffer, array, array_count, mode);
 }
 
-serialize_dynamic_array_data :: (using buffer: *Serializer, array: *[..]$T, array_count: s64, $mode: Rw_Mode)
+serialize_dynamic_array_data :: (using buffer: *Serializer, array: *[..]$T, array_count: s64, $mode: Rw_Mode) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     validate_read_write();
+
     if array_count == 0 {
-        return;
+        return true;
     }
-    align_head_up_for_type(buffer, T);
+
+    if !align_head_up_for_type(buffer, T) {
+        return false;
+    }
+
     array_size := size_of(T) * array_count;
     new_head := head + array_size;
-    check_new_head(buffer, new_head);
+
+    if !check_new_head(buffer, new_head) {
+        return false;
+    }
+
     #if mode == .WRITE {
         memcpy(memory.data + head, array.data, array_size);
     } else {
         if array.data == null {
             array_resize(array, array_count, false);
-        } else {
-            assert(array.count >= array_count);
+        } else if array.count < array_count {
+            return false;
         }
         memcpy(array.data, memory.data + head, array_size);
     }
+
     head = new_head;
+    return true;
 }
 
 // -----------------------------------------------------------------------------------
 // --------------------------------------------------------------------------- :Arrays
 
-serialize :: (using buffer: *Serializer, array: *[]$T) 
+serialize :: (using buffer: *Serializer, array: *[]$T) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     if rw_mode == .WRITE {
-        serialize_array(buffer, array, .WRITE);
+        return serialize_array(buffer, array, .WRITE);
     } else {
-        serialize_array(buffer, array, .READ);
+        return serialize_array(buffer, array, .READ);
     }
 }
 
-serialize :: (using buffer: *Serializer, array: *[]$T, array_count: s64) 
+serialize :: (using buffer: *Serializer, array: *[]$T, array_count: s64) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     if rw_mode == .WRITE {
-        serialize_array_data(buffer, array, array_count, .WRITE);
+        return serialize_array_data(buffer, array, array_count, .WRITE);
     } else {
-        serialize_array_data(buffer, array, array_count, .READ);
+        return serialize_array_data(buffer, array, array_count, .READ);
     }
 }
 
-serialize_array :: (using buffer: *Serializer, array: *[]$T, $mode: Rw_Mode)
+serialize_array :: (using buffer: *Serializer, array: *[]$T, $mode: Rw_Mode) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     array_count: s64 = xx array.count;
-    serialize_primitive(buffer, *array_count, mode);
-    serialize_array_data(buffer, array, array_count, mode);
+    if !serialize_primitive(buffer, *array_count, mode) then return false;
+    return serialize_array_data(buffer, array, array_count, mode);
 }
 
-serialize_array_data :: (using buffer: *Serializer, array: *[]$T, array_count: s64, $mode: Rw_Mode)
+serialize_array_data :: (using buffer: *Serializer, array: *[]$T, array_count: s64, $mode: Rw_Mode) -> bool
 #modify {
     return is_serial_primitive(T);
 } {
     validate_read_write();
+
     if array_count == 0 {
-        return;
+        return true;
     }
-    align_head_up_for_type(buffer, T);
+
+    if !align_head_up_for_type(buffer, T) {
+        return false;
+    }
+
     array_size := size_of(T) * array_count;
     new_head := head + array_size;
-    check_new_head(buffer, new_head);
+
+    if !check_new_head(buffer, new_head) {
+        return false;
+    }
+
     #if mode == .WRITE {
-        #if alloc_mode != .DYNAMIC {
-            assert(memory.count >= new_head);
-        }
         memcpy(memory.data + head, array.data, array_size);
     } else {
         if array.data == null {
@@ -256,53 +280,60 @@ serialize_array_data :: (using buffer: *Serializer, array: *[]$T, array_count: s
             array.data = xx alloc(size_of(T) * array_count,, use_allocator);
             array.count = array_count;
         }
-        assert(array.count >= array_count);
+        if array.count < array_count {
+            return false;
+        }
         memcpy(array.data, memory.data + head, array_size);
     }
+
     head = new_head;
+    return true;
 }
 
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------------------- :Strings
 
-serialize :: (using buffer: *Serializer, str: *string) {
+serialize :: (using buffer: *Serializer, str: *string) -> bool {
     if rw_mode == .WRITE {
-        serialize_string(buffer, str, .WRITE);
+        return serialize_string(buffer, str, .WRITE);
     } else {
-        serialize_string(buffer, str, .READ);
+        return serialize_string(buffer, str, .READ);
     }
 }
 
-serialize_string :: (using buffer: *Serializer, str: *string, $mode: Rw_Mode) {
+serialize_string :: (using buffer: *Serializer, str: *string, $mode: Rw_Mode) -> bool {
     assert(rw_mode == mode);
     array: []u8;
     #if mode == .WRITE {
         array.data = str.data;
         array.count = str.count;
-        serialize_array(buffer, *array, .WRITE);
+        return serialize_array(buffer, *array, .WRITE);
     } else {
-        serialize_array(buffer, *array, .READ);
-        str.data = array.data;
-        str.count = array.count;
+        success := serialize_array(buffer, *array, .READ);
+        if success {
+            str.data = array.data;
+            str.count = array.count;
+        }
+        return success;
     }
 }
 
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------- :Bytes
 
-serialize :: (using buffer: *Serializer, data: *u8, count: s64) {
+serialize :: (using buffer: *Serializer, data: *u8, count: s64) -> bool {
     if rw_mode == .WRITE {
-        serialize_bytes(buffer, data, xx count, .WRITE);
+        return serialize_bytes(buffer, data, xx count, .WRITE);
     } else {
-        serialize_bytes(buffer, data, xx count, .READ);
+        return serialize_bytes(buffer, data, xx count, .READ);
     }
 }
 
-serialize_bytes :: inline (using buffer: *Serializer, data: *u8, count: s64, $mode: Rw_Mode) {
+serialize_bytes :: inline (using buffer: *Serializer, data: *u8, count: s64, $mode: Rw_Mode) -> bool {
     array: []u8 = ---;
     array.count = xx count;
     array.data = data;
-    serialize_array_data(buffer, *array, count, mode);
+    return serialize_array_data(buffer, *array, count, mode);
 }
 
 // -----------------------------------------------------------------------------------
@@ -360,18 +391,19 @@ calculate_checksum :: (using buffer: *Serializer, out: *u32) {
     calc_checksum_impl(bufstr, out,,temp);
 }
 
-align_head_up :: (using buffer: *Serializer, align: u8) {
+align_head_up :: (using buffer: *Serializer, align: u8) -> bool {
+    if align == 1 then return true;
     new_head := ceil_to_pow2_multiple(head, align);
     diff := new_head - head;
     if diff > 0 {
-        advance_head(buffer, diff);
-    } else assert(diff == 0);
+        return advance_head(buffer, diff);
+    } else return true;
 }
 
-check_new_head :: (using buffer: *Serializer, new_head: s64) {
+check_new_head :: (using buffer: *Serializer, new_head: s64) -> bool {
     // ---
 
-    realloc :: (desired_capacity: s64, memory: *string) {
+    realloc_mem :: (desired_capacity: s64, memory: *string) {
         new_memory := alloc_string(desired_capacity);
         memcpy(new_memory.data, memory.data, memory.count);
         free(memory.data);
@@ -382,38 +414,30 @@ check_new_head :: (using buffer: *Serializer, new_head: s64) {
 
     assert(new_head >= 0);
     #if alloc_mode == .STATIC {
-        assert(new_head <= memory.count, "old head: %, new head: %, memory.count: %", head, new_head, memory.count);
+        return new_head <= memory.count;
     } else { // DYNAMIC
         desired_capacity := max(ceil_to_pow2_multiple(new_head, 2), 256);
         if memory.count < desired_capacity {
             if allocator.proc == null {
                 allocator = context.default_allocator;
             }
-            realloc(desired_capacity, *memory,, allocator);
+            realloc_mem(desired_capacity, *memory,, allocator);
         }
+        return true;
     }
 }
 
-advance_head :: inline (using buffer: *Serializer, by_count: s64) {
+advance_head :: inline (using buffer: *Serializer, by_count: s64) -> bool {
+    assert(by_count >= 0);
     new_head := head + by_count;
-    assert(by_count > 0);
-    assert(head >= 0 && head <= memory.count);
-    assert(new_head <= memory.count);
-    head = new_head;
+    if new_head <= memory.count {
+        head = new_head;
+        return true;
+    } else return false;
 }
 
-align_head_up_for_type :: (using buffer: *Serializer, $T: Type) {
-    align_head_up(buffer, serial_primitive_alignment(buffer, T));
-}
-
-align_head_up_for_array :: (using buffer: *Serializer, $T: Type) {
-    #if #complete align_mode == {
-    case .PRIMITIVE;
-        align_head_up(buffer, 4);
-    case .PARAMETER;
-        align_head_up(buffer, parameter_align);
-    case .BYTE;
-    }
+align_head_up_for_type :: inline (using buffer: *Serializer, $T: Type) -> bool {
+    return align_head_up(buffer, serial_primitive_alignment(buffer, T));
 }
 
 // -----------------------------------------------------------------------------------
@@ -512,7 +536,7 @@ reverse_bytes :: (bytes_out: *u8, bytes_in: *u8, size: s64) {
 
 #scope_file 
 
-write_primitive :: inline (using buffer: *Serializer, primitive: *$T) {
+internal_write_primitive :: inline (using buffer: *Serializer, primitive: *$T) {
     if reverse_byte_order {
         #if #run T.(*Type_Info).type == .STRUCT {
             copy := primitive.*;
@@ -533,7 +557,7 @@ write_primitive :: inline (using buffer: *Serializer, primitive: *$T) {
     }
 }
 
-read_primitive :: inline (using buffer: *Serializer, primitive: *$T) {
+internal_read_primitive :: inline (using buffer: *Serializer, primitive: *$T) {
     if reverse_byte_order {
         #if #run T.(*Type_Info).type == .STRUCT {
             memcpy(primitive, memory.data + head, size_of(T));

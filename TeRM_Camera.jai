@@ -38,9 +38,10 @@ make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaterni
 make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) -> Matrix4 {
     aspect := get_camera_aspect_ratio(camera, viewport);
     inv_plane_to_plane := 1 / (far_plane - near_plane);
+    half_vertical_angle_radians := PI / 180 * perspective_vertical_fov * 0.5;
 
-    if camera.projection == .PERSPECTIVE {
-        half_vertical_angle_radians := PI / 180 * perspective_vertical_fov * 0.5;
+    if #complete camera.projection == {
+    case .PERSPECTIVE;
         inv_far_plane_half_height := 1 / tan(half_vertical_angle_radians);
         inv_far_plane_half_width := inv_far_plane_half_height / aspect;
 
@@ -49,9 +50,9 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) 
             _11 = inv_far_plane_half_width,
             // scale camera relative vertical dist by the far plane half height
             _22 = inv_far_plane_half_height,
-            // normalized depth = fore dist * (-1 / near far dist) ...
+            // normalized depth (1=near, 0=far) = fore dist * (-1 / near far dist) ...
             _33 = -inv_plane_to_plane,
-            // ... + 1 + (near dist / near far dist)
+            // ... + far dist / near far dist
             _34 = far_plane * inv_plane_to_plane,
             // w = z, for ndc normalization using the depth coord I think
             _43 = 1,
@@ -59,7 +60,7 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) 
         };
 
         return perspective;
-    } else { // ORTHOGRAPHIC
+    case .ORTHOGRAPHIC;
         half_width := orthographic_scale * aspect;
         half_height := orthographic_scale;
 

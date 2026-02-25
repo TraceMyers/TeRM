@@ -857,8 +857,7 @@ thread_group_proc :: (group: *Thread_Group, thread: *Thread, work: *void) -> Thr
 
 serializer_test_body :: (checksum: *Serializer_Checksum_Type = null, load_checksum := false) #expand {
     s := `ser;
-    initialize(*s, checksum != null);
-    set_rw_mode(*s, .WRITE);
+    initialize(*s, .WRITE, use_checksum=checksum != null);
 
     t: Test_Struct;
     memset(*t, 0, size_of(Test_Struct));
@@ -912,7 +911,7 @@ serializer_test_body :: (checksum: *Serializer_Checksum_Type = null, load_checks
     rstr: string;
     rarray: []u16;
 
-    set_rw_mode(*s, .READ);
+    reset_head_with_mode(*s, .READ);
 
     serialize(*s, *rt1.a);
     test_condition(head_1 == s.head);

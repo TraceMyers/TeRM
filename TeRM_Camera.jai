@@ -49,9 +49,9 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) 
             _11 = inv_far_plane_half_width,
             // scale camera relative vertical dist by the far plane half height
             _22 = inv_far_plane_half_height,
-            // normalized depth = fore dist * (-1/(near far dist)) ...
+            // normalized depth = fore dist * (-1 / near far dist) ...
             _33 = -inv_plane_to_plane,
-            // ... + (1 + near dist / (near far dist))
+            // ... + 1 + (near dist / near far dist)
             _34 = far_plane * inv_plane_to_plane,
             // w = z, for ndc normalization using the depth coord I think
             _43 = 1,

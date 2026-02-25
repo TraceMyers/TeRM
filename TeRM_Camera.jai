@@ -45,7 +45,9 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) 
         inv_far_plane_half_width := inv_far_plane_half_height / aspect;
 
         perspective := Matrix4.{
+            // scale camera relative horizontal dist by the far plane half width
             _11 = inv_far_plane_half_width,
+            // scale camera relative vertical dist by the far plane half height
             _22 = inv_far_plane_half_height,
             // normalized depth = fore dist * (-1/(near far dist)) ...
             _33 = -inv_plane_to_plane,

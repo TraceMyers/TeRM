@@ -10,7 +10,7 @@ Camera_Info :: struct {
     orthographic_scale := 1.0;
     perspective_vertical_fov := 100.0; // degrees
     aspect_ratio := 0.0; // 0 for default
-    near_plane := 1.0;
+    near_plane := 0.1;
     far_plane := 100_000.0;
 }
 
@@ -25,37 +25,39 @@ get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which 
 make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaternion) -> Matrix4 {
     // vpos = R * (p - C); (or, rotate the point's position relative to the camera)
     // rotated = R * p
-    inverse_camera_orientation :=  Quaternion.{xyz=-camera_orientation.xyz, w=camera_orientation.w};
-    view := rotation_matrix(Matrix4, inverse_camera_orientation);
-    // x, y, z -> x, z, y, because y is forward, and the depth axis is axis[2] here
-    view.v[1], view.v[2] = view.v[2], view.v[1];
+    q := normalize(camera_orientation);
+    inverse_orientation :=  Quaternion.{xyz=-q.xyz, w=q.w};
+    view := rotation_matrix(Matrix4, inverse_orientation);
     // vpos = R * p - R * C (to translate, the -C has to be rotated as well)
     translate(*view, -camera_center);
+    // swap y and z, because y is forward and row 3 (index 2) is the depth channel
+    view.v[1], view.v[2] = view.v[2], view.v[1];
     return view;
 }
 
 make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) -> Matrix4 {
     aspect := get_camera_aspect_ratio(camera, viewport);
-    near_to_far_difference := far_plane - near_plane;
-    near_ratio := near_plane / near_to_far_difference;
+    inv_plane_to_plane := 1 / (far_plane - near_plane);
 
     if camera.projection == .PERSPECTIVE {
         half_vertical_angle_radians := PI / 180 * perspective_vertical_fov * 0.5;
-        cot_y := 1 / tan(half_vertical_angle_radians);
-        cot_x := cot_y / aspect;
+        inv_far_plane_half_height := 1 / tan(half_vertical_angle_radians);
+        inv_far_plane_half_width := inv_far_plane_half_height / aspect;
 
         perspective := Matrix4.{
-            // scale
-            _11 = cot_x,
-            _22 = cot_y,
-            _33 = -near_ratio,
-            // translation post-scale (removing near plane distance)
-            _34 = far_plane * near_ratio, 
-            _43 = 1
+            _11 = inv_far_plane_half_width,
+            _22 = inv_far_plane_half_height,
+            // normalized depth = fore dist * (-1/(near far dist)) ...
+            _33 = -inv_plane_to_plane,
+            // ... + (1 + near dist / (near far dist))
+            _34 = far_plane * inv_plane_to_plane,
+            // w = z, for ndc normalization using the depth coord I think
+            _43 = 1,
+            _44 = 0
         };
 
         return perspective;
-    } else {
+    } else { // ORTHOGRAPHIC
         half_width := orthographic_scale * aspect;
         half_height := orthographic_scale;
 
@@ -63,9 +65,8 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) 
             // scale
             _11 = 1 / half_width,
             _22 = 1 / half_height,
-            _33 = -near_ratio,
-            // translation post-scale (removing near plane distance)
-            _34 = far_plane * near_ratio, 
+            _33 = -inv_plane_to_plane,
+            _34 = far_plane * inv_plane_to_plane, 
             _44 = 1
         };
 
@@ -73,13 +74,13 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) 
     }
 }
 
-// useful for experimentation at early stages (where I am atm), or possibly for debug?
-transform_to_normalized_device_coordinates :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, point: Vector3) -> Vector3 {
+// breaking projection into steps and putting it on cpu for debug
+transform_to_clip_coordinates :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, point: Vector3) -> Vector4 {
     view_mat := make_camera_view_matrix(camera_center, camera_orientation);
     projection_mat := make_camera_projection_matrix(camera, viewport);
-    clip_coords := projection_mat * view_mat * Vector4.{xyz=point,w=1};
-    ndc := clip_coords.xyz / clip_coords.w;
-    return ndc;
+    view_coords := view_mat * Vector4.{xyz=point,w=1};
+    clip_coords := projection_mat * view_coords;
+    return clip_coords;
 }
 
 // returns the ray passing through the camera's near plane at the location of the 

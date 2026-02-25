@@ -48,7 +48,10 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     }
 
     for *scratch_vertices_copy {
-        it.position = transform_to_normalized_device_coordinates(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, scratch_position + it.position);
+        it.position = transform_to_clip_coordinates(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, scratch_position + it.position.xyz * 100);
+        // if it.position.z > 0 && it.position.z < 1 && it.position.x > -0.75 && it.position.x < 0.75 && it.position.y > -0.75 && it.position.y < 0.75 && debug_switch {
+        //     it.position = transform_to_clip_coordinates(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, scratch_position + scratch_vertices[it_index].position);
+        // }
     }
 
     triangle_view: [][3]Simple_Vertex;

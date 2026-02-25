@@ -87,9 +87,7 @@ only_set_or_only_cleared_bits :: (array: *Bit_Array, body: Code, flags: For_Flag
     // the other reason this exists is to add reverse iteration, which the pool uses.
     for <=((flags & .REVERSE) != 0) slot, slot_index: array.slots {
 
-        // primary reason this expansion exists. skip over slots that have no candidate bits.
-        // for algorithms finding, say, the first set bit, that code will be able to
-        // exit the loop the first time this is true.
+        // one reason this expansion exists. skip over slots that have no candidate bits.
         #if set_or_cleared == .SET {
             if slot == 0 then continue;
         } else {

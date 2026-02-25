@@ -71,24 +71,14 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
         // whether the alpha channel should blend with other windows
         compositeAlpha = .OPAQUE_BIT_KHR,
         presentMode = swapchain.present_mode,
+        // since the images of this program are composited with other
+        // images on the system, there is an opportunity to discard
+        // fragments hidden by other images. set to true if want.
         clipped = VK_TRUE,
-        oldSwapchain = old_swapchain_obj
+        oldSwapchain = old_swapchain_obj,
+        // a resource can only be owned by one queue at a time
+        imageSharingMode = .EXCLUSIVE
     };
-
-    assert(physical.queue_family_indices.graphics_index >= 0 && physical.queue_family_indices.present_index >= 0);
-    queue_family_indices := u32.[
-        xx physical.queue_family_indices.graphics_index, 
-        xx physical.queue_family_indices.present_index
-    ];
-
-    if physical.queue_family_indices.graphics_index != physical.queue_family_indices.present_index {
-        create_info.imageSharingMode = .CONCURRENT;
-        create_info.queueFamilyIndexCount = xx queue_family_indices.count;
-        create_info.pQueueFamilyIndices = queue_family_indices.data;
-    } else {
-        // best perf according to somebody. only one queue family owns an image at a time.
-        create_info.imageSharingMode = .EXCLUSIVE; 
-    }
 
     if !validate(vkCreateSwapchainKHR(logical.obj, *create_info, null, *swapchain.obj), "failed creating the swapchain") then return false;
 

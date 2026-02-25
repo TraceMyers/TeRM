@@ -5,6 +5,7 @@
 // physical device
 // logical device
 // frame data
+// descriptors
 // scratch
 
 // -----------------------------------------------------------------------------------
@@ -201,8 +202,10 @@ score_physical_device :: (device: VkPhysicalDevice) -> score: s32 {
     }
 
     score : s32 = ifx properties.deviceType == .DISCRETE_GPU then (100).(s32) else (1).(s32);
-    score += properties.limits.maxImageDimension2D.(s32);
-    if dummy_device.queue_family_indices.graphics_index == dummy_device.queue_family_indices.present_index then score += 25;
+    score += cast(s32) properties.limits.maxImageDimension2D;
+    render_log("max image dimension: %", properties.limits.maxImageDimension2D);
+    if dummy_device.queue_family_indices.graphics_index == dummy_device.queue_family_indices.present_index 
+        then score += 50;
     return score;
 }
 
@@ -414,7 +417,49 @@ create_default_descriptors :: () -> bool {
 
 create_default_pipelines :: () -> bool {
     if !create_device_space_mesh_pipeline() then return false;
+    if !create_device_space_mesh_textured_pipeline() then return false;
     render_log("created default pipelines");
+    return true;
+}
+
+// -----------------------------------------------------------------------------------
+// ---------------------------------------------------------------------- :descriptors
+
+create_descriptors :: () -> bool {
+    using context.renderer;
+
+    ratios := Descriptor_Pool_Ratio.[
+        {.STORAGE_IMAGE, 0.2}, 
+        {.COMBINED_IMAGE_SAMPLER, 0.5}, 
+        {.UNIFORM_BUFFER, 0.3}
+    ];
+    create_descriptor_pool(*descriptor_pool, 100, ratios);
+
+    {
+        bindings := VkDescriptorSetLayoutBinding.[
+            {binding=0, descriptorCount=1, descriptorType=.COMBINED_IMAGE_SAMPLER}
+        ];
+
+        // i'm guessing this could be more generally usable than for one texture...
+        scratch_texture_sampler_descriptor_set_layout = build_descriptor_set_layout(bindings, .FRAGMENT_BIT);
+        scratch_texture_sampler_descriptor_set = allocate_descriptor_set(descriptor_pool, scratch_texture_sampler_descriptor_set_layout);
+
+        image_info := VkDescriptorImageInfo.{
+            sampler = scratch_sampler,
+            imageLayout = .SHADER_READ_ONLY_OPTIMAL,
+            imageView = scratch_texture.image_view
+        };
+
+        update := VkWriteDescriptorSet.{
+            dstSet = scratch_texture_sampler_descriptor_set,
+            descriptorCount = 1,
+            descriptorType = .COMBINED_IMAGE_SAMPLER,
+            pImageInfo = *image_info
+        };
+
+        vkUpdateDescriptorSets(logical.obj, 1, *update, 0, null);
+    }
+
     return true;
 }
 
@@ -423,7 +468,36 @@ create_default_pipelines :: () -> bool {
 
 create_scratch_data :: () -> bool {
     using context.renderer;
-    simple_vertex_buffer = create_simple_vertex_buffer(scratch_vertices);
+
+    simple_vertex_buffer = create_gpu_buffer_for_array(
+        scratch_vertices, .VERTEX_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT
+    );
+    copy_to_gpu_buffer(scratch_vertices.data, *simple_vertex_buffer);
+
+    if scratch_texture_path != "" {
+        scratch_texture = create_gpu_texture_for_sampling(scratch_texture_path);
+    }
+
+    {
+        // create_info := VkSamplerCreateInfo.{
+        //     minFilter = .LINEAR,
+        //     magFilter = .LINEAR,
+        //     mipmapMode = .NEAREST,
+        //     addressModeU = .REPEAT,
+        //     addressModeV = .REPEAT,
+        //     addressModeW = .REPEAT,
+        // };
+        create_info := VkSamplerCreateInfo.{
+            minFilter = .NEAREST,
+            magFilter = .NEAREST,
+            mipmapMode = .NEAREST,
+            addressModeU = .REPEAT,
+            addressModeV = .REPEAT,
+            addressModeW = .REPEAT,
+        };
+        validate(vkCreateSampler(logical.obj, *create_info, null, *scratch_sampler), "failed to create the scratch sampler");
+    }
+
     return true;
 }
 

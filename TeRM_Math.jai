@@ -165,21 +165,21 @@ to_vector3 :: (cardinal: Direction_3D) -> Vector3 {
 to_vector3 :: (cardinal: Direction_3D, orientation: Quaternion) -> Vector3 {
     if #complete cardinal == {
     case .UP;
-        return up_direction(*orientation);
+        return get_up_direction(*orientation);
     case .DOWN;
-        return -up_direction(*orientation);
+        return -get_up_direction(*orientation);
     case .LEFT;
-        return -right_direction(*orientation);
+        return -get_right_direction(*orientation);
     case .RIGHT;
-        return right_direction(*orientation);
+        return get_right_direction(*orientation);
     case .FORE;
-        return fore_direction(*orientation);
+        return get_fore_direction(*orientation);
     case .BACK;
-        return -fore_direction(*orientation);
+        return -get_fore_direction(*orientation);
     }
 }
 
-fore_direction :: inline (q: *Quaternion, $do_normalize := true) -> Vector3 {
+get_fore_direction :: inline (q: *Quaternion, $do_normalize := true) -> Vector3 {
     vec := rotate(VECTOR3_FORE, q);
     #if do_normalize {
         normalize(*vec);
@@ -187,7 +187,7 @@ fore_direction :: inline (q: *Quaternion, $do_normalize := true) -> Vector3 {
     return vec;
 }
 
-right_direction :: inline (q: *Quaternion, $do_normalize := true) -> Vector3 {
+get_right_direction :: inline (q: *Quaternion, $do_normalize := true) -> Vector3 {
     vec := rotate(VECTOR3_RIGHT, q);
     #if do_normalize {
         normalize(*vec);
@@ -195,7 +195,7 @@ right_direction :: inline (q: *Quaternion, $do_normalize := true) -> Vector3 {
     return vec;
 }
 
-up_direction :: inline (q: *Quaternion, $do_normalize := true) -> Vector3 {
+get_up_direction :: inline (q: *Quaternion, $do_normalize := true) -> Vector3 {
     vec := rotate(VECTOR3_UP, q);
     #if do_normalize {
         normalize(*vec);
@@ -203,21 +203,21 @@ up_direction :: inline (q: *Quaternion, $do_normalize := true) -> Vector3 {
     return vec;
 }
 
-fore_direction_xy :: inline (q: *Quaternion) -> Vector3 {
-    fore_3d := fore_direction(q, false);
+get_fore_direction_xy :: inline (q: *Quaternion) -> Vector3 {
+    fore_3d := get_fore_direction(q, false);
     fore_3d.z = 0;
     return normalize(fore_3d);
 }
 
-right_direction_xy :: inline (q: *Quaternion) -> Vector3 {
-    right_3d := right_direction(q, false);
+get_right_direction_xy :: inline (q: *Quaternion) -> Vector3 {
+    right_3d := get_right_direction(q, false);
     right_3d.z = 0;
     return normalize(right_3d);
 }
 
 calculate_axes :: (orientation: Quaternion, fore: *Vector3, right: *Vector3, up: *Vector3) {
-    fore.* = fore_direction(*orientation);
-    up.* = up_direction(*orientation);
+    fore.* = get_fore_direction(*orientation);
+    up.* = get_up_direction(*orientation);
     right.* = normalize(cross(fore.*, up.*));
 }
 

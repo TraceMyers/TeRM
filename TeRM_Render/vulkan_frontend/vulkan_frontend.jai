@@ -38,16 +38,31 @@ Renderer :: struct {
         device_space_mesh_pipeline: VkPipeline;
         device_space_mesh_pipeline_layout: VkPipelineLayout;
 
+        device_space_mesh_textured_pipeline: VkPipeline;
+        device_space_mesh_textured_pipeline_layout: VkPipelineLayout;
+
         graphics_queue: VkQueue; // per thread?
         transfer_queue: VkQueue; // per thread?
+
+        descriptor_pool: VkDescriptorPool;
 
         rendered_frame_count: s32;
 
         depth_buffer: Texture;
 
         init_success: bool;
+
+        camera: Camera_Info;
+        camera_position: Vector3;
+        camera_orientation: Quaternion;
         
         // scratch space (or more scratchy than the rest)
+        scratch_sampler: VkSampler;
+        scratch_texture_path: string;
+        scratch_texture: Texture;
+        scratch_texture_sampler_descriptor_set_layout: VkDescriptorSetLayout;
+        scratch_texture_sampler_descriptor_set: VkDescriptorSet;
+
         camera_projection: Camera_Projection;
         scratch_position: Vector3;
         scratch_update_position: bool;
@@ -55,33 +70,33 @@ Renderer :: struct {
         simple_vertex_buffer: GPU_Buffer;
         scratch_vertices := Simple_Vertex.[
             // front face
-            {{-0.5, -0.5,  0.5}, {1, 0, 0}},
-            {{ 0.5, -0.5,  0.5}, {1, 0, 0}},
-            {{ 0.5,  0.5,  0.5}, {1, 0, 0}},
-            {{-0.5, -0.5,  0.5}, {1, 0, 0}},
-            {{ 0.5,  0.5,  0.5}, {1, 0, 0}},
-            {{-0.5,  0.5,  0.5}, {1, 0, 0}},
+            {{-0.5, -0.5,  0.5}, {1, 1, 1}, {0, 0}},
+            {{ 0.5, -0.5,  0.5}, {1, 1, 1}, {1, 0}},
+            {{ 0.5,  0.5,  0.5}, {1, 1, 1}, {1, 1}},
+            {{-0.5, -0.5,  0.5}, {1, 1, 1}, {0, 0}},
+            {{ 0.5,  0.5,  0.5}, {1, 1, 1}, {1, 1}},
+            {{-0.5,  0.5,  0.5}, {1, 1, 1}, {0, 1}},
             // back face
-            {{-0.5, -0.5, -0.5}, {0, 1, 0}},
-            {{ 0.5, -0.5, -0.5}, {0, 1, 0}},
-            {{ 0.5,  0.5, -0.5}, {0, 1, 0}},
-            {{-0.5, -0.5, -0.5}, {0, 1, 0}},
-            {{ 0.5,  0.5, -0.5}, {0, 1, 0}},
-            {{-0.5,  0.5, -0.5}, {0, 1, 0}},
-            // left face
-            {{-0.5, -0.5,  0.5}, {0, 0, 1}},
-            {{-0.5,  0.5,  0.5}, {0, 0, 1}},
-            {{-0.5,  0.5, -0.5}, {0, 0, 1}},
-            {{-0.5, -0.5,  0.5}, {0, 0, 1}},
-            {{-0.5,  0.5, -0.5}, {0, 0, 1}},
-            {{-0.5, -0.5, -0.5}, {0, 0, 1}},
-            // right face
-            {{ 0.5, -0.5,  0.5}, {0, 0, 1}},
-            {{ 0.5,  0.5,  0.5}, {0, 0, 1}},
-            {{ 0.5,  0.5, -0.5}, {0, 0, 1}},
-            {{ 0.5, -0.5,  0.5}, {0, 0, 1}},
-            {{ 0.5,  0.5, -0.5}, {0, 0, 1}},
-            {{ 0.5, -0.5, -0.5}, {0, 0, 1}},
+            {{-0.5, -0.5, -0.5}, {1, 1, 1}, {0, 0}},
+            {{ 0.5, -0.5, -0.5}, {1, 1, 1}, {1, 0}},
+            {{ 0.5,  0.5, -0.5}, {1, 1, 1}, {1, 1}},
+            {{-0.5, -0.5, -0.5}, {1, 1, 1}, {0, 0}},
+            {{ 0.5,  0.5, -0.5}, {1, 1, 1}, {1, 1}},
+            {{-0.5,  0.5, -0.5}, {1, 1, 1}, {0, 1}},
+            // // left face
+            {{-0.5, -0.5,  0.5}, {1, 1, 1}, {0, 1}},
+            {{-0.5,  0.5,  0.5}, {1, 1, 1}, {1, 1}},
+            {{-0.5,  0.5, -0.5}, {1, 1, 1}, {1, 0}},
+            {{-0.5, -0.5,  0.5}, {1, 1, 1}, {0, 1}},
+            {{-0.5,  0.5, -0.5}, {1, 1, 1}, {1, 0}},
+            {{-0.5, -0.5, -0.5}, {1, 1, 1}, {0, 0}},
+            // // right face
+            {{ 0.5, -0.5,  0.5}, {1, 1, 1}, {0, 1}},
+            {{ 0.5,  0.5,  0.5}, {1, 1, 1}, {1, 1}},
+            {{ 0.5,  0.5, -0.5}, {1, 1, 1}, {1, 0}},
+            {{ 0.5, -0.5,  0.5}, {1, 1, 1}, {0, 1}},
+            {{ 0.5,  0.5, -0.5}, {1, 1, 1}, {1, 0}},
+            {{ 0.5, -0.5, -0.5}, {1, 1, 1}, {0, 0}},
         ];
     };
 
@@ -148,6 +163,8 @@ GPU_Buffer :: struct {
     obj: VkBuffer;
     memory: VkDeviceMemory;
     size: VkDeviceSize;
+    usage_flags: VkBufferUsageFlags;
+    memory_flags: VkMemoryPropertyFlags;
 }
 
 Physical_Device_Properties :: struct {
@@ -183,6 +200,9 @@ Texture :: struct {
     image_view: VkImageView;
     extent: VkExtent3D;
     format: VkFormat;
+    usage: VkImageUsageFlags;
+    mip_count: u32;
+    layer_count: u32;
     // cpu_memory: []u8;
 }
 
@@ -194,7 +214,7 @@ Graphics_Frame :: struct {
     fence: VkFence;
 }
 
-Descriptor_Pool_Size_Ratio :: struct {
+Descriptor_Pool_Ratio :: struct {
     type: VkDescriptorType;
     ratio: float32;
 }
@@ -214,8 +234,8 @@ Graphics_Pipeline_Build_Info :: struct {
 Simple_Vertex :: struct {
     position: Vector3;
     color: Color3f;
+    uv: Vector2;
 }
-
 
 #load "vulkan_renderer_initialization.jai";
 #load "vulkan_system_information.jai";
@@ -238,6 +258,7 @@ Simple_Vertex :: struct {
 #import "File_Utilities";
 #import "Process";
 #import "Sort";
+#import "stb_image";
 
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Array";

@@ -90,10 +90,6 @@ is_slash :: inline (code_point: u32) -> bool {
     return code_point == #char "/" || code_point == #char "\\";
 }
 
-is_whitespace :: inline (code_point: u32) -> bool {
-    return code_point == #char " " || code_point == #char "\t" || code_point == #char "\n";
-}
-
 to_lower_in_place :: inline (str: *string) {
     for *str {
         it.* = to_lower(it.*);
@@ -123,7 +119,7 @@ per_line :: (str: *string, body: Code, flags: For_Flags) #expand {
     // todo: could implement going over lines from last to first line
     // getting a pointer to a local string instantiation doesn't do anything helpful.
     // you can modify the data and the count regardless
-    #assert(flags == 0, "reverse per_line for loop not implemented. pointer flag is not allowed in per_line for loop because it doesn't do anything helpful");
+    #assert(flags == 0);
 
     line_count: s64;
     left, right: string;
@@ -178,6 +174,62 @@ c_strings_equal :: (a: *u8, b: *u8, max_read_count: s64) -> bool {
         }
     }
     return true;
+}
+
+// String_Exchange + for_expansion = progressive string consumption with arbitrary break condition
+// usage example:
+//
+// my_string := "hello/there";
+// my_exchange := String_Exchange.{src=my_string}; // can also have src be a pointer
+// for my_exchange { 
+//      if it == #char "/" {
+//          // trims the end '/' from dst
+//          my_exchange.trim_bytes = 1;
+//          break;
+//      }
+// }
+//  
+// after this, my_exchange will be {src="there", dst="hello"};
+String_Exchange :: struct($type := enum { NORMAL; PTR; }.NORMAL) {
+    source_type :: #insert #run tprint("%string;", ifx type == .NORMAL then "" else "*");
+    src: source_type;
+    dst: string;
+    trim_bytes: s32;
+    reset_trim_bytes := true;
+    broke_out_of_loop: bool;
+}
+
+for_expansion :: (exchange: *String_Exchange, body: Code, flags: For_Flags) #expand {
+    #assert(flags == 0);
+
+    // letting the user know a break happened, so they can differentiate between
+    // their own inserted break statement and just reaching the end of the source string
+    do_break :: () #expand {
+        exchange.broke_out_of_loop = true;
+        break;
+    }
+
+    i := 0;
+    if exchange.reset_trim_bytes {
+        exchange.trim_bytes = 0;
+    }
+    exchange.broke_out_of_loop = false;
+
+    while i < exchange.src.count {
+        `it := exchange.src.data[i];
+        `it_index := i;
+        i += 1;
+
+        #insert (break=do_break()) body;
+    }
+
+    exchange.dst = {max(i - exchange.trim_bytes, 0), exchange.src.data};
+    exchange.src.data  += i;
+    exchange.src.count -= i;
+    if exchange.src.count <= 0 {
+        exchange.src.data = null;
+        exchange.src.count = 0;
+    }
 }
 
 #scope_file

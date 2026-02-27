@@ -167,7 +167,9 @@ UTF32_TO_ANSI  :: Text_Encoder.{.UTF32, .ANSI,  utf32_to_ansi,  1};
 // -------------------------------------------------------------------- :Encode String
 
 // translate a string from one encoding to another
-encode_text_string :: (src: string, encoder: Text_Encoder, caller_loc := #caller_location) -> string, bool {
+// encoder must be known at compile time. hopefully encourages optimizer to inline the encode proc.
+// todo: investigate if it does this
+encode_text_string :: (src: string, $encoder: Text_Encoder, caller_loc := #caller_location) -> string, bool {
     temp_storage_mark := get_temporary_storage_mark();
     defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(temp_storage_mark);
 
@@ -467,15 +469,16 @@ return_if_invalid_utf8_trailing_byte :: (b: u8, read_size: int, write_size: int)
     }
 }
 
+UTF16_HIGH_SURROGATE_MIN : u32 : 0xd800;
+UTF16_HIGH_SURROGATE_MAX : u32 : 0xdbff;
+UTF16_LOW_SURROGATE_MIN  : u32 : 0xdc00;
+UTF16_LOW_SURROGATE_MAX  : u32 : 0xdfff;
+UTF16_HIGH_MASK          : u32 : #run (0x3ff << 10).(u32);
+UTF16_LOW_MASK           : u32 : #run (0x3ff).(u32);
+
 // -----------------------------------------------------------------------------------
 #scope_file
 
-UTF16_HIGH_SURROGATE_MIN : u32 : 0xd800;
-UTF16_HIGH_SURROGATE_MAX : u32 : 0xdbff;
-UTF16_LOW_SURROGATE_MIN : u32 : 0xdc00;
-UTF16_LOW_SURROGATE_MAX : u32 : 0xdfff;
-UTF16_HIGH_MASK : u32 : #run (0x3ff << 10).(u32);
-UTF16_LOW_MASK : u32 : #run (0x3ff).(u32);
 
 U16_MAX : u16 : 0xffff;
 

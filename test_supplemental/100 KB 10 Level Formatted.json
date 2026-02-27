@@ -1,0 +1,2730 @@
+{
+  "employees": [
+{
+    "id": "E00001",
+    "name": "Janice Hughes",
+    "profile": {
+        "contact": {
+            "email": "castroheidi@example.com",
+            "phone": "416.584.3056",
+            "address": {
+                "street": "0595 Jason Creek",
+                "city": "Alisonview",
+                "location": {
+                    "state": "KS",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "26.5898",
+                        "long": "-44.3505",
+                        "timezone": {
+                            "name": "America/Chicago",
+                            "utc_offset": "-06:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P801",
+                "name": "Unleash Robust Info-Mediaries",
+                "tasks": [
+                    {
+                        "taskId": "T328",
+                        "description": "Mandatory dynamic pricing structure",
+                        "assignedTo": {
+                            "id": "E00001",
+                            "name": "Janice Hughes",
+                            "skills": {
+                                "primary": "Java",
+                                "secondary": [
+                                    "Kubernetes",
+                                    "React"
+                                ],
+                                "experience": {
+                                    "years": 6,
+                                    "domains": [
+                                        "DevOps",
+                                        "Healthcare"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [
+                                            "Oracle Java SE 8"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-02-07"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00002",
+    "name": "James Moody",
+    "profile": {
+        "contact": {
+            "email": "patrick82@example.org",
+            "phone": "(682)958-8309",
+            "address": {
+                "street": "0944 Beltran Ford Apt. 780",
+                "city": "Tarachester",
+                "location": {
+                    "state": "RI",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "0.0105",
+                        "long": "-22.8800",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P745",
+                "name": "Seize World-Class Web Services",
+                "tasks": [
+                    {
+                        "taskId": "T284",
+                        "description": "Cross-group optimal parallelism",
+                        "assignedTo": {
+                            "id": "E00002",
+                            "name": "James Moody",
+                            "skills": {
+                                "primary": "Go",
+                                "secondary": [
+                                    "Node.js",
+                                    "GCP"
+                                ],
+                                "experience": {
+                                    "years": 4,
+                                    "domains": [
+                                        "Cloud",
+                                        "AI"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-01-22"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00003",
+    "name": "Jennifer Mason",
+    "profile": {
+        "contact": {
+            "email": "cshepard@example.net",
+            "phone": "+1-693-471-0113x2982",
+            "address": {
+                "street": "58577 Bruce Common",
+                "city": "New Brendaville",
+                "location": {
+                    "state": "LA",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-65.1528",
+                        "long": "-99.2694",
+                        "timezone": {
+                            "name": "America/Chicago",
+                            "utc_offset": "-06:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P872",
+                "name": "Exploit Bleeding-Edge Partnerships",
+                "tasks": [
+                    {
+                        "taskId": "T330",
+                        "description": "Object-based grid-enabled benchmark",
+                        "assignedTo": {
+                            "id": "E00003",
+                            "name": "Jennifer Mason",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "Docker",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 8,
+                                    "domains": [
+                                        "Cloud",
+                                        "AI"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [
+                                            "Oracle Java SE 8"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-02-16"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00004",
+    "name": "Sean Murray",
+    "profile": {
+        "contact": {
+            "email": "zcantrell@example.org",
+            "phone": "674.825.3379x362",
+            "address": {
+                "street": "1423 Beltran Manors",
+                "city": "West Melissabury",
+                "location": {
+                    "state": "CT",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "24.6395",
+                        "long": "28.4276",
+                        "timezone": {
+                            "name": "America/New_York",
+                            "utc_offset": "-05:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P767",
+                "name": "Benchmark Customized Experiences",
+                "tasks": [
+                    {
+                        "taskId": "T204",
+                        "description": "Enterprise-wide scalable matrix",
+                        "assignedTo": {
+                            "id": "E00004",
+                            "name": "Sean Murray",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "GCP",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 7,
+                                    "domains": [
+                                        "DevOps",
+                                        "Healthcare"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-06-29"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00005",
+    "name": "Molly Faulkner",
+    "profile": {
+        "contact": {
+            "email": "hmoreno@example.org",
+            "phone": "+1-247-912-4546x287",
+            "address": {
+                "street": "05248 Noble Tunnel",
+                "city": "New Connieport",
+                "location": {
+                    "state": "NY",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "19.5596",
+                        "long": "57.7258",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P158",
+                "name": "Envisioneer End-To-End E-Tailers",
+                "tasks": [
+                    {
+                        "taskId": "T736",
+                        "description": "Self-enabling maximized extranet",
+                        "assignedTo": {
+                            "id": "E00005",
+                            "name": "Molly Faulkner",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "Docker",
+                                    "GCP"
+                                ],
+                                "experience": {
+                                    "years": 5,
+                                    "domains": [
+                                        "AI",
+                                        "Cloud"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-03-14"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00006",
+    "name": "Peter Wood",
+    "profile": {
+        "contact": {
+            "email": "elizabethyoung@example.net",
+            "phone": "(653)336-2930x26585",
+            "address": {
+                "street": "008 Michael Ville Suite 867",
+                "city": "East Nicholas",
+                "location": {
+                    "state": "HI",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-84.0430",
+                        "long": "105.1061",
+                        "timezone": {
+                            "name": "America/New_York",
+                            "utc_offset": "-05:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P313",
+                "name": "Grow Mission-Critical Web Services",
+                "tasks": [
+                    {
+                        "taskId": "T350",
+                        "description": "Mandatory human-resource encryption",
+                        "assignedTo": {
+                            "id": "E00006",
+                            "name": "Peter Wood",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "Node.js",
+                                    "AWS"
+                                ],
+                                "experience": {
+                                    "years": 3,
+                                    "domains": [
+                                        "E-commerce",
+                                        "Cloud"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-04-23"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00007",
+    "name": "Jasmine Johnson",
+    "profile": {
+        "contact": {
+            "email": "xmadden@example.net",
+            "phone": "+1-513-550-8802x34759",
+            "address": {
+                "street": "3766 Wilson Mill",
+                "city": "South Phillipmouth",
+                "location": {
+                    "state": "GU",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-42.3319",
+                        "long": "-142.3106",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P636",
+                "name": "Visualize Best-Of-Breed Initiatives",
+                "tasks": [
+                    {
+                        "taskId": "T388",
+                        "description": "Automated demand-driven adapter",
+                        "assignedTo": {
+                            "id": "E00007",
+                            "name": "Jasmine Johnson",
+                            "skills": {
+                                "primary": "Go",
+                                "secondary": [
+                                    "AWS",
+                                    "GCP"
+                                ],
+                                "experience": {
+                                    "years": 2,
+                                    "domains": [
+                                        "Cloud",
+                                        "AI"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-08-05"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00008",
+    "name": "Dale Webb",
+    "profile": {
+        "contact": {
+            "email": "george83@example.org",
+            "phone": "(431)914-4421x627",
+            "address": {
+                "street": "1092 Perez Station",
+                "city": "South Andrewbury",
+                "location": {
+                    "state": "TN",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "80.5743",
+                        "long": "99.0997",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P179",
+                "name": "Integrate Enterprise Infrastructures",
+                "tasks": [
+                    {
+                        "taskId": "T224",
+                        "description": "Advanced responsive project",
+                        "assignedTo": {
+                            "id": "E00008",
+                            "name": "Dale Webb",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "Kubernetes",
+                                    "React"
+                                ],
+                                "experience": {
+                                    "years": 7,
+                                    "domains": [
+                                        "E-commerce",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [
+                                            "Oracle Java SE 8"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-04-15"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00009",
+    "name": "Jamie Powell",
+    "profile": {
+        "contact": {
+            "email": "velasqueztroy@example.org",
+            "phone": "456-216-3299x472",
+            "address": {
+                "street": "522 James Wells Apt. 370",
+                "city": "North Gary",
+                "location": {
+                    "state": "MS",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-69.1377",
+                        "long": "-144.0297",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P311",
+                "name": "Visualize Extensible Applications",
+                "tasks": [
+                    {
+                        "taskId": "T805",
+                        "description": "Switchable non-volatile orchestration",
+                        "assignedTo": {
+                            "id": "E00009",
+                            "name": "Jamie Powell",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "React",
+                                    "GCP"
+                                ],
+                                "experience": {
+                                    "years": 9,
+                                    "domains": [
+                                        "Cloud",
+                                        "E-commerce"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-02-16"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00010",
+    "name": "Paul Powers",
+    "profile": {
+        "contact": {
+            "email": "merrittcheryl@example.org",
+            "phone": "+1-797-319-0272x010",
+            "address": {
+                "street": "592 Margaret Ports Suite 172",
+                "city": "Antonioport",
+                "location": {
+                    "state": "PW",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-84.4827",
+                        "long": "-57.2723",
+                        "timezone": {
+                            "name": "America/Los_Angeles",
+                            "utc_offset": "-08:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P307",
+                "name": "Re-Contextualize Proactive Relationships",
+                "tasks": [
+                    {
+                        "taskId": "T208",
+                        "description": "Decentralized radical benchmark",
+                        "assignedTo": {
+                            "id": "E00010",
+                            "name": "Paul Powers",
+                            "skills": {
+                                "primary": "Go",
+                                "secondary": [
+                                    "Kubernetes",
+                                    "AWS"
+                                ],
+                                "experience": {
+                                    "years": 3,
+                                    "domains": [
+                                        "E-commerce",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-02-14"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00011",
+    "name": "Marissa Jones",
+    "profile": {
+        "contact": {
+            "email": "scottmartinez@example.com",
+            "phone": "+1-357-252-4280x0721",
+            "address": {
+                "street": "886 Robert Oval Apt. 480",
+                "city": "Petersenborough",
+                "location": {
+                    "state": "NE",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-21.7756",
+                        "long": "-166.6129",
+                        "timezone": {
+                            "name": "America/Chicago",
+                            "utc_offset": "-06:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P458",
+                "name": "Deliver Turn-Key Markets",
+                "tasks": [
+                    {
+                        "taskId": "T859",
+                        "description": "Reduced secondary access",
+                        "assignedTo": {
+                            "id": "E00011",
+                            "name": "Marissa Jones",
+                            "skills": {
+                                "primary": "Java",
+                                "secondary": [
+                                    "React",
+                                    "AWS"
+                                ],
+                                "experience": {
+                                    "years": 7,
+                                    "domains": [
+                                        "AI",
+                                        "Finance"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [
+                                            "Oracle Java SE 8"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-08-02"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00012",
+    "name": "Tricia Thomas",
+    "profile": {
+        "contact": {
+            "email": "balldonald@example.com",
+            "phone": "282.348.7823x3497",
+            "address": {
+                "street": "428 Washington Circle",
+                "city": "Danielside",
+                "location": {
+                    "state": "NM",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-59.5000",
+                        "long": "-42.3896",
+                        "timezone": {
+                            "name": "America/Chicago",
+                            "utc_offset": "-06:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P326",
+                "name": "Implement Dot-Com Interfaces",
+                "tasks": [
+                    {
+                        "taskId": "T447",
+                        "description": "Future-proofed methodical flexibility",
+                        "assignedTo": {
+                            "id": "E00012",
+                            "name": "Tricia Thomas",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "GCP",
+                                    "React"
+                                ],
+                                "experience": {
+                                    "years": 4,
+                                    "domains": [
+                                        "AI",
+                                        "Healthcare"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [
+                                            "Oracle Java SE 8"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-08-05"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00013",
+    "name": "Jade Griffith",
+    "profile": {
+        "contact": {
+            "email": "ashleyjones@example.org",
+            "phone": "604-476-1195",
+            "address": {
+                "street": "314 Christina Freeway",
+                "city": "South Louis",
+                "location": {
+                    "state": "MS",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-66.0664",
+                        "long": "92.8529",
+                        "timezone": {
+                            "name": "America/New_York",
+                            "utc_offset": "-05:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P972",
+                "name": "Leverage B2B E-Commerce",
+                "tasks": [
+                    {
+                        "taskId": "T971",
+                        "description": "Synchronized exuding collaboration",
+                        "assignedTo": {
+                            "id": "E00013",
+                            "name": "Jade Griffith",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "AWS",
+                                    "React"
+                                ],
+                                "experience": {
+                                    "years": 2,
+                                    "domains": [
+                                        "Finance",
+                                        "Healthcare"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-04-03"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00014",
+    "name": "Sheri Copeland",
+    "profile": {
+        "contact": {
+            "email": "savannah41@example.net",
+            "phone": "817-490-5574x821",
+            "address": {
+                "street": "2257 Leah Inlet",
+                "city": "North Catherine",
+                "location": {
+                    "state": "OK",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "7.8952",
+                        "long": "137.1889",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P488",
+                "name": "Strategize 24/365 Web Services",
+                "tasks": [
+                    {
+                        "taskId": "T792",
+                        "description": "Enterprise-wide discrete secured line",
+                        "assignedTo": {
+                            "id": "E00014",
+                            "name": "Sheri Copeland",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "AWS",
+                                    "React"
+                                ],
+                                "experience": {
+                                    "years": 9,
+                                    "domains": [
+                                        "AI",
+                                        "Cloud"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-07-28"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00015",
+    "name": "Ruth Clark",
+    "profile": {
+        "contact": {
+            "email": "charlotte57@example.net",
+            "phone": "589-377-0455x4056",
+            "address": {
+                "street": "65249 Karen Centers Suite 111",
+                "city": "Port Amandaville",
+                "location": {
+                    "state": "CO",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-54.9960",
+                        "long": "-110.5308",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P768",
+                "name": "Envisioneer One-To-One Infrastructures",
+                "tasks": [
+                    {
+                        "taskId": "T347",
+                        "description": "Switchable bottom-line solution",
+                        "assignedTo": {
+                            "id": "E00015",
+                            "name": "Ruth Clark",
+                            "skills": {
+                                "primary": "C++",
+                                "secondary": [
+                                    "React",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 2,
+                                    "domains": [
+                                        "Healthcare",
+                                        "E-commerce"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-06-08"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00016",
+    "name": "Brian Blanchard",
+    "profile": {
+        "contact": {
+            "email": "jeffrey98@example.com",
+            "phone": "256.810.0781x9326",
+            "address": {
+                "street": "20323 Smith Trace Apt. 584",
+                "city": "Neilberg",
+                "location": {
+                    "state": "TX",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-13.6378",
+                        "long": "150.8906",
+                        "timezone": {
+                            "name": "America/Los_Angeles",
+                            "utc_offset": "-08:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P859",
+                "name": "Leverage Back-End Platforms",
+                "tasks": [
+                    {
+                        "taskId": "T230",
+                        "description": "Progressive global approach",
+                        "assignedTo": {
+                            "id": "E00016",
+                            "name": "Brian Blanchard",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "Node.js",
+                                    "Docker"
+                                ],
+                                "experience": {
+                                    "years": 3,
+                                    "domains": [
+                                        "Cloud",
+                                        "E-commerce"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [
+                                            "Oracle Java SE 8"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-01-26"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00017",
+    "name": "Michael Powers",
+    "profile": {
+        "contact": {
+            "email": "gonzalezjoshua@example.net",
+            "phone": "535.209.9531x33073",
+            "address": {
+                "street": "4080 Zachary Underpass Suite 231",
+                "city": "South Michaelchester",
+                "location": {
+                    "state": "FM",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-53.1375",
+                        "long": "-9.8025",
+                        "timezone": {
+                            "name": "America/Los_Angeles",
+                            "utc_offset": "-08:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P651",
+                "name": "Monetize Wireless Methodologies",
+                "tasks": [
+                    {
+                        "taskId": "T429",
+                        "description": "Fundamental hybrid process improvement",
+                        "assignedTo": {
+                            "id": "E00017",
+                            "name": "Michael Powers",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "Docker",
+                                    "React"
+                                ],
+                                "experience": {
+                                    "years": 8,
+                                    "domains": [
+                                        "AI",
+                                        "Finance"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-03-28"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00018",
+    "name": "Christopher Chen",
+    "profile": {
+        "contact": {
+            "email": "xsolomon@example.org",
+            "phone": "(993)760-2524",
+            "address": {
+                "street": "867 Williams Road",
+                "city": "Munozborough",
+                "location": {
+                    "state": "ID",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-11.4099",
+                        "long": "-17.3366",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P635",
+                "name": "Syndicate Synergistic Relationships",
+                "tasks": [
+                    {
+                        "taskId": "T362",
+                        "description": "Visionary analyzing ability",
+                        "assignedTo": {
+                            "id": "E00018",
+                            "name": "Christopher Chen",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "Docker",
+                                    "GCP"
+                                ],
+                                "experience": {
+                                    "years": 6,
+                                    "domains": [
+                                        "AI",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-05-15"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00019",
+    "name": "Sheri Harris",
+    "profile": {
+        "contact": {
+            "email": "sgonzalez@example.org",
+            "phone": "(201)772-3075x29482",
+            "address": {
+                "street": "9880 Hicks Place",
+                "city": "East Sandrahaven",
+                "location": {
+                    "state": "NM",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-86.0670",
+                        "long": "-179.1868",
+                        "timezone": {
+                            "name": "America/New_York",
+                            "utc_offset": "-05:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P248",
+                "name": "Incubate Holistic Interfaces",
+                "tasks": [
+                    {
+                        "taskId": "T852",
+                        "description": "Innovative zero-defect Internet solution",
+                        "assignedTo": {
+                            "id": "E00019",
+                            "name": "Sheri Harris",
+                            "skills": {
+                                "primary": "Java",
+                                "secondary": [
+                                    "AWS",
+                                    "Docker"
+                                ],
+                                "experience": {
+                                    "years": 5,
+                                    "domains": [
+                                        "Cloud",
+                                        "Healthcare"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-03-19"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00020",
+    "name": "Shannon Johnson",
+    "profile": {
+        "contact": {
+            "email": "tanyadiaz@example.com",
+            "phone": "2705435171",
+            "address": {
+                "street": "951 Martin Vista Suite 848",
+                "city": "Lake Derek",
+                "location": {
+                    "state": "DC",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-31.9842",
+                        "long": "-68.9141",
+                        "timezone": {
+                            "name": "America/Chicago",
+                            "utc_offset": "-06:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P695",
+                "name": "Iterate Granular E-Tailers",
+                "tasks": [
+                    {
+                        "taskId": "T397",
+                        "description": "Realigned neutral application",
+                        "assignedTo": {
+                            "id": "E00020",
+                            "name": "Shannon Johnson",
+                            "skills": {
+                                "primary": "Go",
+                                "secondary": [
+                                    "Node.js",
+                                    "Kubernetes"
+                                ],
+                                "experience": {
+                                    "years": 4,
+                                    "domains": [
+                                        "Healthcare",
+                                        "AI"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [
+                                            "Oracle Java SE 8"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-04-03"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00021",
+    "name": "Jennifer Banks",
+    "profile": {
+        "contact": {
+            "email": "bnichols@example.net",
+            "phone": "968.368.7056",
+            "address": {
+                "street": "4071 Erin Roads",
+                "city": "East Rebecca",
+                "location": {
+                    "state": "IN",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "47.9046",
+                        "long": "-141.0670",
+                        "timezone": {
+                            "name": "America/Chicago",
+                            "utc_offset": "-06:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P194",
+                "name": "Implement Sticky Web Services",
+                "tasks": [
+                    {
+                        "taskId": "T254",
+                        "description": "Organized intermediate info-mediaries",
+                        "assignedTo": {
+                            "id": "E00021",
+                            "name": "Jennifer Banks",
+                            "skills": {
+                                "primary": "Java",
+                                "secondary": [
+                                    "Node.js",
+                                    "Docker"
+                                ],
+                                "experience": {
+                                    "years": 3,
+                                    "domains": [
+                                        "Cloud",
+                                        "Healthcare"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [
+                                            "Oracle Java SE 8"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-04-15"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00022",
+    "name": "Anita Green",
+    "profile": {
+        "contact": {
+            "email": "jenniferthomas@example.net",
+            "phone": "7676378468",
+            "address": {
+                "street": "1193 Patricia Lock Apt. 695",
+                "city": "West Jacobside",
+                "location": {
+                    "state": "AS",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-15.0373",
+                        "long": "172.7782",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P332",
+                "name": "Monetize User-Centric Solutions",
+                "tasks": [
+                    {
+                        "taskId": "T580",
+                        "description": "Balanced grid-enabled leverage",
+                        "assignedTo": {
+                            "id": "E00022",
+                            "name": "Anita Green",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "GCP",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 5,
+                                    "domains": [
+                                        "Healthcare",
+                                        "AI"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-06-28"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00023",
+    "name": "Christopher Elliott",
+    "profile": {
+        "contact": {
+            "email": "jose17@example.com",
+            "phone": "733.594.0090",
+            "address": {
+                "street": "096 Julie Loop",
+                "city": "Port David",
+                "location": {
+                    "state": "OH",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-20.8753",
+                        "long": "-5.7548",
+                        "timezone": {
+                            "name": "America/New_York",
+                            "utc_offset": "-05:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P692",
+                "name": "Disintermediate Clicks-And-Mortar Partnerships",
+                "tasks": [
+                    {
+                        "taskId": "T232",
+                        "description": "Secured web-enabled budgetary management",
+                        "assignedTo": {
+                            "id": "E00023",
+                            "name": "Christopher Elliott",
+                            "skills": {
+                                "primary": "Java",
+                                "secondary": [
+                                    "Kubernetes",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 10,
+                                    "domains": [
+                                        "DevOps",
+                                        "E-commerce"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-07-08"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00024",
+    "name": "Gavin Allen",
+    "profile": {
+        "contact": {
+            "email": "nicole32@example.net",
+            "phone": "+1-908-747-7412",
+            "address": {
+                "street": "00373 Veronica Junction",
+                "city": "Port Anthonybury",
+                "location": {
+                    "state": "WI",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-16.2052",
+                        "long": "-126.5121",
+                        "timezone": {
+                            "name": "America/Chicago",
+                            "utc_offset": "-06:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P837",
+                "name": "Matrix Cross-Platform Web Services",
+                "tasks": [
+                    {
+                        "taskId": "T456",
+                        "description": "Cloned global throughput",
+                        "assignedTo": {
+                            "id": "E00024",
+                            "name": "Gavin Allen",
+                            "skills": {
+                                "primary": "Java",
+                                "secondary": [
+                                    "Kubernetes",
+                                    "GCP"
+                                ],
+                                "experience": {
+                                    "years": 3,
+                                    "domains": [
+                                        "AI",
+                                        "Finance"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-04-20"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00025",
+    "name": "Stephanie Cole",
+    "profile": {
+        "contact": {
+            "email": "ronniejackson@example.com",
+            "phone": "001-297-847-0969x1017",
+            "address": {
+                "street": "47896 Mclean Orchard Suite 063",
+                "city": "South Robert",
+                "location": {
+                    "state": "NH",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-28.1639",
+                        "long": "24.1425",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P311",
+                "name": "Revolutionize Next-Generation Markets",
+                "tasks": [
+                    {
+                        "taskId": "T436",
+                        "description": "Re-engineered fault-tolerant policy",
+                        "assignedTo": {
+                            "id": "E00025",
+                            "name": "Stephanie Cole",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "Kubernetes",
+                                    "AWS"
+                                ],
+                                "experience": {
+                                    "years": 5,
+                                    "domains": [
+                                        "AI",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-01-10"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00026",
+    "name": "Rebecca Daniels",
+    "profile": {
+        "contact": {
+            "email": "coxcaitlin@example.com",
+            "phone": "(967)408-8893",
+            "address": {
+                "street": "137 Blake Pines",
+                "city": "Smithstad",
+                "location": {
+                    "state": "CO",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-81.2104",
+                        "long": "92.9474",
+                        "timezone": {
+                            "name": "America/New_York",
+                            "utc_offset": "-05:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P388",
+                "name": "Benchmark Sticky Info-Mediaries",
+                "tasks": [
+                    {
+                        "taskId": "T897",
+                        "description": "Up-sized methodical initiative",
+                        "assignedTo": {
+                            "id": "E00026",
+                            "name": "Rebecca Daniels",
+                            "skills": {
+                                "primary": "Go",
+                                "secondary": [
+                                    "Docker",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 5,
+                                    "domains": [
+                                        "Cloud",
+                                        "Finance"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-01-04"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00027",
+    "name": "Olivia Taylor",
+    "profile": {
+        "contact": {
+            "email": "simonjuan@example.net",
+            "phone": "(310)326-6064x8922",
+            "address": {
+                "street": "94242 Harrell Vista",
+                "city": "North Jamesport",
+                "location": {
+                    "state": "ID",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "10.0605",
+                        "long": "156.5248",
+                        "timezone": {
+                            "name": "America/Chicago",
+                            "utc_offset": "-06:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P131",
+                "name": "Iterate Frictionless Networks",
+                "tasks": [
+                    {
+                        "taskId": "T973",
+                        "description": "Reactive interactive groupware",
+                        "assignedTo": {
+                            "id": "E00027",
+                            "name": "Olivia Taylor",
+                            "skills": {
+                                "primary": "Go",
+                                "secondary": [
+                                    "GCP",
+                                    "React"
+                                ],
+                                "experience": {
+                                    "years": 9,
+                                    "domains": [
+                                        "DevOps",
+                                        "AI"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-07-25"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00028",
+    "name": "Jacob Fisher",
+    "profile": {
+        "contact": {
+            "email": "daniellecooper@example.com",
+            "phone": "(506)276-3119",
+            "address": {
+                "street": "74559 Cross Crossing Apt. 894",
+                "city": "Careyberg",
+                "location": {
+                    "state": "HI",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "16.6936",
+                        "long": "-34.2920",
+                        "timezone": {
+                            "name": "America/Los_Angeles",
+                            "utc_offset": "-08:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P451",
+                "name": "Empower Synergistic Web-Readiness",
+                "tasks": [
+                    {
+                        "taskId": "T389",
+                        "description": "Mandatory stable Graphical User Interface",
+                        "assignedTo": {
+                            "id": "E00028",
+                            "name": "Jacob Fisher",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "Kubernetes",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 5,
+                                    "domains": [
+                                        "AI",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-03-25"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00029",
+    "name": "Ashley Rasmussen",
+    "profile": {
+        "contact": {
+            "email": "gwang@example.net",
+            "phone": "5343766807",
+            "address": {
+                "street": "95481 Brooks Squares",
+                "city": "New Jonathan",
+                "location": {
+                    "state": "MT",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "84.8785",
+                        "long": "40.9938",
+                        "timezone": {
+                            "name": "America/New_York",
+                            "utc_offset": "-05:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P614",
+                "name": "Seize Cross-Media Partnerships",
+                "tasks": [
+                    {
+                        "taskId": "T625",
+                        "description": "Diverse bandwidth-monitored solution",
+                        "assignedTo": {
+                            "id": "E00029",
+                            "name": "Ashley Rasmussen",
+                            "skills": {
+                                "primary": "Java",
+                                "secondary": [
+                                    "Kubernetes",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 9,
+                                    "domains": [
+                                        "Healthcare",
+                                        "Cloud"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [
+                                            "Oracle Java SE 8"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-02-28"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00030",
+    "name": "Antonio Hill",
+    "profile": {
+        "contact": {
+            "email": "joshuahill@example.net",
+            "phone": "6939764653",
+            "address": {
+                "street": "246 Erickson Mall Apt. 239",
+                "city": "Maryhaven",
+                "location": {
+                    "state": "CT",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "74.6382",
+                        "long": "105.0972",
+                        "timezone": {
+                            "name": "America/Chicago",
+                            "utc_offset": "-06:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P289",
+                "name": "Streamline 24/7 Functionalities",
+                "tasks": [
+                    {
+                        "taskId": "T241",
+                        "description": "Integrated maximized paradigm",
+                        "assignedTo": {
+                            "id": "E00030",
+                            "name": "Antonio Hill",
+                            "skills": {
+                                "primary": "C++",
+                                "secondary": [
+                                    "Kubernetes",
+                                    "AWS"
+                                ],
+                                "experience": {
+                                    "years": 7,
+                                    "domains": [
+                                        "Cloud",
+                                        "Finance"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-02-10"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00031",
+    "name": "Lori Larson",
+    "profile": {
+        "contact": {
+            "email": "warrenlisa@example.org",
+            "phone": "(536)588-5925",
+            "address": {
+                "street": "313 Murphy Plains",
+                "city": "Zimmermanhaven",
+                "location": {
+                    "state": "MD",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-38.0919",
+                        "long": "160.1198",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P293",
+                "name": "Exploit Scalable Content",
+                "tasks": [
+                    {
+                        "taskId": "T478",
+                        "description": "Optional optimal intranet",
+                        "assignedTo": {
+                            "id": "E00031",
+                            "name": "Lori Larson",
+                            "skills": {
+                                "primary": "Java",
+                                "secondary": [
+                                    "AWS",
+                                    "Docker"
+                                ],
+                                "experience": {
+                                    "years": 4,
+                                    "domains": [
+                                        "Cloud",
+                                        "Healthcare"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-03-19"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00032",
+    "name": "Victoria Diaz",
+    "profile": {
+        "contact": {
+            "email": "alyssawalker@example.net",
+            "phone": "(228)251-7697",
+            "address": {
+                "street": "7474 Reilly Center Apt. 413",
+                "city": "Port Ashleyburgh",
+                "location": {
+                    "state": "DE",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-77.7075",
+                        "long": "-178.7559",
+                        "timezone": {
+                            "name": "America/Los_Angeles",
+                            "utc_offset": "-08:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P763",
+                "name": "Synthesize Dynamic Platforms",
+                "tasks": [
+                    {
+                        "taskId": "T612",
+                        "description": "Advanced user-facing moderator",
+                        "assignedTo": {
+                            "id": "E00032",
+                            "name": "Victoria Diaz",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "GCP",
+                                    "Docker"
+                                ],
+                                "experience": {
+                                    "years": 5,
+                                    "domains": [
+                                        "Finance",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-06-04"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00033",
+    "name": "Cheryl Mays",
+    "profile": {
+        "contact": {
+            "email": "jared39@example.com",
+            "phone": "393-557-8718x276",
+            "address": {
+                "street": "37854 Brittany Streets Apt. 387",
+                "city": "East Tylerview",
+                "location": {
+                    "state": "MI",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "9.3454",
+                        "long": "-173.6078",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P539",
+                "name": "Streamline Clicks-And-Mortar Partnerships",
+                "tasks": [
+                    {
+                        "taskId": "T821",
+                        "description": "Fully-configurable responsive info-mediaries",
+                        "assignedTo": {
+                            "id": "E00033",
+                            "name": "Cheryl Mays",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "Node.js",
+                                    "GCP"
+                                ],
+                                "experience": {
+                                    "years": 7,
+                                    "domains": [
+                                        "Healthcare",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-04-20"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00034",
+    "name": "Joseph Nunez",
+    "profile": {
+        "contact": {
+            "email": "mcarpenter@example.net",
+            "phone": "(733)944-8090",
+            "address": {
+                "street": "0395 White Track",
+                "city": "Wrightshire",
+                "location": {
+                    "state": "MH",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-52.8800",
+                        "long": "79.4195",
+                        "timezone": {
+                            "name": "America/New_York",
+                            "utc_offset": "-05:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P666",
+                "name": "Incubate Scalable Bandwidth",
+                "tasks": [
+                    {
+                        "taskId": "T857",
+                        "description": "Extended bifurcated protocol",
+                        "assignedTo": {
+                            "id": "E00034",
+                            "name": "Joseph Nunez",
+                            "skills": {
+                                "primary": "Java",
+                                "secondary": [
+                                    "Docker",
+                                    "React"
+                                ],
+                                "experience": {
+                                    "years": 3,
+                                    "domains": [
+                                        "Finance",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-06-04"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00035",
+    "name": "Richard Knight",
+    "profile": {
+        "contact": {
+            "email": "matthew18@example.net",
+            "phone": "001-843-396-2762x22111",
+            "address": {
+                "street": "79888 Jennifer Ports",
+                "city": "Courtneyport",
+                "location": {
+                    "state": "NE",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "62.8771",
+                        "long": "156.4675",
+                        "timezone": {
+                            "name": "America/New_York",
+                            "utc_offset": "-05:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P292",
+                "name": "Disintermediate Distributed Methodologies",
+                "tasks": [
+                    {
+                        "taskId": "T530",
+                        "description": "Team-oriented homogeneous intranet",
+                        "assignedTo": {
+                            "id": "E00035",
+                            "name": "Richard Knight",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "React",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 3,
+                                    "domains": [
+                                        "E-commerce",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-08-09"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00036",
+    "name": "Timothy Powers",
+    "profile": {
+        "contact": {
+            "email": "pjackson@example.com",
+            "phone": "+1-429-341-5461",
+            "address": {
+                "street": "74725 Heather Port",
+                "city": "West Susan",
+                "location": {
+                    "state": "RI",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "38.7023",
+                        "long": "80.8928",
+                        "timezone": {
+                            "name": "America/Los_Angeles",
+                            "utc_offset": "-08:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P176",
+                "name": "Enhance Global Niches",
+                "tasks": [
+                    {
+                        "taskId": "T545",
+                        "description": "Digitized dedicated infrastructure",
+                        "assignedTo": {
+                            "id": "E00036",
+                            "name": "Timothy Powers",
+                            "skills": {
+                                "primary": "Go",
+                                "secondary": [
+                                    "GCP",
+                                    "Node.js"
+                                ],
+                                "experience": {
+                                    "years": 3,
+                                    "domains": [
+                                        "AI",
+                                        "Healthcare"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "Scrum Master"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-02-06"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00037",
+    "name": "Traci Gomez",
+    "profile": {
+        "contact": {
+            "email": "clarkluis@example.net",
+            "phone": "619-933-2210",
+            "address": {
+                "street": "791 Curtis Mission Apt. 995",
+                "city": "East Kimberlyfurt",
+                "location": {
+                    "state": "WV",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "53.1482",
+                        "long": "34.3220",
+                        "timezone": {
+                            "name": "America/Los_Angeles",
+                            "utc_offset": "-08:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P801",
+                "name": "Utilize Interactive Solutions",
+                "tasks": [
+                    {
+                        "taskId": "T976",
+                        "description": "Front-line bi-directional process improvement",
+                        "assignedTo": {
+                            "id": "E00037",
+                            "name": "Traci Gomez",
+                            "skills": {
+                                "primary": "Go",
+                                "secondary": [
+                                    "GCP",
+                                    "AWS"
+                                ],
+                                "experience": {
+                                    "years": 9,
+                                    "domains": [
+                                        "Cloud",
+                                        "E-commerce"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Solutions Architect",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-03-01"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00038",
+    "name": "Hannah Robinson",
+    "profile": {
+        "contact": {
+            "email": "carrierodriguez@example.net",
+            "phone": "(406)823-6357",
+            "address": {
+                "street": "327 Castillo Radial",
+                "city": "Port Jenniferfort",
+                "location": {
+                    "state": "GU",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-0.4804",
+                        "long": "116.3702",
+                        "timezone": {
+                            "name": "America/Denver",
+                            "utc_offset": "-07:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P232",
+                "name": "Target Compelling Synergies",
+                "tasks": [
+                    {
+                        "taskId": "T844",
+                        "description": "Advanced fresh-thinking monitoring",
+                        "assignedTo": {
+                            "id": "E00038",
+                            "name": "Hannah Robinson",
+                            "skills": {
+                                "primary": "Go",
+                                "secondary": [
+                                    "Node.js",
+                                    "GCP"
+                                ],
+                                "experience": {
+                                    "years": 10,
+                                    "domains": [
+                                        "AI",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-04-04"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00039",
+    "name": "Victoria Hatfield",
+    "profile": {
+        "contact": {
+            "email": "marymahoney@example.org",
+            "phone": "(869)211-5303x32890",
+            "address": {
+                "street": "283 Kenneth Cliffs Suite 430",
+                "city": "West Teresafort",
+                "location": {
+                    "state": "WV",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "71.4300",
+                        "long": "-6.3843",
+                        "timezone": {
+                            "name": "America/Los_Angeles",
+                            "utc_offset": "-08:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P659",
+                "name": "Unleash Wireless Bandwidth",
+                "tasks": [
+                    {
+                        "taskId": "T929",
+                        "description": "Digitized actuating superstructure",
+                        "assignedTo": {
+                            "id": "E00039",
+                            "name": "Victoria Hatfield",
+                            "skills": {
+                                "primary": "JavaScript",
+                                "secondary": [
+                                    "Node.js",
+                                    "GCP"
+                                ],
+                                "experience": {
+                                    "years": 9,
+                                    "domains": [
+                                        "AI",
+                                        "Cloud"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "Scrum Master",
+                                            "AWS Certified Developer"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-07-05"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+},
+{
+    "id": "E00040",
+    "name": "Mark Key",
+    "profile": {
+        "contact": {
+            "email": "heather22@example.com",
+            "phone": "+1-506-463-9917x8624",
+            "address": {
+                "street": "632 Wade Brook",
+                "city": "Reyeschester",
+                "location": {
+                    "state": "MT",
+                    "country": "USA",
+                    "geo": {
+                        "lat": "-89.1732",
+                        "long": "-16.7955",
+                        "timezone": {
+                            "name": "America/Los_Angeles",
+                            "utc_offset": "-08:00"
+                        }
+                    }
+                }
+            }
+        },
+        "projects": [
+            {
+                "projectId": "P836",
+                "name": "Enhance Revolutionary Applications",
+                "tasks": [
+                    {
+                        "taskId": "T668",
+                        "description": "Realigned asymmetric function",
+                        "assignedTo": {
+                            "id": "E00040",
+                            "name": "Mark Key",
+                            "skills": {
+                                "primary": "Python",
+                                "secondary": [
+                                    "AWS",
+                                    "Docker"
+                                ],
+                                "experience": {
+                                    "years": 9,
+                                    "domains": [
+                                        "E-commerce",
+                                        "DevOps"
+                                    ],
+                                    "certifications": {
+                                        "current": [
+                                            "AWS Certified Developer",
+                                            "AWS Solutions Architect"
+                                        ],
+                                        "expired": [
+                                            "CompTIA Security+"
+                                        ],
+                                        "meta": {
+                                            "verified": true,
+                                            "lastUpdated": "2025-01-12"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+}
+  ]
+}

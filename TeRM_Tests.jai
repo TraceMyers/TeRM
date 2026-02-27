@@ -10,7 +10,8 @@ run_all_tests :: () {
         gp_allocator_test,
         super_allocator_test,
         string_test,
-        thread_test
+        thread_test,
+        json_text
     ]);
 }
 
@@ -811,6 +812,14 @@ thread_test :: () -> bool, string {
     return_test_success();
 }
 
+json_test :: () -> bool, string {
+    scope_set_working_directory(#filepath);
+
+    jason := load_json_from_file("test_supplemental/100 KB 10 Level Formatted.json", true);
+
+    return_test_success();
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 #scope_file // ---------------------------------------------------------------------------------------------- SCOPE_FILE
 // ---------------------------------------------------------------------------------------------------------------------
@@ -966,13 +975,13 @@ serializer_test_body :: (checksum: *Serializer_Checksum_Type = null, load_checks
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_Metaprogram";
-#import "TeRM/TeRM_PrintText";
 #import "TeRM/TeRM_Raycast";
 #import "TeRM/TeRM_Scope";
 #import "TeRM/TeRM_Serialize";
 #import "TeRM/TeRM_Storage";
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Threads";
+#import "TeRM/TeRM_JSON";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

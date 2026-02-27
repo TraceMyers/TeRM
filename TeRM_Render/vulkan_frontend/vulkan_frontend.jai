@@ -120,7 +120,7 @@ Queue_Family_Indices :: struct {
     graphics_index: u32 = U32_MAX;
     compute_index:  u32 = U32_MAX;
     transfer_index: u32 = U32_MAX;
-    #overlay(present_index) array: [4]u32;
+    #overlay(present_index) array: [4]u32 = ---;
 }
 
 Physical_Device :: struct {

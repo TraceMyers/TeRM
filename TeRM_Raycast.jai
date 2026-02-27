@@ -385,7 +385,7 @@ report_module_error :: (fmt: string, args: ..Any) #expand {
     #if VALIDATION_LEVEL >= VALIDATION_LEVEL_MEDIUM {
         #import "TeRM/Log";
         if term_encode_text_allow_log() {
-            trm_log(fmt=fmt, args=..args, header="TeRM/EncodeText");
+            trm_log(fmt=fmt, args=..args, header="TeRM/Raycast");
         }
     } else #if VALIDATION_LEVEL == VALIDATION_LEVEL_HIGH {
         if term_encode_text_allow_assert() {

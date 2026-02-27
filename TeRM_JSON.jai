@@ -431,7 +431,7 @@ JSON_Number_Parser :: struct {
     stage: Parse_Number_Stage;
 }
 
-parse_number :: (text_parser: *JSON_Parser) -> bool {
+parse_number :: (text_parser: *JSON_Element_Parser) -> bool {
     using number_parser: JSON_Number_Parser;
 
     success                         := parse_number_components(*number_parser, text_parser);
@@ -455,7 +455,7 @@ parse_number :: (text_parser: *JSON_Parser) -> bool {
     return true;
 }
 
-parse_number_components :: (using number_parser: *JSON_Number_Parser, text_parser: *JSON_Parser) -> success: bool {
+parse_number_components :: (using number_parser: *JSON_Number_Parser, text_parser: *JSON_Element_Parser) -> success: bool {
     while text_parser.pos < text_parser.text.count {
         byte := text_parser.text[text_parser.pos];
 
@@ -540,7 +540,7 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, text_parse
     return true;
 }
 
-should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parser, text_parser: *JSON_Parser) -> should_use_int: bool, success: bool {
+should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parser, text_parser: *JSON_Element_Parser) -> should_use_int: bool, success: bool {
     maybe_represent_with_float := fraction.count == 0;
 
     if stage == { 
@@ -602,6 +602,7 @@ should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parse
 
 // helper struct for allocating the strings into the elements array
 JSON_String_Parser :: struct {
+    json_parser: *JSON_Element_Parser;
     json_elements: *[..]JSON_Element;
     fake_elements_begin_index: s32;
     fake_elements_count: s32;
@@ -611,11 +612,12 @@ JSON_String_Parser :: struct {
     i: int;
 
 
-parse_string :: (parser: *JSON_Parser) -> bool {
+parse_string :: (parser: *JSON_Element_Parser) -> bool {
     // get past opening quote
     parser.pos += 1;
     
     using string_parser: JSON_String_Parser;
+    json_parser = parser;
     json_elements = *parser.elements;
 
     remaining_bytes := parser.text.count - parser.pos;
@@ -629,7 +631,7 @@ parse_string :: (parser: *JSON_Parser) -> bool {
         // todo : error
         return false;
     }
-
+    
     while i + passthrough_byte_count < string_bytes.count {
         if byte == #char "\\" {
 
@@ -688,13 +690,17 @@ resize_if_needed :: inline (using string_parser: *JSON_String_Parser, new_strlen
     capacity := fake_elements_count * size_of(JSON_Element);
     if new_strlen < capacity {
         array_resize(json_elements, json_elements.count + new_element_count);
+
         fake_elements_count += new_element_count;
         if old_capacity == 0 {
             assert(string_builder.count == 0);
             fake_elements_begin_index = xx (json_elements.count - 1);
         }
-        // always set this ptr after an array resize!
+
+        // pointers into the array always set after an array resize!
         string_builder.data = xx (json_elements.data + fake_elements_begin_index);
+        top_collection := json_parser.builder_stack[json_parser.builder_stack.count-1];
+        json_parser.building_collection = *(json_elements.*)[top_collection]._internal_collection_builder;
     }
 }
 
@@ -727,7 +733,7 @@ parse_hex_bytes :: (using parser: *JSON_String_Parser) {
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------ :parse boolean or null
 
-parse_boolean_or_null :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> bool {
+parse_boolean_or_null :: (parser: *JSON_Element_Parser, $type: JSON_Element_Type) -> bool {
     // it's a car with a spoiler.
     //               _____________
     type_string ::  //////////////\
@@ -876,7 +882,7 @@ on_collection_ending_delimiter_found :: (type: JSON_Element_Type) #expand {
 
 // get the in-place location of the new element within the parent collection's list,
 // the parent collection's list is allocated when the collection is pushed.
-push_collection_child :: inline (parser: *JSON_Parser) -> *JSON_Element {
+push_collection_child :: inline (parser: *JSON_Element_Parser) -> *JSON_Element {
     using parser.building_collection;
     assert(child_elements_offset < child_elements_count);
     element_index := child_elements_offset + child_elements_counter;
@@ -888,7 +894,7 @@ push_collection_child :: inline (parser: *JSON_Parser) -> *JSON_Element {
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------- :collection handling second pass
 
-push_collection :: (using parser: *JSON_Parser, type: JSON_Element_Type, $in_place := true) -> success: bool {
+push_collection :: (using parser: *JSON_Element_Parser, type: JSON_Element_Type, $in_place := true) -> success: bool {
     if markers.count == 0 {
         // todo: error
         return false;
@@ -947,7 +953,7 @@ push_collection :: (using parser: *JSON_Parser, type: JSON_Element_Type, $in_pla
     return true;
 }
 
-pop_collection :: (using parser: *JSON_Parser) -> success: bool {
+pop_collection :: (using parser: *JSON_Element_Parser) -> success: bool {
     if builder_stack.count == 0 {
         // todo: error
         return false;
@@ -957,7 +963,7 @@ pop_collection :: (using parser: *JSON_Parser) -> success: bool {
     return true;
 }
 
-begin_parse_collection :: inline (parser: *[..]JSON_Parser, $type: JSON_Element_Type) {
+begin_parse_collection :: inline (parser: *[..]JSON_Element_Parser, $type: JSON_Element_Type) {
     success := push_collection(parser, type);
     parser.pos += 1;
     return success;

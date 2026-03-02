@@ -51,12 +51,7 @@ load_json_from_string :: (text: string, log_errors := false) -> JSON_Load_Result
         context.json_load_result.elements = gather_elements(text, collection_markers, element_count);
     }
 
-    // report_module_error("collection marker count: %", collection_markers.count);
-    // report_module_error("text_size: %", text.count);
-    // report_module_error("collection_markers_per_byte: %", cast(float) collection_markers.count / text.count);
-    // report_module_error("bytes per collection marker: %",  cast(float) text.count  / collection_markers.count);
-    // report_module_error("collection markers: %", collection_markers);
-
+    on_exit_load(text, log_errors);
     return context.json_load_result;
 }
 
@@ -158,15 +153,32 @@ JSON_Collection_Builder :: struct {
 
 JSON_Error_Code :: enum u16 {
     FAILED_TO_LOAD_FILE;
-    FOUND_EXTRA_END_CURLY_BRACE;
-    FOUND_EXTRA_END_SQUARE_BRACE;
-    FOUND_COLLECTION_WITHOUT_END_DELIMITER;
-    FOUND_TRAILING_COMMA;
-    EXPECTED_OBJECT_END_DELIMITER;
-    EXPECTED_ARRAY_END_DELIMITER;
-    EXPECTED_TRUE;
-    EXPECTED_FALSE;
-    EXPECTED_NULL;
+    EXTRA_END_CURLY_BRACE;
+    EXTRA_END_SQUARE_BRACE;
+    COLLECTION_WITHOUT_END_DELIMITER;
+    TRAILING_COMMA;
+    UNEXPECTED_COLON;
+    UNEXPECTED_END_OF_OBJECT;
+    UNEXPECTED_END_OF_ARRAY;
+    INVALID_BYTE;
+    OUT_OF_PLACE_PLUS_WHEN_PARSING_NUMBER;
+    OUT_OF_PLACE_MINUS_WHEN_PARSING_NUMBER;
+    OUT_OF_PLACE_DOT_WHEN_PARSING_NUMBER;
+    OUT_OF_PLACE_E_WHEN_PARSING_NUMBER;
+    EXTRA_DIGITS_IN_ZERO_WHEN_PARSING_NUMBER;
+    IMPROPERLY_FORMED_NUMBER_VALUE;
+    STRING_WITHOUT_END_QUOTE;
+    FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE;
+    EXPECTED_VALUE_TRUE;
+    EXPECTED_VALUE_FALSE;
+    EXPECTED_VALUE_NULL;
+    UNEXPECTED_END_OF_INPUT;
+    IMPROPERLY_FORMED_HEX;
+    _INTERNAL_ERROR_MARKER_COUNT_DOES_NOT_MATCH_COLLECTION_COUNT;
+    _INTERNAL_ERROR_BUILDER_STACK_DEPLETED;
+    _INTERNAL_FAILED_TRANSLATING_UTF16_TO_UTF8;
+    _INTERNAL_UNEXPECTED_UTF16_READ_BYTE_COUNT;
+    _INTERNAL_ERROR_MARKER_TYPE_DOES_NOT_MATCH_COLLECTION_TYPE;
 }
 
 JSON_Error_Flags :: enum_flags u16 {
@@ -245,17 +257,21 @@ gather_collection_markers :: (text: string) -> markers: []Collection_Marker, tot
                 inside_string = false;
             }
         } else if it == #char "}" {
-            on_collection_ending_delimiter_found(.OBJECT);
+            if !on_collection_ending_delimiter_found(.OBJECT) {
+                return .[], 0, false;
+            }
             top_marker = pop_top_marker();
             if top_marker == null {
-                add_load_error(.FOUND_EXTRA_END_CURLY_BRACE, it_index, .FATAL);
+                add_load_error(.EXTRA_END_CURLY_BRACE, it_index, .FATAL);
                 return .[], 0, false;
             }
         } else if it == #char "]" {
-            on_collection_ending_delimiter_found(.ARRAY);
+            if !on_collection_ending_delimiter_found(.ARRAY) {
+                return .[], 0, false;
+            }
             top_marker = pop_top_marker();
             if top_marker == null {
-                add_load_error(.FOUND_EXTRA_END_SQUARE_BRACE, it_index, .FATAL);
+                add_load_error(.EXTRA_END_SQUARE_BRACE, it_index, .FATAL);
                 return .[], 0, false;
             }
         } else if it == #char "," {
@@ -264,7 +280,7 @@ gather_collection_markers :: (text: string) -> markers: []Collection_Marker, tot
                 top_marker.element_count += 1;
                 top_marker.text_encountered_since_last_delimiter = false;
             } else {
-                add_load_error(.FOUND_TRAILING_COMMA, it_index, .FATAL);
+                add_load_error(.TRAILING_COMMA, it_index, .FATAL);
                 return .[], 0, false;
             }
         } else {
@@ -285,7 +301,7 @@ gather_collection_markers :: (text: string) -> markers: []Collection_Marker, tot
     }
 
     if collection_marker_stack.count != 1 {
-        add_load_error(.FOUND_COLLECTION_WITHOUT_END_DELIMITER, top_marker.file_position, .FATAL);
+        add_load_error(.COLLECTION_WITHOUT_END_DELIMITER, top_marker.file_position, .FATAL);
         return .[], 0, false; 
     } 
 
@@ -346,7 +362,7 @@ gather_elements :: no_inline (text: string, collection_markers: []Collection_Mar
             case .ARRAY_EXPECT_COMMA_OR_END;
                 parser.building_collection.state = .ARRAY_EXPECT_VALUE;
             case;
-                // todo : error
+                add_load_error(.TRAILING_COMMA, parser.pos, .FATAL);
                 return .[];
             }
         case #char ":";
@@ -354,7 +370,7 @@ gather_elements :: no_inline (text: string, collection_markers: []Collection_Mar
             case .OBJECT_EXPECT_COLON;
                 parser.building_collection.state = .OBJECT_EXPECT_VALUE;
             case;
-                // todo : error
+                add_load_error(.UNEXPECTED_COLON, parser.pos, .FATAL);
                 return .[];
             }
         case #char "}";
@@ -363,14 +379,14 @@ gather_elements :: no_inline (text: string, collection_markers: []Collection_Mar
                 #through;
             case .OBJECT_EXPECT_COMMA_OR_END;
                 if parser.building_collection.type != .OBJECT {
-                    // todo : error
+                    add_load_error(.UNEXPECTED_END_OF_OBJECT, parser.pos, .FATAL);
                     return .[];
                 }
                 if !pop_collection(*parser) {
                     return .[];
                 }
             case;
-                // todo : error
+                add_load_error(.UNEXPECTED_END_OF_OBJECT, parser.pos, .FATAL);
                 return .[];
             }
         case #char "]";
@@ -379,21 +395,21 @@ gather_elements :: no_inline (text: string, collection_markers: []Collection_Mar
                 #through;
             case .ARRAY_EXPECT_COMMA_OR_END;
                 if parser.building_collection.type != .ARRAY {
-                    // todo : error
+                    add_load_error(.UNEXPECTED_END_OF_ARRAY, parser.pos, .FATAL);
                     return .[];
                 }
                 if !pop_collection(*parser) {
                     return .[];
                 }
             case;
-                // todo : error
+                add_load_error(.UNEXPECTED_END_OF_ARRAY, parser.pos, .FATAL);
                 return .[];
             }       
         case;
             if is_digit(byte) || byte == "-" {
                 parse_number(*parser);
             } else {
-                // todo : error
+                add_load_error(.INVALID_BYTE, parser.pos, .FATAL);
                 return .[];
             }
         }
@@ -426,23 +442,23 @@ JSON_Number_Parser :: struct {
     stage: Parse_Number_Stage;
 }
 
-parse_number :: (text_parser: *JSON_Element_Parser) -> bool {
+parse_number :: (main_parser: *JSON_Element_Parser) -> bool {
     using number_parser: JSON_Number_Parser;
 
-    success                         := parse_number_components(*number_parser, text_parser);
+    success                         := parse_number_components(*number_parser, main_parser);
     if !success then return false;
-    represent_with_integer:, success = should_represent_number_with_integer(*number_parser, text_parser);
+    represent_with_integer:, success = should_represent_number_with_integer(*number_parser, main_parser);
     if !success then return false;
 
     if represent_with_integer {
         if exponent > 0 {
             base = mul_by_pow10_exponent(base, exponent, exponent_sign);
         }
-        element := push_collection_child(text_parser);
+        element := push_collection_child(main_parser);
         element.type = .INT;
         element.i64 = base * number_parser.sign;
     } else {
-        element := push_collection_child(text_parser);
+        element := push_collection_child(main_parser);
         element.type = .FLOAT;
         element.f64 = compose_float(base * sign, fraction, exponent * exponent_sign);
     }
@@ -450,16 +466,16 @@ parse_number :: (text_parser: *JSON_Element_Parser) -> bool {
     return true;
 }
 
-parse_number_components :: (using number_parser: *JSON_Number_Parser, text_parser: *JSON_Element_Parser) -> success: bool {
-    while text_parser.pos < text_parser.text.count {
-        byte := text_parser.text[text_parser.pos];
+parse_number_components :: (using number_parser: *JSON_Number_Parser, main_parser: *JSON_Element_Parser) -> success: bool {
+    while main_parser.pos < main_parser.text.count {
+        byte := main_parser.text[main_parser.pos];
 
         if byte == {
         case #char "+";
             if stage == .EXPONENT_SIGN {
                 stage = .EXPONENT_DIGITS; 
             } else {
-                // todo: error
+                add_load_error(.OUT_OF_PLACE_PLUS_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
                 return false;
             }
         case #char "-";
@@ -471,14 +487,14 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, text_parse
                 exponent_sign = -1;
                 stage = .EXPONENT_DIGITS; 
             case;
-                // todo: error
+                add_load_error(.OUT_OF_PLACE_MINUS_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
                 return false;
             }
         case #char ".";
             if stage == .BASE_ZERO || stage == .BASE_NONZERO {
                 stage = .FRACTION_DIGITS_BEGIN;
             } else {
-                // todo: error
+                add_load_error(.OUT_OF_PLACE_DOT_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
                 return false;
             }
         case #char "E";
@@ -487,7 +503,7 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, text_parse
             if stage == .BASE_ZERO || stage == .BASE_NONZERO || stage == .FRACTION_DIGITS {
                 stage = .EXPONENT_SIGN;
             } else {
-                // todo: error
+                add_load_error(.OUT_OF_PLACE_E_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
                 return false;
             }
         case;
@@ -503,12 +519,12 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, text_parse
                         stage = .BASE_NONZERO;
                     }
                 case .BASE_ZERO;
-                    // todo: error
+                    add_load_error(.EXTRA_DIGITS_IN_ZERO_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
                     return false;
                 case .BASE_NONZERO;
                     base = base * 10 + digit;
                 case .FRACTION_DIGITS_BEGIN;
-                    fraction.data = text_parser.text.data + text_parser.pos;
+                    fraction.data = main_parser.text.data + main_parser.pos;
                     fraction.count = 1;
                     stage = .FRACTION_DIGITS;
                 case .FRACTION_DIGITS;
@@ -524,7 +540,7 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, text_parse
             }
         }
         
-        text_parser.pos += 1;
+        main_parser.pos += 1;
     }
 
     // trim trailing zeroes from the fraction
@@ -535,15 +551,15 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, text_parse
     return true;
 }
 
-should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parser, text_parser: *JSON_Element_Parser) -> should_use_int: bool, success: bool {
+should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parser, main_parser: *JSON_Element_Parser) -> should_use_int: bool, success: bool {
     maybe_represent_with_float := fraction.count == 0;
 
-    if stage == { 
+    if #complete stage == { 
     case .SIGN; 
-        // todo : error
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
         return false, false;
     case .BASE_BEGIN;
-        // todo : error
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
         return false, false;
     case .BASE_ZERO;
         #through;
@@ -552,15 +568,15 @@ should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parse
         // is already gone due to representing the base as a 64 bit integer during parsing
         maybe_represent_with_float = false;
     case .FRACTION_DIGITS_BEGIN;
-        // todo : error
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
         return false, false;
     case .FRACTION_DIGITS;
         // float ok
     case .EXPONENT_SIGN; 
-        // todo : error
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
         return false, false;
     case .EXPONENT_DIGITS_BEGIN;
-        // todo : error
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
         return false, false;
     case .EXPONENT_DIGITS;
         // todo: see if it can be represented as an integer
@@ -627,7 +643,7 @@ parse_string :: (parser: *JSON_Element_Parser) -> bool {
 
     if !found_end_quote {
         parser.pos -= 1;
-        // todo : error
+        add_load_error(.STRING_WITHOUT_END_QUOTE, parser.pos, .FATAL);
         return false;
     }
     
@@ -744,11 +760,11 @@ parse_hex_bytes :: (using parser: *JSON_String_Parser) -> bool {
         word_count = 2;
 
         if string_bytes[pos] != #char "\\" {
-            // todo : error
+            add_load_error(.FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE, parser.pos, .FATAL);
             return false;
         }
         if string_bytes[pos+1] != #char "u" {
-            // todo : error
+            add_load_error(.FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE, parser.pos, .FATAL);
             return false;
         }
         pos += 2;
@@ -764,11 +780,11 @@ parse_hex_bytes :: (using parser: *JSON_String_Parser) -> bool {
     read_byte_count, write_byte_count, failure := utf16_to_utf8(xx utf16.data, utf8.data, utf16.count*2, utf8.count);
 
     if failure != 0 {
-        // todo : error
+        add_load_error(._INTERNAL_FAILED_TRANSLATING_UTF16_TO_UTF8, parser.pos, .FATAL);
         return false;
     }
     if read_byte_count * 2 != word_count {
-        // todo : error
+        add_load_error(._INTERNAL_UNEXPECTED_UTF16_READ_BYTE_COUNT, parser.pos, .FATAL);
         return false;
     }
 
@@ -793,7 +809,11 @@ parse_boolean_or_null :: (parser: *JSON_Element_Parser, $type: JSON_Element_Type
     parser.pos += str_in_text.count;
 
     if str_in_text != type_string {
-        // todo : error
+        error_code : JSON_Error_Code :
+            #ifx type == .TRUE  then JSON_Error_Code.EXPECTED_VALUE_TRUE
+            else #ifx type == .FALSE then JSON_Error_Code.EXPECTED_VALUE_FALSE
+            else JSON_Error_Code.EXPECTED_VALUE_NULL;
+        add_load_error(error_code, parser.pos, .FATAL);
         return false;
     }
 
@@ -825,21 +845,37 @@ on_enter_load :: (log_errors: bool) #expand {
     }
 }
 
-on_exit_load :: (file_text: string, elements: *[..]JSON_Element, log_errors: bool) {
+on_exit_load :: (file_text: string, log_errors: bool) {
     using context;
 
-    json_load_result.elements = elements.*;
+    _increment_wrap :: inline (x: $T, min: T, max: T) -> T {
+        if x >= max {
+            return min;
+        } else return x + 1;
+    }
+
+    json_load_result.errors = json_errors;
+
+    file_context_lines: [8]string;
+    fcl_indices: [file_context_lines.count]int;
+    fcl_i := 0;
 
     if file_text.count > 0 && json_errors.count > 0 {
-        next_file_position := 0;
+        next_text_covered_size := 0;
 
         // each error originally is only recorded at a file position
         // convert that to line, column
         for :per_line line, line_index : file_text {
-            file_position := next_file_position;
-            next_file_position += line.count;
+            text_covered_size := next_text_covered_size;
+            next_text_covered_size += line.count;
+
+            line_file_position_begin := line.data - file_text.data;
+            line_file_position_end   := line_file_position_begin + line.count;
 
             processed_error_count := 0;
+
+            file_context_lines[fcl_i] = line;
+            defer fcl_i = _increment_wrap(fcl_i, 0, file_context_lines.count-1);
 
             for *err : json_errors {
                 if (err.flags & .INTERNAL_UNPROCESSED) == 0 {
@@ -847,9 +883,9 @@ on_exit_load :: (file_text: string, elements: *[..]JSON_Element, log_errors: boo
                     continue;
                 }
 
-                if err._internal_file_position >= file_position 
-                && err._internal_file_position < next_file_position {
-                    err.column = xx (err._internal_file_position - file_position);
+                if err._internal_file_position >= line_file_position_begin 
+                && err._internal_file_position <= line_file_position_end {
+                    err.column = xx (err._internal_file_position - line_file_position_begin);
                     err.line = xx line_index;
                     err.flags &= ~.INTERNAL_UNPROCESSED;
 
@@ -858,8 +894,15 @@ on_exit_load :: (file_text: string, elements: *[..]JSON_Element, log_errors: boo
                     memset(space_buffer.data, " ", space_count);
                     spaces := string.{space_count, space_buffer.data};
 
+                    // getting cached line indices, oldest to newest
+                    fcl_indices[0] = _increment_wrap(fcl_i, 0, file_context_lines.count-1);
+                    if fcl_indices.count > 1 then for 1..fcl_indices.count-1 {
+                        fcl_indices[it] = _increment_wrap(fcl_indices[it-1], 0, file_context_lines.count-1);
+                    }
+
                     if log_errors {
-                        report_module_error(
+                        error_string_builder: String_Builder;
+                        print(*error_string_builder,
 #string HERE
 
 
@@ -867,11 +910,25 @@ on_exit_load :: (file_text: string, elements: *[..]JSON_Element, log_errors: boo
     flags      : %
     line #     : %
     column #   : %
-    line       : '%'
-                  %^
 HERE,
-                            err.code, err.flags, err.line, err.column, line, spaces
+                            err.code, 
+                            err.flags, 
+                            err.line, 
+                            err.column
                         );
+
+                        // print the file lines so the user can see the error location in the text
+                        for fcl_indices {
+                            if it_index == 0 {
+                                print(*error_string_builder, "    text       : %\n", file_context_lines[it]);
+                            } else {
+                                print(*error_string_builder, "                 %\n", file_context_lines[it]);
+                            }
+                        }
+                        // caret points at the problem location
+                        print(*error_string_builder,         "                 %^\n", spaces);
+
+                        report_module_error(builder_to_string(*error_string_builder));
                     }
 
                     processed_error_count += 1;
@@ -913,9 +970,10 @@ push_top_marker :: (type: JSON_Element_Type, file_position: int) -> *Collection_
     return *`markers[`collection_marker_stack[`collection_marker_stack.count-1]];
 }
 
-on_collection_ending_delimiter_found :: (type: JSON_Element_Type) #expand {
+on_collection_ending_delimiter_found :: (type: JSON_Element_Type) -> bool #expand {
     if `top_marker.type != type {
-        // todo : error
+        add_load_error(._INTERNAL_ERROR_MARKER_TYPE_DOES_NOT_MATCH_COLLECTION_TYPE, `it_index, .FATAL);
+        return false;
     }
     any_commas_encountered := `top_marker.element_count > 0;
     if `top_marker.text_encountered_since_last_delimiter {
@@ -923,8 +981,11 @@ on_collection_ending_delimiter_found :: (type: JSON_Element_Type) #expand {
         `total_element_count += 1;
     } else if any_commas_encountered {
         // no text since last comma = invalid
-        // todo : error
+        add_load_error(.TRAILING_COMMA, `it_index, .FATAL);
+        return false;
     }
+
+    return true;
 }
 
 // get the in-place location of the new element within the parent collection's list,
@@ -943,7 +1004,7 @@ push_collection_child :: inline (parser: *JSON_Element_Parser) -> *JSON_Element 
 
 push_collection :: (using parser: *JSON_Element_Parser, collection_type: JSON_Element_Type, $in_place := true) -> success: bool {
     if markers.count == 0 {
-        // todo: error
+        add_load_error(._INTERNAL_ERROR_MARKER_COUNT_DOES_NOT_MATCH_COLLECTION_COUNT, parser.pos, .FATAL);
         return false;
     }
 
@@ -1002,7 +1063,7 @@ push_collection :: (using parser: *JSON_Element_Parser, collection_type: JSON_El
 
 pop_collection :: (using parser: *JSON_Element_Parser) -> success: bool {
     if builder_stack.count == 0 {
-        // todo: error
+        add_load_error(._INTERNAL_ERROR_BUILDER_STACK_DEPLETED, parser.pos, .FATAL);
         return false;
     }
     builder_stack.count -= 1;
@@ -1020,7 +1081,7 @@ begin_parse_collection :: inline (parser: *JSON_Element_Parser, $type: JSON_Elem
 // ----------------------------------------------------------------------------- :misc
 
 report_module_error :: (fmt: string, args: ..Any) #expand {
-    // trm_log(fmt=fmt, args=..args, header="TeRM/JSON");
+    trm_log(fmt=fmt, args=..args, header="TeRM/JSON");
 }
 
 mul_by_pow10_exponent :: (x: s64, exponent: s64, exponent_sign: s64) -> s64 {
@@ -1052,12 +1113,12 @@ to_digit :: inline (byte: u8) -> u8 {
 parse_utf16_word_from_hex_text :: (using parser: *JSON_String_Parser) -> u16, bool {
     hex_string := string.{min(4, string_bytes.count - pos), string_bytes.data + pos};
     if hex_string.count < 4 {
-        // todo : error
+        add_load_error(.UNEXPECTED_END_OF_INPUT, json_parser.pos, .FATAL);
         return 0, false;
     }
     hex_bytes, success := hex_text_to_bytes(hex_string);
     if !success {
-        // todo : error
+        add_load_error(.IMPROPERLY_FORMED_HEX, json_parser.pos, .FATAL);
         return 0, false;
     }
     pos += 4;

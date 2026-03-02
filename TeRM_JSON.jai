@@ -45,22 +45,17 @@ load_json_from_string :: (text: string, log_errors := false) -> JSON_Load_Result
     result := *context.json_load_result;
     result.file_size = xx text.count;
 
-    collection_markers, element_count, success := gather_collection_markers(text, *collection_markers);
+    collection_markers, element_count, success := gather_collection_markers(text);
 
     if success {
-        elements:, success = gather_elements(text, *collection_markers, element_count);
-        if success then context.json_load_result.elements = elements;
+        context.json_load_result.elements = gather_elements(text, collection_markers, element_count);
     }
 
-    if success {
-
-    }
-
-    report_module_error("collection marker count: %", collection_markers.count);
-    report_module_error("text_size: %", text.count);
-    report_module_error("collection_markers_per_byte: %", cast(float) collection_markers.count / text.count);
-    report_module_error("bytes per collection marker: %",  cast(float) text.count  / collection_markers.count);
-    report_module_error("collection markers: %", collection_markers);
+    // report_module_error("collection marker count: %", collection_markers.count);
+    // report_module_error("text_size: %", text.count);
+    // report_module_error("collection_markers_per_byte: %", cast(float) collection_markers.count / text.count);
+    // report_module_error("bytes per collection marker: %",  cast(float) text.count  / collection_markers.count);
+    // report_module_error("collection markers: %", collection_markers);
 
     return context.json_load_result;
 }
@@ -81,7 +76,7 @@ JSON_Load_Result :: struct {
     // errors and terminal errors do not mean that the nodes weren't at least partially parsed
     errors: []JSON_Error;
     // for now, always utf8. may make this a parameter in the future.
-    string_encoding: Text_Encoding = .UTF8;
+    // string_encoding: Text_Encoding = .UTF8;
     // if any errors caused loading to exit early, this will be true. if so,
     // the final error in the list is guaranteed to be a fatal one, but not necessarily the
     // inciting error. if the error list is truncated, the fatal error replaced a non-fatal one. 
@@ -297,12 +292,12 @@ gather_collection_markers :: (text: string) -> markers: []Collection_Marker, tot
     return markers, total_element_count, true;
 }
 
-gather_elements :: (text: string, collection_markers: []Collection_Marker, element_count: int) -> []JSON_Element {
+gather_elements :: no_inline (text: string, collection_markers: []Collection_Marker, element_count: int) -> []JSON_Element {
     parser: JSON_Element_Parser;
     parser.text = text;
     array_reserve(*parser.elements, element_count*9/8);
     parser.builder_stack.allocator = temp;
-    array_reserve(*parser.builder_sack, 128);
+    array_reserve(*parser.builder_stack, 128);
     parser.markers = collection_markers;
 
     // bottom of stack = whole file = root object
@@ -345,25 +340,25 @@ gather_elements :: (text: string, collection_markers: []Collection_Marker, eleme
                 return .[];
             }
         case #char ",";
-            if building_collection.state == {
+            if parser.building_collection.state == {
             case .OBJECT_EXPECT_COMMA_OR_END;
-                building_collection.state = .OBJECT_EXPECT_KEY;
+                parser.building_collection.state = .OBJECT_EXPECT_KEY;
             case .ARRAY_EXPECT_COMMA_OR_END;
-                building_collection.state = .ARRAY_EXPECT_VALUE;
+                parser.building_collection.state = .ARRAY_EXPECT_VALUE;
             case;
                 // todo : error
                 return .[];
             }
         case #char ":";
-            if building_collection.state == {
+            if parser.building_collection.state == {
             case .OBJECT_EXPECT_COLON;
-                building_collection.state = .OBJECT_EXPECT_VALUE;
+                parser.building_collection.state = .OBJECT_EXPECT_VALUE;
             case;
                 // todo : error
                 return .[];
             }
         case #char "}";
-            if building_collection.state == {
+            if parser.building_collection.state == {
             case .OBJECT_EXPECT_KEY_OR_END;
                 #through;
             case .OBJECT_EXPECT_COMMA_OR_END;
@@ -371,7 +366,7 @@ gather_elements :: (text: string, collection_markers: []Collection_Marker, eleme
                     // todo : error
                     return .[];
                 }
-                if !pop_collection() {
+                if !pop_collection(*parser) {
                     return .[];
                 }
             case;
@@ -379,7 +374,7 @@ gather_elements :: (text: string, collection_markers: []Collection_Marker, eleme
                 return .[];
             }
         case #char "]";
-            if building_collection.state == {
+            if parser.building_collection.state == {
             case .ARRAY_EXPECT_VALUE_OR_END;
                 #through;
             case .ARRAY_EXPECT_COMMA_OR_END;
@@ -387,7 +382,7 @@ gather_elements :: (text: string, collection_markers: []Collection_Marker, eleme
                     // todo : error
                     return .[];
                 }
-                if !pop_collection() {
+                if !pop_collection(*parser) {
                     return .[];
                 }
             case;
@@ -395,7 +390,7 @@ gather_elements :: (text: string, collection_markers: []Collection_Marker, eleme
                 return .[];
             }       
         case;
-            if is_digit(it) || it == "-" {
+            if is_digit(byte) || byte == "-" {
                 parse_number(*parser);
             } else {
                 // todo : error
@@ -426,7 +421,7 @@ JSON_Number_Parser :: struct {
     sign           : s64 = 1;
     exponent_sign  : s64 = 1;
     base           : s64;
-    base           : s64;
+    exponent       : s64;
     fraction: string;
     stage: Parse_Number_Stage;
 }
@@ -436,7 +431,7 @@ parse_number :: (text_parser: *JSON_Element_Parser) -> bool {
 
     success                         := parse_number_components(*number_parser, text_parser);
     if !success then return false;
-    represent_with_integer:, success = should_represent_number_with_integer(*number_parser, parser);
+    represent_with_integer:, success = should_represent_number_with_integer(*number_parser, text_parser);
     if !success then return false;
 
     if represent_with_integer {
@@ -551,7 +546,7 @@ should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parse
         // todo : error
         return false, false;
     case .BASE_ZERO;
-        #though;
+        #through;
     case .BASE_NONZERO;
         // this may not necessarily be the right call, but if so, critical information
         // is already gone due to representing the base as a 64 bit integer during parsing
@@ -594,7 +589,7 @@ should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parse
         }
     }
 
-    return represent_with_integer;
+    return represent_with_integer, true;
 }
 
 // -----------------------------------------------------------------------------------
@@ -609,10 +604,14 @@ JSON_String_Parser :: struct {
     string_bytes: string;
     string_builder: string;
     passthrough_byte_count: int;
-    i: int;
-
+    pos: int;
+}
 
 parse_string :: (parser: *JSON_Element_Parser) -> bool {
+    // jai compiler doesn't recognize \b and \f
+    BACKSPACE : u8 : 0x8;
+    FORM_FEED : u8 : 0xc;
+
     // get past opening quote
     parser.pos += 1;
     
@@ -632,16 +631,15 @@ parse_string :: (parser: *JSON_Element_Parser) -> bool {
         return false;
     }
     
-    while i + passthrough_byte_count < string_bytes.count {
-        if byte == #char "\\" {
+    while pos + passthrough_byte_count < string_bytes.count {
+        if string_bytes[pos] == #char "\\" {
 
-            if passthrough_bytes > 0 {
-                push_bytes(parser, {passthrough_bytes, string_bytes.data + i};
-                i += passthrough_bytes;
+            if passthrough_byte_count > 0 {
+                push_bytes(*string_parser, {passthrough_byte_count, string_bytes.data + pos});
             }
-            i += 1;
+            pos += 1;
 
-            if string_bytes[i] == {
+            if string_bytes[pos] == {
             case #char "\"";
                 push_byte(*string_parser, #char "\"");
             case #char "\\";
@@ -649,9 +647,9 @@ parse_string :: (parser: *JSON_Element_Parser) -> bool {
             case #char "/";
                 push_byte(*string_parser, #char "/");
             case #char "b";
-                push_byte(*string_parser, #char "\b");
+                push_byte(*string_parser, BACKSPACE);
             case #char "f";
-                push_byte(*string_parser, #char "\f");
+                push_byte(*string_parser, FORM_FEED);
             case #char "n";
                 push_byte(*string_parser, #char "\n");
             case #char "r";
@@ -659,20 +657,23 @@ parse_string :: (parser: *JSON_Element_Parser) -> bool {
             case #char "t";
                 push_byte(*string_parser, #char "\t");
             case #char "u";
-                parse_hex_bytes(*string_parser);
+                if !parse_hex_bytes(*string_parser) {
+                    return false;
+                }
             }
-        } else if byte == #char "\"" {
-            assert(i + passthrough_byte_count + 1 == string_bytes.count);
+        } else if string_bytes[pos] == #char "\"" {
+            assert(pos + passthrough_byte_count + 1 == string_bytes.count);
             break;
         } else {
             passthrough_byte_count += 1;
         }
     }
     
-    if passthrough_bytes > 0 {
-        push_bytes(parser, {passthrough_bytes, string_bytes.data + i};
+    if passthrough_byte_count > 0 {
+        push_bytes(*string_parser, {passthrough_byte_count, string_bytes.data + pos});
     }
     
+    return true;
 }
 
 consume_until_non_escaped_quote :: inline (text: string) -> bytes: string, found_quote: bool {
@@ -686,16 +687,19 @@ consume_until_non_escaped_quote :: inline (text: string) -> bytes: string, found
 }
 
 // not a generally good resize function, but marginally correct
-resize_if_needed :: inline (using string_parser: *JSON_String_Parser, new_strlen: int) {
+resize_if_needed :: no_inline (using string_parser: *JSON_String_Parser, new_strlen: int) {
     capacity := fake_elements_count * size_of(JSON_Element);
-    if new_strlen < capacity {
+
+    if new_strlen > capacity {
+        new_element_count : s32 = xx div_ceil((new_strlen - capacity), size_of(JSON_Element));
         array_resize(json_elements, json_elements.count + new_element_count);
 
-        fake_elements_count += new_element_count;
-        if old_capacity == 0 {
+        // if resizing from 0 capacity
+        if fake_elements_count == 0 {
             assert(string_builder.count == 0);
             fake_elements_begin_index = xx (json_elements.count - 1);
         }
+        fake_elements_count += new_element_count;
 
         // pointers into the array always set after an array resize!
         string_builder.data = xx (json_elements.data + fake_elements_begin_index);
@@ -709,6 +713,7 @@ push_byte :: inline (using string_parser: *JSON_String_Parser, byte: u8) {
     resize_if_needed(string_parser, new_strlen);
     string_builder.count += 1;
     string_builder[string_builder.count-1] = byte;
+    pos += 1;
 }
 
 push_bytes :: inline (using string_parser: *JSON_String_Parser, bytes: string) {
@@ -717,18 +722,60 @@ push_bytes :: inline (using string_parser: *JSON_String_Parser, bytes: string) {
     old_count := string_builder.count;
     string_builder.count += bytes.count;
     memcpy(string_builder.data + old_count, bytes.data, bytes.count);
+    pos += bytes.count;
 }
 
-push_byte :: inline (using parser: *JSON_String_Parser, code: u8) {
-    push_byte(parser, code);
-    i += 1;
+parse_hex_bytes :: (using parser: *JSON_String_Parser) -> bool {
+    // get past 'u' char
+    pos += 1;
+
+    word_count := 1;
+
+    utf16: [2]u16;
+    success: bool;
+    utf16[0], success = parse_utf16_word_from_hex_text(parser);
+
+    if !success {
+        return false;
+    }
+    pos += 4;
+
+    if utf16[0] >= UTF16_HIGH_SURROGATE_MIN && utf16[0] <= UTF16_HIGH_SURROGATE_MAX {
+        word_count = 2;
+
+        if string_bytes[pos] != #char "\\" {
+            // todo : error
+            return false;
+        }
+        if string_bytes[pos+1] != #char "u" {
+            // todo : error
+            return false;
+        }
+        pos += 2;
+        
+        utf16[1], success = parse_utf16_word_from_hex_text(parser);
+        if !success {
+            return false;
+        }
+        pos += 4;
+    }
+
+    utf8: [6]u8;
+    read_byte_count, write_byte_count, failure := utf16_to_utf8(xx utf16.data, utf8.data, utf16.count*2, utf8.count);
+
+    if failure != 0 {
+        // todo : error
+        return false;
+    }
+    if read_byte_count * 2 != word_count {
+        // todo : error
+        return false;
+    }
+
+    utf8_str := string.{write_byte_count, utf8.data};
+    push_bytes(parser, utf8_str);
+    return true;
 }
-
-parse_hex_bytes :: (using parser: *JSON_String_Parser) {
-
-}
-// utf16_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
-
 
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------ :parse boolean or null
@@ -738,7 +785,7 @@ parse_boolean_or_null :: (parser: *JSON_Element_Parser, $type: JSON_Element_Type
     //               _____________
     type_string ::  //////////////\
              #ifx type == .TRUE  then "true" 
-        else #ifx type == .FALSE then "false";
+        else #ifx type == .FALSE then "false"
         else                          "null";
 
     remaining_bytes := parser.text.count - parser.pos;
@@ -884,17 +931,17 @@ on_collection_ending_delimiter_found :: (type: JSON_Element_Type) #expand {
 // the parent collection's list is allocated when the collection is pushed.
 push_collection_child :: inline (parser: *JSON_Element_Parser) -> *JSON_Element {
     using parser.building_collection;
-    assert(child_elements_offset < child_elements_count);
+    assert(child_elements_counter < child_elements_count);
     element_index := child_elements_offset + child_elements_counter;
-    new_element = *parser.elements[element_index];
-    child_elments_counter += 1;
+    new_element := *parser.elements[element_index];
+    child_elements_counter += 1;
     return new_element;
 }
 
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------- :collection handling second pass
 
-push_collection :: (using parser: *JSON_Element_Parser, type: JSON_Element_Type, $in_place := true) -> success: bool {
+push_collection :: (using parser: *JSON_Element_Parser, collection_type: JSON_Element_Type, $in_place := true) -> success: bool {
     if markers.count == 0 {
         // todo: error
         return false;
@@ -903,7 +950,7 @@ push_collection :: (using parser: *JSON_Element_Parser, type: JSON_Element_Type,
     // in the first pass, information about how many elements were in each collection
     // was gathered and put into a marker. retrieving the marker for this collection,
     // treating the markers array as a fifo stack.
-    marker := *(markers.*)[0];
+    marker := markers[0];
     markers.data  += 1;
     markers.count -= 1;
 
@@ -922,17 +969,17 @@ push_collection :: (using parser: *JSON_Element_Parser, type: JSON_Element_Type,
         // if the parent object's list already has 1 previously instantiated element,
         // we are getting this element back from this proc call. the element itself will 
         // become a parent object with its own list at the end of the array.
-        new_element = push_collection_child(parser);
+        new_collection = push_collection_child(parser);
     } else {
         // the only non-in-place element allocation is the root object
         assert(elements.count == 0);
-        new_element = array_add(*elements);
+        new_collection = array_add(*elements);
     }
 
-    new_element.type = .INTERNAL_COLLECTION_BUILDER;
+    new_collection.type = .INTERNAL_COLLECTION_BUILDER;
     {
-        using new_element._internal_collection_builder;
-        type = type;
+        using new_collection._internal_collection_builder;
+        type = collection_type;
         child_elements_count = marker.element_count;
         state = ifx type == .OBJECT then .OBJECT_EXPECT_KEY_OR_END else .ARRAY_EXPECT_VALUE_OR_END;
 
@@ -943,8 +990,8 @@ push_collection :: (using parser: *JSON_Element_Parser, type: JSON_Element_Type,
             // so they can be checked later to make sure they were set correctly after this step
             array_resize(*elements, elements.count + marker.element_count);
             // put this collection at the top of the stack
-            array_add(builder_stack, xx (new_element - elements.data));
-            building_collection = *new_element._internal_element_builder;
+            array_add(*builder_stack, xx (new_collection - elements.data));
+            building_collection = *new_collection._internal_collection_builder;
         } else {
             child_elements_offset = -1;
         }
@@ -959,11 +1006,11 @@ pop_collection :: (using parser: *JSON_Element_Parser) -> success: bool {
         return false;
     }
     builder_stack.count -= 1;
-    building_collection = *elements[builder_stack[builder_stack.count-1]].internal_element_builder;
+    building_collection = *elements[builder_stack[builder_stack.count-1]]._internal_collection_builder;
     return true;
 }
 
-begin_parse_collection :: inline (parser: *[..]JSON_Element_Parser, $type: JSON_Element_Type) {
+begin_parse_collection :: inline (parser: *JSON_Element_Parser, $type: JSON_Element_Type) -> bool {
     success := push_collection(parser, type);
     parser.pos += 1;
     return success;
@@ -973,7 +1020,7 @@ begin_parse_collection :: inline (parser: *[..]JSON_Element_Parser, $type: JSON_
 // ----------------------------------------------------------------------------- :misc
 
 report_module_error :: (fmt: string, args: ..Any) #expand {
-    trm_log(fmt=fmt, args=..args, header="TeRM/JSON");
+    // trm_log(fmt=fmt, args=..args, header="TeRM/JSON");
 }
 
 mul_by_pow10_exponent :: (x: s64, exponent: s64, exponent_sign: s64) -> s64 {
@@ -1002,6 +1049,20 @@ to_digit :: inline (byte: u8) -> u8 {
     return 0xff;
 }
 
+parse_utf16_word_from_hex_text :: (using parser: *JSON_String_Parser) -> u16, bool {
+    hex_string := string.{min(4, string_bytes.count - pos), string_bytes.data + pos};
+    if hex_string.count < 4 {
+        // todo : error
+        return 0, false;
+    }
+    hex_bytes, success := hex_text_to_bytes(hex_string);
+    if !success {
+        // todo : error
+        return 0, false;
+    }
+    pos += 4;
+    return (cast(*u16) hex_bytes.data).*, true;
+}
 
 // -----------------------------------------------------------------------------------
 
@@ -1017,6 +1078,7 @@ to_digit :: inline (byte: u8) -> u8 {
 #import "Basic";
 #import "File";
 #import "String";
+#import "Bit_Operations";
 
 #import "TeRM/TeRM_EncodeText";
 #import "TeRM/TeRM_String";

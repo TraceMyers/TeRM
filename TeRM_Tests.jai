@@ -816,6 +816,7 @@ json_test :: () -> bool, string {
     scope_set_working_directory(#filepath);
 
     jason := load_json_from_file("test_supplemental/100 KB 10 Level Formatted.json", true);
+    log("%", jason.elements);
 
     return_test_success();
 }

@@ -706,7 +706,7 @@ ceil_to_power_of_two :: inline (n: $T) -> T {
 
 shift_for_power_of_two_mul_or_div :: inline (divide_by: int) -> u8 {
     assert(is_power_of_two(divide_by));
-    return bit_scan_forward(divide_by) - 1;
+    return xx (bit_scan_forward(divide_by) - 1);
 }
 
 // -----------------------------------------------------------------------------------
@@ -1435,6 +1435,7 @@ RECIP_TWO_PI_FIXED_32 :: (1 << 32) / TWO_PI_FIXED;
 
 #import "Math";
 #import "Basic";
+#import "Bit_Operations";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

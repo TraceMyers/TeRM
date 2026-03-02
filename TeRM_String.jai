@@ -114,6 +114,37 @@ to_upper :: inline (str: string) -> string {
     return out_str;
 }
 
+hex_text_to_bytes :: (hex_text: string) -> string, bool {
+    assert(hex_text.count % 2 == 0);
+
+    out_bytes := alloc_string(hex_text.count / 2);
+
+    i := 0;
+    high_nibble := true;
+
+    for hex_text {
+        digit: u8 = ---;
+        if it >= #char "a" && it <= #char "z" {
+            digit = it - #char "a" + 10;
+        } else if it >= #char "A" && it <= #char "Z" {
+            digit = it - #char "A" + 10;
+        } else if digit >= #char "0" && digit <= #char "9" {
+            digit = it - #char "0";
+        } else {
+            free(out_bytes.data);
+            return {}, false;
+        }
+
+        one_if_doing_high_nibble := cast(int) (high_nibble != false);
+        out_bytes[i] |= digit << (4 * one_if_doing_high_nibble);
+
+        high_nibble = !high_nibble;
+        i += one_if_doing_high_nibble;
+    }
+
+    return out_bytes, true;
+}
+
 // for expansion. process a string per line. usage = 'for :per_line your_string { .. }'
 per_line :: (str: *string, body: Code, flags: For_Flags) #expand {
     // todo: could implement going over lines from last to first line

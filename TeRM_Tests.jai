@@ -818,6 +818,8 @@ json_test :: () -> bool, string {
     jason := load_json_from_file("test_supplemental/100 KB 10 Level Formatted.json", log_errors=true);
     defer free(*jason);
 
+    // todo: invalid json test suite
+
     // log("string byte count: %", jason.strings.count);
     // strings := string.{jason.strings.count, jason.strings.data};
     // for strings {
@@ -830,13 +832,13 @@ json_test :: () -> bool, string {
 
     test_condition(jason.errors.count == 0);
 
-    for_each_proc :: (stack: []*JSON_Element, parent: *JSON_Element, object_key: string, value: *JSON_Element, user_data: *void) -> bool {
-        if value.type == .STRING {
-            log("count: %, value: %", value.bytes.count, value.bytes);
-        }
-        return true;
-    }
-    for_each_element(*jason, for_each_proc);
+    // for_each_proc :: (stack: []*JSON_Element, parent: *JSON_Element, object_key: string, value: *JSON_Element, user_data: *void) -> bool {
+    //     if value.type == .STRING {
+    //         log("count: %, value: %", value.bytes.count, value.bytes);
+    //     }
+    //     return true;
+    // }
+    // for_each_element(*jason, for_each_proc);
 
     return_test_success();
 }

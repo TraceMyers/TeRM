@@ -922,9 +922,9 @@ begin_parse_collection :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> bo
             continue;
         }
 
-        // this delimiter stacking isn't keeping track of when collections of other types
-        // are being opened or closed, but I'm not trying to perfectly validate here.
-        // that happens in the main loop
+        // this delimiter stacking isn't keeping track of whether the delimiters are being
+        // supplied in the correct order (eg not checking for {[{]}}, 
+        // but I'm not trying to perfectly validate here. that happens in the main loop.
         if byte == END_DELIMITER {
             delimiter_stack -= 1;
             if delimiter_stack <= 0 {

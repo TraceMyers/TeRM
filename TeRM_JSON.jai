@@ -17,7 +17,7 @@
 // alt name
 load_json :: load_json_from_file;
 
-load_json_from_file :: (file_path: string, numbers_always_float := false, log_errors := false) -> JSON_Load_Result {
+load_json_from_file :: (file_path: string, numbers_always_float := false, shrink_allocations := true, log_errors := false) -> JSON_Load_Result {
     on_enter_load(log_errors);
 
     file_data, success := read_entire_file(file_path, log_errors=log_errors,,temp);
@@ -27,10 +27,10 @@ load_json_from_file :: (file_path: string, numbers_always_float := false, log_er
         return context.json_load_result;
     }
 
-    return load_json_from_string(file_data, numbers_always_float, log_errors);
+    return load_json_from_string(file_data, numbers_always_float, shrink_allocations, log_errors);
 }
 
-load_json_from_string :: (text: string, numbers_always_float := false, log_errors := false) -> JSON_Load_Result {
+load_json_from_string :: (text: string, numbers_always_float := false, shrink_allocations := true, log_errors := false) -> JSON_Load_Result {
     on_enter_load(log_errors);
 
     result := *context.json_load_result;
@@ -39,15 +39,8 @@ load_json_from_string :: (text: string, numbers_always_float := false, log_error
     parser := JSON_Parser.{text=text, always_float=numbers_always_float};
 
     success := parse_json(*parser);
-    if success {
-        success = post_process_collections(*parser.elements, parser.strings);
-    }
-    if success {
-        context.json_load_result.elements = parser.elements;
-        context.json_load_result.strings = parser.strings;
-    }
 
-    on_exit_load(text, log_errors);
+    on_exit_load(*parser, success, shrink_allocations, log_errors);
     return context.json_load_result;
 }
 
@@ -70,7 +63,6 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
         `collection_stack.count -= 1;
         `index_stack.count -= 1;
     }
-
 
     // ----------------------------
 
@@ -138,12 +130,21 @@ free :: (using result: *JSON_Load_Result) {
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------ :interface types
 
+// the procedure type for use with for_each_element
 for_each_json_element_proc :: #type (
-    stack: []*JSON_Element, 
+    // the current stack of collections (arrays, objects) hierarchically containing each other
+    collection_stack: []*JSON_Element, 
+    // the top element in the collection stack, parent of the current element
     parent_element: *JSON_Element, 
-    object_key: string, 
-    any_value: *JSON_Element, 
-    user_data: *void) -> bool;
+    // if the parent element is an object, this will be the current element's key. maybe ""
+    // if the parent element is an array, this will be ""
+    element_key: string, 
+    // if the parent element is an object, this is the current element's value
+    // if the parent element is an array, this is a value in the array
+    element_value: *JSON_Element, 
+    // data you pass in
+    user_data: *void
+) -> bool;
 
 JSON_Load_Result :: struct {
     // recursive-intrusive list of all elements. 
@@ -338,6 +339,7 @@ JSON_Parser :: struct {
     always_float: bool;
 
     string_parser: JSON_String_Parser;
+    string_lookup_table: Linear_Table(string, s32);
 }
 
 Parse_Number_Stage :: enum {
@@ -374,7 +376,8 @@ JSON_String_Parser :: struct {
 parse_json :: (using parser: *JSON_Parser) -> bool {
     // todo: estimate from file size
     array_reserve(*elements, 128);
-    array_reserve(*strings, 1024);
+    array_reserve(*strings, 2048);
+    table_init(*string_lookup_table, 1024,,temp);
 
     while parser.pos < parser.text.count {
         byte := parser.text[parser.pos];
@@ -731,27 +734,38 @@ parse_string :: (parser: *JSON_Parser) -> bool {
         push_bytes(parser, {passthrough_byte_count, input_string.data + pos});
     }
 
-    // null terminator, so that the strings array can be iterated over, and so the strings
-    // can be passed to c libs without reallocation.
-    push_byte(parser, 0);
+    new_string_length := parser.strings.count - output_string_begin;
+    if new_string_length > 0 {
+        // see if the string is cached
+        str := string.{new_string_length, parser.strings.data + output_string_begin};
+        existing_str_index_ptr := table_get(*parser.string_lookup_table, str);
+        if existing_str_index_ptr != null {
+            parser.strings.count = output_string_begin;
+            output_string_begin = xx existing_str_index_ptr.*;
+        } else {
+            // null terminator, so that the strings array can be iterated over, and so the strings
+            // can be passed to c libs without reallocation.
+            push_byte(parser, 0);
+            // cache the string
+            table_set(*parser.string_lookup_table, str, xx output_string_begin);
+        }
+    }
 
-    // a string is a collection builder, like an object or array, until post-processing
-    // because the elements array will resize and pointers will become invalid.
-
+    // a string, for now, uses a collection builder (like an object or array) until post-processing,
+    // because the strings array will resize and pointers will become invalid.
     element := push_collection_child(parser);
     element.type = .INTERNAL_COLLECTION_BUILDER;
     element._internal_collection_builder = {};
     
     {
         using element._internal_collection_builder;
-        type = .STRING;
-        debug_filepos = cast,trunc(u16) parser.pos; 
-
+        type                    = .STRING;
+        debug_filepos           = cast,trunc(u16) parser.pos; 
         // informing the post-processing stage where the string begins and ends
-        string_begin_element = xx output_string_begin;
-        string_length = xx (parser.strings.count - output_string_begin);
-
-        child_elements_counter = string_length; // for validation
+        string_begin_element    = xx output_string_begin;
+        string_length           = xx new_string_length;
+        // for validation during post-processing
+        child_elements_counter  = xx new_string_length; 
     }
 
     return true;
@@ -1076,13 +1090,13 @@ post_process_collections :: (elements: *[]JSON_Element, strings: []u8) -> bool {
             element.type = .ARRAY;
             element.array.elements = collection_elements;
         } else if builder.type == .STRING {
-            embedded_string: string;
+            str: string;
             if builder.string_length != 0 {
-                embedded_string.data = *strings[builder.string_begin_element];
-                embedded_string.count = builder.string_length;
+                str.data = *strings[builder.string_begin_element];
+                str.count = builder.string_length;
             }
             element.type = .STRING;
-            element.bytes = embedded_string;
+            element.bytes = str;
         } else {
             add_load_error(._INTERNAL_ERROR_INVALID_COLLECTION_TYPE, builder.debug_filepos, .FATAL);
             return false;
@@ -1112,13 +1126,32 @@ on_enter_load :: (log_errors: bool) #expand {
     }
 }
 
-on_exit_load :: (file_text: string, log_errors: bool) {
-    using context;
+on_exit_load :: (parser: *JSON_Parser, parse_success: bool, shrink_allocations: bool, log_errors: bool) {
+    // -----------------------------------------------------
 
     _increment_wrap :: inline (x: $T, min: T, max: T) -> T {
         if x >= max {
             return min;
         } else return x + 1;
+    }
+
+    // -----------------------------------------------------
+
+    using context;
+
+    if parse_success && shrink_allocations && json_load_result.allocator.proc != temp.proc {
+        array_shrink_if_small_enough(*parser.elements, 0.9);
+        array_shrink_if_small_enough(*parser.strings, 0.9);
+    }
+
+    post_process_success := post_process_collections(*parser.elements, parser.strings);
+
+    if parse_success && post_process_success {
+        json_load_result.elements = parser.elements;
+        json_load_result.strings = parser.strings;
+    } else {
+        array_reset(*parser.elements);
+        array_reset(*parser.strings);
     }
 
     json_load_result.errors = json_errors;
@@ -1127,16 +1160,16 @@ on_exit_load :: (file_text: string, log_errors: bool) {
     fcl_indices: [file_context_lines.count]int;
     fcl_i := 0;
 
-    if file_text.count > 0 && json_errors.count > 0 {
+    if parser.text.count > 0 && json_errors.count > 0 {
         next_text_covered_size := 0;
 
         // each error originally is only recorded at a file position
         // convert that to line, column
-        for :per_line line, line_index : file_text {
+        for :per_line line, line_index : parser.text {
             text_covered_size := next_text_covered_size;
             next_text_covered_size += line.count;
 
-            line_file_position_begin := line.data - file_text.data;
+            line_file_position_begin := line.data - parser.text.data;
             line_file_position_end   := line_file_position_begin + line.count;
 
             processed_error_count := 0;
@@ -1332,3 +1365,7 @@ advance_collection_state_for_value_or_return_if_invalid :: (using parser: *JSON_
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_Array";
+#import "TeRM/TeRM_Storage";
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

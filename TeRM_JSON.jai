@@ -171,7 +171,6 @@ JSON_Load_Result :: struct {
     errors_truncated: bool;
 }
 
-
 JSON_Element_Type :: enum u8 {
     // default element type. used for debugging.
     INTERNAL_UNINITIALIZED :: 0;
@@ -1262,7 +1261,6 @@ parse_utf16_word_from_hex_text :: (parser: *JSON_Parser) -> u16, bool {
 }
 
 advance_collection_state_for_string_or_return_if_invalid :: (using parser: *JSON_Parser) #expand {
-    // if the builder stack has only one member, it's the fake top-level scope object.
     if builder_stack.count != 0 {
         if building_collection.state == {
         case .OBJECT_EXPECT_KEY_OR_END;
@@ -1289,7 +1287,6 @@ advance_collection_state_for_string_or_return_if_invalid :: (using parser: *JSON
 }
 
 advance_collection_state_for_value_or_return_if_invalid :: (using parser: *JSON_Parser) #expand {
-    // if the builder stack has only one member, it's the fake top-level scope object.
     if builder_stack.count != 0 {
         if building_collection.state == {
         case .OBJECT_EXPECT_KEY_OR_END;

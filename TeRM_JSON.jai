@@ -7,13 +7,13 @@
 // interface procedures
 // interface types
 // errors
-// parse mid layer
+// parser types
+// parse_json
 // parse number
 // parse string
 // parse boolean or null
+// parse collection
 // on enter and exit
-// collection handling first pass
-// collection handling second pass
 // misc
 
 // -----------------------------------------------------------------------------------
@@ -22,7 +22,7 @@
 // alt name
 load_json :: load_json_from_file;
 
-load_json_from_file :: (file_path: string, log_errors := false) -> JSON_Load_Result {
+load_json_from_file :: (file_path: string, numbers_always_float := false, log_errors := false) -> JSON_Load_Result {
     on_enter_load(log_errors);
 
     // todo: go back to temp
@@ -34,27 +34,112 @@ load_json_from_file :: (file_path: string, log_errors := false) -> JSON_Load_Res
         return context.json_load_result;
     }
 
-    return load_json_from_string(file_data, log_errors);
+    return load_json_from_string(file_data, numbers_always_float, log_errors);
 }
 
-load_json_from_string :: (text: string, log_errors := false) -> JSON_Load_Result {
-    // two pass loader. iterates over text once to get collection data for allocations and a second time
-    // to parse and create the elements array
+load_json_from_string :: (text: string, numbers_always_float := false, log_errors := false) -> JSON_Load_Result {
     on_enter_load(log_errors);
 
     result := *context.json_load_result;
     result.file_size = xx text.count;
+    result.allocator = context.allocator;
+    parser := JSON_Parser.{text=text, always_float=numbers_always_float};
 
-    elements: []JSON_Element;
-
-    collection_markers, element_count, success := gather_collection_markers(text);
-    if success elements = gather_elements(text, collection_markers, element_count);
-    success &= elements.count > 0;
-    if success then success = post_process_collections(*elements);
-    if success then context.json_load_result.elements = elements;
+    success := parse_json(*parser);
+    if success {
+        success = post_process_collections(*parser.elements, parser.strings);
+    }
+    if success {
+        context.json_load_result.elements = parser.elements;
+        context.json_load_result.strings = parser.strings;
+    }
 
     on_exit_load(text, log_errors);
     return context.json_load_result;
+}
+
+for_each_element :: (result: *JSON_Load_Result, proc: (stack: []*JSON_Element, parent_element: *JSON_Element, object_key: string, any_value: *JSON_Element, user_data: *void) -> bool, user_data: *void = null) {
+    // ----------------------------
+
+    _push_collection :: (element: *JSON_Element) -> bool #expand {
+        push_success := static_array_add(*`collection_stack, element, `collection_buffer.count);
+        if !push_success {
+            return false;
+        }
+        push_success = static_array_add(*`index_stack, 0, `index_buffer.count);
+        if !push_success {
+            return false;
+        }
+        return true;
+    }
+
+    _pop_collection :: () #expand {
+        `collection_stack.count -= 1;
+        `index_stack.count -= 1;
+    }
+
+
+    // ----------------------------
+
+    if result.elements.count == 0 {
+        return;
+    }
+
+    collection_buffer: [512]*JSON_Element;
+    collection_stack: []*JSON_Element;
+    collection_stack.data = collection_buffer.data;
+
+    index_buffer: [collection_buffer.count]int;
+    index_stack: []int;
+    index_stack.data = index_buffer.data;
+
+    static_array_add(*collection_stack, *result.elements[0], collection_buffer.count);
+    static_array_add(*index_stack, 0, index_buffer.count);
+
+    while collection_stack.count > 0 {
+        collection_index := *index_stack[index_stack.count-1];
+        collection := collection_stack[collection_stack.count-1];
+
+        element_key: string;
+        element_value: *JSON_Element;
+
+        if collection.type == .ARRAY {
+            if collection_index.* >= collection.array.elements.count {
+                _pop_collection();
+                continue;
+            } else {
+                element_value = *collection.array.elements[collection_index.*];
+            }
+        } else {
+            if collection_index.* >= collection.object.elements.count {
+                _pop_collection();
+                continue;
+            } else {
+                kv_pair := *collection.object.elements[collection_index.*];
+                element_key = kv_pair.key.bytes;
+                element_value = *kv_pair.value;
+            }
+        }
+
+        if !proc(collection_stack, collection, element_key, element_value, user_data) {
+            return;
+        }
+
+        collection_index.* += 1;
+
+        if element_value.type == .ARRAY || element_value.type == .OBJECT {
+            if !_push_collection(element_value) {
+                // todo: error
+                break;
+            }
+        }
+    }
+}
+
+free :: (using result: *JSON_Load_Result) {
+    free(elements.data,,allocator);
+    free(strings.data,,allocator);
+    result.* = {};
 }
 
 // -----------------------------------------------------------------------------------
@@ -62,8 +147,10 @@ load_json_from_string :: (text: string, log_errors := false) -> JSON_Load_Result
 
 JSON_Load_Result :: struct {
     // recursive-intrusive list of all elements. 
-    // first object is file root, a special object representing the collection of top-level elements
+    // first element is file root element
     elements: []JSON_Element;
+    // all of the strings in one buffer
+    strings: []u8;
     // the size of the data that was read, whether a file or string was input. 
     file_size: s32;
     // if there are any errors, they will be in this list. errors are not necessarily
@@ -72,6 +159,8 @@ JSON_Load_Result :: struct {
     // the next load or save.
     // errors and terminal errors do not mean that the nodes weren't at least partially parsed
     errors: []JSON_Error;
+    // carry this around so freeing is easier
+    allocator: Allocator;
     // for now, always utf8. may make this a parameter in the future.
     // string_encoding: Text_Encoding = .UTF8;
     // if any errors caused loading to exit early, this will be true. if so,
@@ -145,9 +234,12 @@ JSON_Collection_Parse_State :: enum u8 {
 JSON_Collection_Builder :: struct {
     type: JSON_Element_Type;
     state: JSON_Collection_Parse_State;
+    debug_filepos: u16;
     child_elements_offset  : s32;
     child_elements_count   : s32;
     child_elements_counter : s32;
+    #overlay(child_elements_offset) string_begin_element: s32;
+    #overlay(child_elements_count)  string_length: s32;
 }
 
 // -----------------------------------------------------------------------------------
@@ -158,6 +250,7 @@ JSON_Error_Code :: enum u16 {
     EXTRA_END_CURLY_BRACE;
     EXTRA_END_SQUARE_BRACE;
     COLLECTION_WITHOUT_END_DELIMITER;
+    EXTRA_COLLECTION_END_DELIMITER;
     TRAILING_COMMA;
     UNEXPECTED_COLON;
     UNEXPECTED_END_OF_OBJECT;
@@ -231,221 +324,21 @@ add_load_error :: (code: JSON_Error_Code, file_position: s64, flags: JSON_Error_
 }
 
 // -----------------------------------------------------------------------------------
-// ------------------------------------------------------------------ :parse mid layer
+// --------------------------------------------------------------------- :parser types
 
-JSON_Element_Parser :: struct {
+JSON_Parser :: struct {
     text: string;
     pos: s64;
     elements: [..]JSON_Element;
-    markers: []Collection_Marker; 
+    strings: [..]u8;
     builder_stack: [..]s32;
     building_collection: *JSON_Collection_Builder;
+
+    number_parser: JSON_Number_Parser;
+    always_float: bool;
+
+    string_parser: JSON_String_Parser;
 }
-
-gather_collection_markers :: (text: string) -> markers: []Collection_Marker, total_element_count: int, success: bool {
-    markers: [..]Collection_Marker;
-    markers.allocator = temp;
-    // from a single test file, estimated 131 bytes per collection. 
-    // 96 < 131, conservative estimate giving more markers
-    array_reserve(*markers, max(text.count / 96, 64));
-
-    collection_marker_stack: [..]int;
-    collection_marker_stack.allocator = temp;
-    array_reserve(*markers, 128);
-
-    top_marker := push_top_marker(.OBJECT, 0);
-    inside_string := false;
-    total_element_count := 0;
-
-    // 73 us
-    for text {
-        if is_space(it) {
-            continue;
-        } else if inside_string {
-            if it == "\"" && it_index > 0 && text[it_index-1] != "\\" {
-                inside_string = false;
-            }
-        } else if it == #char "}" {
-            if !on_collection_ending_delimiter_found(.OBJECT) {
-                return .[], 0, false;
-            }
-            top_marker = pop_top_marker();
-            if top_marker == null {
-                add_load_error(.EXTRA_END_CURLY_BRACE, it_index, .FATAL);
-                return .[], 0, false;
-            }
-        } else if it == #char "]" {
-            if !on_collection_ending_delimiter_found(.ARRAY) {
-                return .[], 0, false;
-            }
-            top_marker = pop_top_marker();
-            if top_marker == null {
-                add_load_error(.EXTRA_END_SQUARE_BRACE, it_index, .FATAL);
-                return .[], 0, false;
-            }
-        } else if it == #char "," {
-            if top_marker.text_encountered_since_last_delimiter {
-                total_element_count += 1;
-                top_marker.element_count += 1;
-                top_marker.text_encountered_since_last_delimiter = false;
-            } else {
-                add_load_error(.TRAILING_COMMA, it_index, .FATAL);
-                return .[], 0, false;
-            }
-        } else {
-            top_marker.text_encountered_since_last_delimiter = true;
-            if it == {
-            case #char "{";
-                top_marker = push_top_marker(.OBJECT, it_index);
-                total_element_count += 1;
-            case #char "[";
-                top_marker = push_top_marker(.ARRAY, it_index);
-                total_element_count += 1;
-            case #char ":";
-                total_element_count += 1;
-            case #char "\"";
-                inside_string = true;
-            }
-        }
-    }
-
-    if collection_marker_stack.count != 1 {
-        add_load_error(.COLLECTION_WITHOUT_END_DELIMITER, top_marker.file_position, .FATAL);
-        return .[], 0, false; 
-    } 
-
-    return markers, total_element_count, true;
-}
-
-gather_elements :: no_inline (text: string, collection_markers: []Collection_Marker, element_count: int) -> []JSON_Element {
-    parser: JSON_Element_Parser;
-    parser.text = text;
-    array_reserve(*parser.elements, element_count*9/8);
-    parser.builder_stack.allocator = temp;
-    array_reserve(*parser.builder_stack, 128);
-    parser.markers = collection_markers;
-
-    // bottom of stack = whole file = root object
-    success := push_collection(*parser, .OBJECT, false);
-    if !success {
-        return .[];
-    }
-
-    last_thing: string;
-
-    while parser.pos < parser.text.count {
-        byte := parser.text[parser.pos];
-        
-        if is_space(byte) {
-            parser.pos += 1;
-            continue;
-        }
-
-        if byte == {
-        case #char "{";
-            if !begin_parse_collection(*parser, .OBJECT) {
-                return .[];
-            }
-            last_thing = "object";
-        case #char "[";
-            if !begin_parse_collection(*parser, .ARRAY) {
-                return .[];
-            }
-            last_thing = "array";
-        case #char "\"";
-            if !parse_string(*parser) {
-                return .[];
-            }
-            last_thing = "string";
-        case #char "t";
-            if !parse_boolean_or_null(*parser, .TRUE) {
-                return .[];
-            }
-            last_thing = "bool or null";
-        case #char "f";
-            if !parse_boolean_or_null(*parser, .FALSE) {
-                return .[];
-            }
-            last_thing = "bool or null";
-        case #char "n";
-            if !parse_boolean_or_null(*parser, .NULL) {
-                return .[];
-            }
-            last_thing = "bool or null";
-        case #char ",";
-            if parser.building_collection.state == {
-            case .OBJECT_EXPECT_COMMA_OR_END;
-                parser.building_collection.state = .OBJECT_EXPECT_KEY;
-            case .ARRAY_EXPECT_COMMA_OR_END;
-                parser.building_collection.state = .ARRAY_EXPECT_VALUE;
-            case;
-                add_load_error(.TRAILING_COMMA, parser.pos, .FATAL);
-                return .[];
-            }
-            parser.pos += 1;
-            last_thing = "comma";
-        case #char ":";
-            if parser.building_collection.state == {
-            case .OBJECT_EXPECT_COLON;
-                parser.building_collection.state = .OBJECT_EXPECT_VALUE;
-            case;
-                add_load_error(.UNEXPECTED_COLON, parser.pos, .FATAL);
-                return .[];
-            }
-            parser.pos += 1;
-            last_thing = "colon";
-        case #char "}";
-            if parser.building_collection.state == {
-            case .OBJECT_EXPECT_KEY_OR_END;
-                #through;
-            case .OBJECT_EXPECT_COMMA_OR_END;
-                if parser.building_collection.type != .OBJECT {
-                    add_load_error(.UNEXPECTED_END_OF_OBJECT, parser.pos, .FATAL);
-                    return .[];
-                }
-                if !pop_collection(*parser) {
-                    return .[];
-                }
-            case;
-                add_load_error(.UNEXPECTED_END_OF_OBJECT, parser.pos, .FATAL);
-                return .[];
-            }
-            parser.pos += 1;
-            last_thing = "end object";
-        case #char "]";
-            if parser.building_collection.state == {
-            case .ARRAY_EXPECT_VALUE_OR_END;
-                #through;
-            case .ARRAY_EXPECT_COMMA_OR_END;
-                if parser.building_collection.type != .ARRAY {
-                    add_load_error(.UNEXPECTED_END_OF_ARRAY, parser.pos, .FATAL);
-                    return .[];
-                }
-                if !pop_collection(*parser) {
-                    return .[];
-                }
-            case;
-                add_load_error(.UNEXPECTED_END_OF_ARRAY, parser.pos, .FATAL);
-                return .[];
-            }       
-            parser.pos += 1;
-            last_thing = "end array";
-        case;
-            if is_digit(byte) || byte == "-" {
-                parse_number(*parser);
-                last_thing = "number";
-            } else {
-                add_load_error(.INVALID_BYTE, parser.pos, .FATAL);
-                return .[];
-            }
-        }
-    }
-
-    return parser.elements;
-}
-
-// -----------------------------------------------------------------------------------
-// ------------------------------------------------------------------------ :parse int
 
 Parse_Number_Stage :: enum {
     SIGN; 
@@ -468,25 +361,152 @@ JSON_Number_Parser :: struct {
     stage: Parse_Number_Stage;
 }
 
-parse_number :: (main_parser: *JSON_Element_Parser) -> bool {
-    advance_collection_state_for_value_or_return_if_invalid();
+// helper struct for allocating the strings into the elements array
+JSON_String_Parser :: struct {
+    input_string: string;
+    output_string_begin: int;
+    passthrough_byte_count: int;
+    pos: int;
+}
 
-    using number_parser: JSON_Number_Parser;
+// -----------------------------------------------------------------------------------
+// ----------------------------------------------------------------------- :parse_json
 
-    success                         := parse_number_components(*number_parser, main_parser);
+parse_json :: (using parser: *JSON_Parser) -> bool {
+    // todo: estimate from file size
+    array_reserve(*elements, 128);
+    array_reserve(*strings, 1024);
+
+    while parser.pos < parser.text.count {
+        byte := parser.text[parser.pos];
+        
+        if is_space(byte) {
+            parser.pos += 1;
+            continue;
+        }
+
+        if byte == {
+        case #char "{";
+            if !begin_parse_collection(parser, .OBJECT) {
+                return false;
+            }
+        case #char "[";
+            if !begin_parse_collection(parser, .ARRAY) {
+                return false;
+            }
+        case #char "\"";
+            if !parse_string(parser) {
+                return false;
+            }
+        case #char "t";
+            if !parse_boolean_or_null(parser, .TRUE) {
+                return false;
+            }
+        case #char "f";
+            if !parse_boolean_or_null(parser, .FALSE) {
+                return false;
+            }
+        case #char "n";
+            if !parse_boolean_or_null(parser, .NULL) {
+                return false;
+            }
+        case #char ",";
+            if parser.building_collection.state == {
+            case .OBJECT_EXPECT_COMMA_OR_END;
+                parser.building_collection.state = .OBJECT_EXPECT_KEY;
+            case .ARRAY_EXPECT_COMMA_OR_END;
+                parser.building_collection.state = .ARRAY_EXPECT_VALUE;
+            case;
+                add_load_error(.TRAILING_COMMA, parser.pos, .FATAL);
+                return false;
+            }
+            parser.pos += 1;
+        case #char ":";
+            if parser.building_collection.state == {
+            case .OBJECT_EXPECT_COLON;
+                parser.building_collection.state = .OBJECT_EXPECT_VALUE;
+            case;
+                add_load_error(.UNEXPECTED_COLON, parser.pos, .FATAL);
+                return false;
+            }
+            parser.pos += 1;
+        case #char "}";
+            if parser.building_collection.state == {
+            case .OBJECT_EXPECT_KEY_OR_END;
+                #through;
+            case .OBJECT_EXPECT_COMMA_OR_END;
+                if parser.building_collection.type != .OBJECT {
+                    add_load_error(.UNEXPECTED_END_OF_OBJECT, parser.pos, .FATAL);
+                    return false;
+                }
+                if !pop_collection(parser) {
+                    return false;
+                }
+            case;
+                add_load_error(.UNEXPECTED_END_OF_OBJECT, parser.pos, .FATAL);
+                return false;
+            }
+            parser.pos += 1;
+        case #char "]";
+            if parser.building_collection.state == {
+            case .ARRAY_EXPECT_VALUE_OR_END;
+                #through;
+            case .ARRAY_EXPECT_COMMA_OR_END;
+                if parser.building_collection.type != .ARRAY {
+                    add_load_error(.UNEXPECTED_END_OF_ARRAY, parser.pos, .FATAL);
+                    return false;
+                }
+                if !pop_collection(parser) {
+                    return false;
+                }
+            case;
+                add_load_error(.UNEXPECTED_END_OF_ARRAY, parser.pos, .FATAL);
+                return false;
+            }       
+            parser.pos += 1;
+        case;
+            if is_digit(byte) || byte == "-" {
+                parse_number(parser);
+            } else {
+                add_load_error(.INVALID_BYTE, parser.pos, .FATAL);
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+// -----------------------------------------------------------------------------------
+// --------------------------------------------------------------------- :parse number
+
+parse_number :: (parser: *JSON_Parser) -> bool {
+    using parser.number_parser;
+    parser.number_parser = {};
+
+    advance_collection_state_for_value_or_return_if_invalid(parser);
+
+    success := parse_number_components(parser);
     if !success then return false;
-    represent_with_integer:, success = should_represent_number_with_integer(*number_parser, main_parser);
+
+    represent_with_integer:, success = should_represent_number_with_integer(parser);
     if !success then return false;
+
+    // overrides decision rather than skipping it, because important valdiation happens in the 
+    // decision proc
+    if parser.always_float {
+        represent_with_integer = false;
+    }
 
     if represent_with_integer {
         if exponent > 0 {
             base = mul_by_pow10_exponent(base, exponent, exponent_sign);
         }
-        element := push_collection_child(main_parser);
+        element := push_collection_child(parser);
         element.type = .INT;
-        element.i64 = base * number_parser.sign;
+        element.i64 = base * sign;
     } else {
-        element := push_collection_child(main_parser);
+        element := push_collection_child(parser);
         element.type = .FLOAT;
         element.f64 = compose_float(base * sign, fraction, exponent * exponent_sign);
     }
@@ -494,16 +514,18 @@ parse_number :: (main_parser: *JSON_Element_Parser) -> bool {
     return true;
 }
 
-parse_number_components :: (using number_parser: *JSON_Number_Parser, main_parser: *JSON_Element_Parser) -> success: bool {
-    while main_parser.pos < main_parser.text.count {
-        byte := main_parser.text[main_parser.pos];
+parse_number_components :: (parser: *JSON_Parser) -> success: bool {
+    using parser.number_parser;
+
+    while parser.pos < parser.text.count {
+        byte := parser.text[parser.pos];
 
         if byte == {
         case #char "+";
             if stage == .EXPONENT_SIGN {
                 stage = .EXPONENT_DIGITS; 
             } else {
-                add_load_error(.OUT_OF_PLACE_PLUS_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
+                add_load_error(.OUT_OF_PLACE_PLUS_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                 return false;
             }
         case #char "-";
@@ -515,14 +537,14 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, main_parse
                 exponent_sign = -1;
                 stage = .EXPONENT_DIGITS; 
             case;
-                add_load_error(.OUT_OF_PLACE_MINUS_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
+                add_load_error(.OUT_OF_PLACE_MINUS_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                 return false;
             }
         case #char ".";
             if stage == .BASE_ZERO || stage == .BASE_NONZERO {
                 stage = .FRACTION_DIGITS_BEGIN;
             } else {
-                add_load_error(.OUT_OF_PLACE_DOT_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
+                add_load_error(.OUT_OF_PLACE_DOT_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                 return false;
             }
         case #char "E";
@@ -531,7 +553,7 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, main_parse
             if stage == .BASE_ZERO || stage == .BASE_NONZERO || stage == .FRACTION_DIGITS {
                 stage = .EXPONENT_SIGN;
             } else {
-                add_load_error(.OUT_OF_PLACE_E_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
+                add_load_error(.OUT_OF_PLACE_E_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                 return false;
             }
         case;
@@ -547,12 +569,12 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, main_parse
                         stage = .BASE_NONZERO;
                     }
                 case .BASE_ZERO;
-                    add_load_error(.EXTRA_DIGITS_IN_ZERO_WHEN_PARSING_NUMBER, main_parser.pos, .FATAL);
+                    add_load_error(.EXTRA_DIGITS_IN_ZERO_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                     return false;
                 case .BASE_NONZERO;
                     base = base * 10 + digit;
                 case .FRACTION_DIGITS_BEGIN;
-                    fraction.data = main_parser.text.data + main_parser.pos;
+                    fraction.data = parser.text.data + parser.pos;
                     fraction.count = 1;
                     stage = .FRACTION_DIGITS;
                 case .FRACTION_DIGITS;
@@ -568,7 +590,7 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, main_parse
             }
         }
         
-        main_parser.pos += 1;
+        parser.pos += 1;
     }
 
     // trim trailing zeroes from the fraction
@@ -579,15 +601,17 @@ parse_number_components :: (using number_parser: *JSON_Number_Parser, main_parse
     return true;
 }
 
-should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parser, main_parser: *JSON_Element_Parser) -> should_use_int: bool, success: bool {
+should_represent_number_with_integer :: (parser: *JSON_Parser) -> should_use_int: bool, success: bool {
+    using parser.number_parser;
+    
     maybe_represent_with_float := fraction.count == 0;
 
     if #complete stage == { 
     case .SIGN; 
-        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
         return false, false;
     case .BASE_BEGIN;
-        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
         return false, false;
     case .BASE_ZERO;
         #through;
@@ -596,15 +620,15 @@ should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parse
         // is already gone due to representing the base as a 64 bit integer during parsing
         maybe_represent_with_float = false;
     case .FRACTION_DIGITS_BEGIN;
-        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
         return false, false;
     case .FRACTION_DIGITS;
         // float ok
     case .EXPONENT_SIGN; 
-        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
         return false, false;
     case .EXPONENT_DIGITS_BEGIN;
-        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, main_parser.pos, .FATAL);
+        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
         return false, false;
     case .EXPONENT_DIGITS;
         // todo: see if it can be represented as an integer
@@ -639,28 +663,11 @@ should_represent_number_with_integer :: (using number_parser: *JSON_Number_Parse
 // -----------------------------------------------------------------------------------
 // --------------------------------------------------------------------- :parse string
 
-// helper struct for allocating the strings into the elements array
-JSON_String_Parser :: struct {
-    main_parser: *JSON_Element_Parser;
-    json_elements: *[..]JSON_Element;
-    fake_elements_begin_index: s32;
-    fake_elements_count: s32;
-    string_bytes: string;
-    string_builder: string;
-    passthrough_byte_count: int;
-    pos: int;
-}
+parse_string :: (parser: *JSON_Parser) -> bool {
+    using parser.string_parser;
+    parser.string_parser = {};
 
-parse_string :: (parser: *JSON_Element_Parser) -> bool {
-    using string_parser: JSON_String_Parser;
-    main_parser = parser;
-    json_elements = *parser.elements;
-
-    advance_collection_state_for_string_or_return_if_invalid();
-
-    // jai compiler doesn't recognize \b and \f
-    BACKSPACE : u8 : 0x8;
-    FORM_FEED : u8 : 0xc;
+    advance_collection_state_for_string_or_return_if_invalid(parser);
 
     // get past opening quote
     parser.pos += 1;
@@ -668,47 +675,53 @@ parse_string :: (parser: *JSON_Element_Parser) -> bool {
     remaining_bytes := parser.text.count - parser.pos;
     remaining_text  := string.{remaining_bytes, parser.text.data + parser.pos};
     // collect string including end quote
-    string_bytes=, found_end_quote := consume_until_non_escaped_quote(remaining_text);
-    parser.pos += string_bytes.count + 1;
+    input_string=, _, found_end_quote := consume_until_non_escaped_quote(remaining_text);
+    parser.pos += input_string.count + 1;
+
+    output_string_begin = parser.strings.count;
 
     if !found_end_quote {
         parser.pos -= 1;
         add_load_error(.STRING_WITHOUT_END_QUOTE, parser.pos, .FATAL);
         return false;
     }
+
+    // jai compiler doesn't recognize \b and \f
+    BACKSPACE : u8 : 0x8;
+    FORM_FEED : u8 : 0xc;
     
-    while pos + passthrough_byte_count < string_bytes.count {
-        if string_bytes[pos] == #char "\\" {
+    while pos + passthrough_byte_count < input_string.count {
+        if input_string[pos] == #char "\\" {
 
             if passthrough_byte_count > 0 {
-                push_bytes(*string_parser, {passthrough_byte_count, string_bytes.data + pos});
+                push_bytes(parser, {passthrough_byte_count, input_string.data + pos});
             }
             pos += 1;
 
-            if string_bytes[pos] == {
+            if input_string[pos] == {
             case #char "\"";
-                push_byte(*string_parser, #char "\"");
+                push_byte(parser, #char "\"");
             case #char "\\";
-                push_byte(*string_parser, #char "\\");
+                push_byte(parser, #char "\\");
             case #char "/";
-                push_byte(*string_parser, #char "/");
+                push_byte(parser, #char "/");
             case #char "b";
-                push_byte(*string_parser, BACKSPACE);
+                push_byte(parser, BACKSPACE);
             case #char "f";
-                push_byte(*string_parser, FORM_FEED);
+                push_byte(parser, FORM_FEED);
             case #char "n";
-                push_byte(*string_parser, #char "\n");
+                push_byte(parser, #char "\n");
             case #char "r";
-                push_byte(*string_parser, #char "\r");
+                push_byte(parser, #char "\r");
             case #char "t";
-                push_byte(*string_parser, #char "\t");
+                push_byte(parser, #char "\t");
             case #char "u";
-                if !parse_hex_bytes(*string_parser) {
+                if !parse_hex_bytes(parser) {
                     return false;
                 }
             }
-        } else if string_bytes[pos] == #char "\"" {
-            assert(pos + passthrough_byte_count + 1 == string_bytes.count);
+        } else if input_string[pos] == #char "\"" {
+            assert(pos + passthrough_byte_count + 1 == input_string.count);
             break;
         } else {
             passthrough_byte_count += 1;
@@ -716,13 +729,36 @@ parse_string :: (parser: *JSON_Element_Parser) -> bool {
     }
     
     if passthrough_byte_count > 0 {
-        push_bytes(*string_parser, {passthrough_byte_count, string_bytes.data + pos});
+        push_bytes(parser, {passthrough_byte_count, input_string.data + pos});
     }
+
+    // null terminator, so that the strings array can be iterated over, and so the strings
+    // can be passed to c libs without reallocation.
+    push_byte(parser, 0);
+
+    // a string is a collection builder, like an object or array, until post-processing
+    // because the elements array will resize and pointers will become invalid.
+
+    element := push_collection_child(parser);
+    element.type = .INTERNAL_COLLECTION_BUILDER;
+    element._internal_collection_builder = {};
     
+    {
+        using element._internal_collection_builder;
+        type = .STRING;
+        debug_filepos = cast,trunc(u16) parser.pos; 
+
+        // informing the post-processing stage where the string begins and ends
+        string_begin_element = xx output_string_begin;
+        string_length = xx (parser.strings.count - output_string_begin);
+
+        child_elements_counter = string_length; // for validation
+    }
+
     return true;
 }
 
-consume_until_non_escaped_quote :: inline (text: string) -> bytes: string, found_quote: bool {
+consume_until_non_escaped_quote :: inline (text: string) -> left: string, right: string, found_quote: bool {
     exchange := String_Exchange.{src=text};
     for exchange {
         if it == #char "\"" && (it_index == 0 || exchange.src[it_index-1] != #char "\\") {
@@ -730,49 +766,27 @@ consume_until_non_escaped_quote :: inline (text: string) -> bytes: string, found
             break;
         }
     }
-    return exchange.dst, exchange.broke_out_of_loop;
+    return exchange.dst, exchange.src, exchange.broke_out_of_loop;
 }
 
-// not a generally good resize function, but marginally correct
-resize_if_needed :: no_inline (using string_parser: *JSON_String_Parser, new_strlen: int) {
-    capacity := fake_elements_count * size_of(JSON_Element);
-
-    if new_strlen > capacity {
-        new_element_count : s32 = xx div_ceil((new_strlen - capacity), size_of(JSON_Element));
-        array_resize(json_elements, json_elements.count + new_element_count);
-
-        // if resizing from 0 capacity
-        if fake_elements_count == 0 {
-            assert(string_builder.count == 0);
-            fake_elements_begin_index = xx (json_elements.count - 1);
-        }
-        fake_elements_count += new_element_count;
-
-        // pointers into the array always set after an array resize!
-        string_builder.data = xx (json_elements.data + fake_elements_begin_index);
-        top_collection := main_parser.builder_stack[main_parser.builder_stack.count-1];
-        main_parser.building_collection = *(json_elements.*)[top_collection]._internal_collection_builder;
-    }
-}
-
-push_byte :: inline (using string_parser: *JSON_String_Parser, byte: u8) {
-    new_strlen := string_builder.count + 1;
-    resize_if_needed(string_parser, new_strlen);
-    string_builder.count += 1;
-    string_builder[string_builder.count-1] = byte;
+push_byte :: inline (parser: *JSON_Parser, byte: u8) {
+    using parser.string_parser;
+    array_add(*parser.strings, byte);
     pos += 1;
 }
 
-push_bytes :: inline (using string_parser: *JSON_String_Parser, bytes: string) {
-    new_strlen := string_builder.count + bytes.count;
-    resize_if_needed(string_parser, new_strlen);
-    old_count := string_builder.count;
-    string_builder.count += bytes.count;
-    memcpy(string_builder.data + old_count, bytes.data, bytes.count);
+push_bytes :: inline (parser: *JSON_Parser, bytes: string) {
+    using parser.string_parser;
+    old_count := parser.strings.count;
+    new_count := parser.strings.count + bytes.count;
+    array_resize(*parser.strings, new_count);
+    memcpy(parser.strings.data + old_count, bytes.data, bytes.count);
     pos += bytes.count;
 }
 
-parse_hex_bytes :: (using parser: *JSON_String_Parser) -> bool {
+parse_hex_bytes :: (parser: *JSON_Parser) -> bool {
+    using parser.string_parser;
+
     // get past 'u' char
     pos += 1;
 
@@ -790,11 +804,11 @@ parse_hex_bytes :: (using parser: *JSON_String_Parser) -> bool {
     if utf16[0] >= UTF16_HIGH_SURROGATE_MIN && utf16[0] <= UTF16_HIGH_SURROGATE_MAX {
         word_count = 2;
 
-        if string_bytes[pos] != #char "\\" {
+        if input_string[pos] != #char "\\" {
             add_load_error(.FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE, parser.pos, .FATAL);
             return false;
         }
-        if string_bytes[pos+1] != #char "u" {
+        if input_string[pos+1] != #char "u" {
             add_load_error(.FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE, parser.pos, .FATAL);
             return false;
         }
@@ -827,8 +841,8 @@ parse_hex_bytes :: (using parser: *JSON_String_Parser) -> bool {
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------ :parse boolean or null
 
-parse_boolean_or_null :: (main_parser: *JSON_Element_Parser, $type: JSON_Element_Type) -> bool {
-    advance_collection_state_for_value_or_return_if_invalid();
+parse_boolean_or_null :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> bool {
+    advance_collection_state_for_value_or_return_if_invalid(parser);
 
     // it's a car with a spoiler.
     //               _____________
@@ -837,25 +851,247 @@ parse_boolean_or_null :: (main_parser: *JSON_Element_Parser, $type: JSON_Element
         else #ifx type == .FALSE then "false"
         else                          "null";
 
-    remaining_bytes := main_parser.text.count - main_parser.pos;
-    str_in_text := string.{min(type_string.count, remaining_bytes), main_parser.text.data + main_parser.pos};
-    main_parser.pos += str_in_text.count;
+    remaining_bytes := parser.text.count - parser.pos;
+    str_in_text := string.{min(type_string.count, remaining_bytes), parser.text.data + parser.pos};
+    parser.pos += str_in_text.count;
 
     if str_in_text != type_string {
         error_code : JSON_Error_Code :
             #ifx type == .TRUE  then JSON_Error_Code.EXPECTED_VALUE_TRUE
             else #ifx type == .FALSE then JSON_Error_Code.EXPECTED_VALUE_FALSE
             else JSON_Error_Code.EXPECTED_VALUE_NULL;
-        add_load_error(error_code, main_parser.pos, .FATAL);
+        add_load_error(error_code, parser.pos, .FATAL);
         return false;
     }
 
-    element := push_collection_child(main_parser);
+    element := push_collection_child(parser);
     element.type = type;
 
     return true;
 }
 
+// -----------------------------------------------------------------------------------
+// ----------------------------------------------------------------- :parse collection
+
+begin_parse_collection :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> bool {
+    // if the builder stack has only one member, it's the fake top-level scope object.
+    if parser.builder_stack.count != 0 {
+        // advance the state machine determining what symbols are valid to encounter next
+        if parser.building_collection.state == {
+        case .OBJECT_EXPECT_VALUE;
+            parser.building_collection.state = .OBJECT_EXPECT_COMMA_OR_END;
+        case .ARRAY_EXPECT_VALUE_OR_END; 
+            #through;
+        case .ARRAY_EXPECT_VALUE;
+            parser.building_collection.state = .ARRAY_EXPECT_COMMA_OR_END;
+        case;
+            add_load_error(.UNEXPECTED_BEGINNING_OF_OBJECT, parser.pos, .FATAL);
+            return false;
+        }
+    }
+
+    parser.pos += 1;
+
+    END_DELIMITER :: #ifx type == .OBJECT then #char "}" else #char "]";
+    OTHER_COLLECTION_END_DELIMITER :: #ifx type == .OBJECT then #char "]" else #char "}";
+    
+    text_remainder := string.{parser.text.count - parser.pos, parser.text.data + parser.pos};
+    any_non_space_text_between_delimiters: bool;
+    found_end_delimiter: bool;
+    collection_size: int;
+    delimiter_stack: int = 1;
+
+    while text_remainder.count > 0 {
+        byte := text_remainder[0];
+        text_remainder.data  += 1;
+        text_remainder.count -= 1;
+
+        if is_space(byte) {
+            continue;
+        }
+
+        // this delimiter stacking isn't keeping track of when collections of other types
+        // are being opened or closed, but I'm not trying to perfectly validate here.
+        // that happens in the main loop
+        if byte == END_DELIMITER {
+            delimiter_stack -= 1;
+            if delimiter_stack <= 0 {
+                if delimiter_stack < 0 {
+                    add_load_error(.EXTRA_COLLECTION_END_DELIMITER, parser.pos, .FATAL);
+                    return false;
+                }
+                found_end_delimiter = true;
+                break;
+            }
+        } else {
+            any_non_space_text_between_delimiters = true;
+            if byte == OTHER_COLLECTION_END_DELIMITER {
+                delimiter_stack -= 1;
+            } else if byte == #char "{" || byte == #char "[" {
+                delimiter_stack += 1;
+            } else {
+                if byte == {
+                case #char "\"";
+                    found_quote: bool = ---;
+                    _, text_remainder, found_quote = consume_until_non_escaped_quote(text_remainder);
+                    if !found_quote {
+                        add_load_error(.STRING_WITHOUT_END_QUOTE, parser.pos, .FATAL);
+                        return false;
+                    } 
+                    continue;
+                case #char ",";
+                    collection_size += cast(int) (delimiter_stack == 1);
+                }
+            }
+        }
+    }
+
+    if !found_end_delimiter {
+        add_load_error(.COLLECTION_WITHOUT_END_DELIMITER, parser.pos, .FATAL);
+        return false;
+    }
+
+    collection_size += cast(int) any_non_space_text_between_delimiters;
+    #if type == .OBJECT then collection_size *= 2;
+    return push_collection(parser, type, collection_size);
+}
+
+// get the in-place location of the new element within the parent collection's list,
+// the parent collection's list is allocated when the collection is pushed.
+push_collection_child :: inline (parser: *JSON_Parser) -> *JSON_Element {
+    if parser.elements.count == 0 {
+        // there is only one top-level element...
+        return array_add(*parser.elements);
+    } else {
+        // ... the rest of the elements allocate in-place within a collection
+        using parser.building_collection;
+        assert(child_elements_counter < child_elements_count);
+        element_index := child_elements_offset + child_elements_counter;
+        new_element := *parser.elements[element_index];
+        child_elements_counter += 1;
+        return new_element;
+    }
+}
+
+push_collection :: (using parser: *JSON_Parser, collection_type: JSON_Element_Type, collection_count: int) -> success: bool {
+    // all elements (except for the root collection) are children of a parent collection. 
+    // this new collection is also a child. as it happens below, when a collection is 
+    // pushed, that collection's element list is reserved at the end of the elements array 
+    //                               -----------------
+    //                              |                 |
+    //                              |                 v
+    // elements array = ... [ parent collection ] ... [ elem 0 ] [ elem 1] ...
+    //                                                           ^
+    //                                                           |
+    // if the parent object's list already has 1 previously instantiated element,
+    // we are getting this element back from this proc call. the element itself will 
+    // become a parent object with its own list at the end of the array.
+    new_collection := push_collection_child(parser);
+    // fix: doing this before the resize below
+    new_collection_index : s32 = xx (new_collection - elements.data);
+    new_collection.type = .INTERNAL_COLLECTION_BUILDER;
+    new_collection._internal_collection_builder = {};
+    {
+        using new_collection._internal_collection_builder;
+        type = collection_type;
+
+        if type == .OBJECT {
+            state = .OBJECT_EXPECT_KEY_OR_END;
+        } else {
+            state = .ARRAY_EXPECT_VALUE_OR_END;
+        }
+
+        child_elements_count = xx collection_count;
+
+        // put this collection at the top of the stack, even if empty
+        array_add(*builder_stack, new_collection_index);
+        child_elements_counter = 0;
+
+        debug_filepos = cast,trunc(u16) parser.pos;
+
+        if child_elements_count > 0 {
+            child_elements_offset = xx elements.count;
+            // push all of this collection's elements into the element array right now 
+            // so they're contiguously allocated. elements will have type UNINITIALIZED
+            // so they can be checked later to make sure they were set correctly after this step
+            array_resize(*elements, elements.count + collection_count);
+        } else {
+            child_elements_offset = -1;
+        }
+        // NOTE: DON'T DO ANYTHING WITH THE COLLECTION POINTER HERE,
+        // IT IS POTENTIALLY INVALID MEMORY DUE TO THE ARRAY RESIZE
+    }
+    building_collection = *elements[new_collection_index]._internal_collection_builder;
+
+    return true;
+}
+
+pop_collection :: (using parser: *JSON_Parser) -> success: bool {
+    if builder_stack.count == 0 {
+        add_load_error(._INTERNAL_ERROR_BUILDER_STACK_DEPLETED, parser.pos, .FATAL);
+        return false;
+    }
+    if building_collection.child_elements_counter != building_collection.child_elements_count {
+        add_load_error(._INTERNAL_ERROR_COLLECTION_MISSING_ELEMENTS, parser.pos, .FATAL);
+        return false;
+    }
+    builder_stack.count -= 1;
+    if builder_stack.count == 0 {
+        building_collection = null;
+    } else {
+        building_collection = *elements[builder_stack[builder_stack.count-1]]._internal_collection_builder;
+    }
+    return true;
+}
+
+post_process_collections :: (elements: *[]JSON_Element, strings: []u8) -> bool {
+    for *element : elements.* {
+        if element.type != .INTERNAL_COLLECTION_BUILDER {
+            continue;
+        }
+
+        builder := *element._internal_collection_builder;
+
+        if builder.child_elements_counter != builder.child_elements_count {
+            add_load_error(._INTERNAL_ERROR_COLLECTION_MISSING_ELEMENTS, builder.debug_filepos, .FATAL);
+            return false;
+        }
+        if builder.type == .OBJECT {
+            // must be even number of elements, so they can be key-value pairs
+            if (builder.child_elements_count & 0x1) != 0 { 
+                add_load_error(._INTERNAL_ERROR_OBJECT_HAS_ODD_NUMBER_OF_ELEMENTS, builder.debug_filepos, .FATAL);
+                return false;
+            }
+            collection_elements: []JSON_KV_Pair;
+            if builder.child_elements_count != 0 {
+                collection_elements.data = xx *(elements.*)[builder.child_elements_offset];
+                collection_elements.count = (builder.child_elements_count / 2);
+            }
+            element.type = .OBJECT;
+            element.object.elements = collection_elements;
+        } else if builder.type == .ARRAY {
+            collection_elements: []JSON_Element;
+            if builder.child_elements_count != 0 {
+                collection_elements.data = *(elements.*)[builder.child_elements_offset];
+                collection_elements.count = builder.child_elements_count;
+            }
+            element.type = .ARRAY;
+            element.array.elements = collection_elements;
+        } else if builder.type == .STRING {
+            embedded_string: string;
+            if builder.string_length != 0 {
+                embedded_string.data = *strings[builder.string_begin_element];
+                embedded_string.count = builder.string_length;
+            }
+            element.type = .STRING;
+            element.bytes = embedded_string;
+        } else {
+            add_load_error(._INTERNAL_ERROR_INVALID_COLLECTION_TYPE, builder.debug_filepos, .FATAL);
+            return false;
+        }
+    }
+    return true;
+}
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------- :on enter and exit
 
@@ -976,198 +1212,6 @@ HERE,
 }
 
 // -----------------------------------------------------------------------------------
-// --------------------------------------------------- :collection handling first pass
-
-Collection_Marker :: struct {
-    type: JSON_Element_Type;
-    element_count: s32; 
-    file_position: s32;
-    text_encountered_since_last_delimiter: bool;
-}
-
-pop_top_marker :: () -> *Collection_Marker #expand {
-    array_unordered_remove_by_index(*`collection_marker_stack, `collection_marker_stack.count-1);
-    if `collection_marker_stack.count == 0 {
-        return null;
-    }
-    return *`markers[`collection_marker_stack[`collection_marker_stack.count-1]];
-}
-
-push_top_marker :: (type: JSON_Element_Type, file_position: int) -> *Collection_Marker #expand {
-    if `collection_marker_stack.count == 1 {
-        // found a top-level element. need to make sure root element increments its count
-        `markers[`collection_marker_stack[0]].element_count += 1;
-    }
-    array_add(*`markers, {type, 0, xx file_position, false});
-    array_add(*`collection_marker_stack, `markers.count-1);
-    return *`markers[`collection_marker_stack[`collection_marker_stack.count-1]];
-}
-
-on_collection_ending_delimiter_found :: (type: JSON_Element_Type) -> bool #expand {
-    if `top_marker.type != type {
-        add_load_error(._INTERNAL_ERROR_MARKER_TYPE_DOES_NOT_MATCH_COLLECTION_TYPE, `it_index, .FATAL);
-        return false;
-    }
-    any_commas_encountered := `top_marker.element_count > 0;
-    if `top_marker.text_encountered_since_last_delimiter {
-        `top_marker.element_count += 1;
-        `total_element_count += 1;
-    } else if any_commas_encountered {
-        // no text since last comma = invalid
-        add_load_error(.TRAILING_COMMA, `it_index, .FATAL);
-        return false;
-    }
-
-    return true;
-}
-
-// get the in-place location of the new element within the parent collection's list,
-// the parent collection's list is allocated when the collection is pushed.
-push_collection_child :: inline (parser: *JSON_Element_Parser) -> *JSON_Element {
-    using parser.building_collection;
-    assert(child_elements_counter < child_elements_count);
-    element_index := child_elements_offset + child_elements_counter;
-    new_element := *parser.elements[element_index];
-    child_elements_counter += 1;
-    return new_element;
-}
-
-// -----------------------------------------------------------------------------------
-// -------------------------------------------------- :collection handling second pass
-
-push_collection :: (using parser: *JSON_Element_Parser, collection_type: JSON_Element_Type, $in_place := true) -> success: bool {
-    if markers.count == 0 {
-        add_load_error(._INTERNAL_ERROR_MARKER_COUNT_DOES_NOT_MATCH_COLLECTION_COUNT, parser.pos, .FATAL);
-        return false;
-    }
-
-    // in the first pass, information about how many elements were in each collection
-    // was gathered and put into a marker. retrieving the marker for this collection,
-    // treating the markers array as a fifo stack.
-    marker := markers[0];
-    markers.data  += 1;
-    markers.count -= 1;
-
-    new_collection: *JSON_Element;
-
-    #if in_place {
-        // all elements (except for the root object) are children of a parent collection. 
-        // this new collection is also a child. as it happens below, when a collection is 
-        // pushed, that collection's element list is reserved at the end of the elements array 
-        //                               -----------------
-        //                              |                 |
-        //                              |                 v
-        // elements array = ... [ parent collection ] ... [ elem 0 ] [ elem 1] ...
-        //                                                           ^
-        //                                                           |
-        // if the parent object's list already has 1 previously instantiated element,
-        // we are getting this element back from this proc call. the element itself will 
-        // become a parent object with its own list at the end of the array.
-        new_collection = push_collection_child(parser);
-    } else {
-        // the only non-in-place element allocation is the root object
-        assert(elements.count == 0);
-        new_collection = array_add(*elements);
-    }
-
-    new_collection.type = .INTERNAL_COLLECTION_BUILDER;
-    {
-        using new_collection._internal_collection_builder;
-        type = collection_type;
-        child_elements_count = marker.element_count;
-        state = ifx type == .OBJECT then .OBJECT_EXPECT_KEY_OR_END else .ARRAY_EXPECT_VALUE_OR_END;
-
-        if child_elements_count > 0 {
-            child_elements_offset = xx elements.count;
-            // push all of this collection's elements into the element array right now 
-            // so they're contiguously allocated. elements will have type UNINITIALIZED
-            // so they can be checked later to make sure they were set correctly after this step
-            array_resize(*elements, elements.count + marker.element_count);
-
-        } else {
-            child_elements_offset = -1;
-        }
-
-        // put this collection at the top of the stack, even if empty
-        array_add(*builder_stack, xx (new_collection - elements.data));
-        building_collection = *new_collection._internal_collection_builder;
-    }
-
-    return true;
-}
-
-pop_collection :: (using parser: *JSON_Element_Parser) -> success: bool {
-    if builder_stack.count == 0 {
-        add_load_error(._INTERNAL_ERROR_BUILDER_STACK_DEPLETED, parser.pos, .FATAL);
-        return false;
-    }
-    
-    builder_stack.count -= 1;
-    building_collection = *elements[builder_stack[builder_stack.count-1]]._internal_collection_builder;
-    return true;
-}
-
-begin_parse_collection :: inline (parser: *JSON_Element_Parser, $type: JSON_Element_Type) -> bool {
-    // if the builder stack has only one member, it's the fake top-level scope object.
-    if parser.builder_stack.count != 1 {
-        // advance the state machine determining what symbols are valid to encounter next
-        if parser.building_collection.state == {
-        case .OBJECT_EXPECT_VALUE;
-            parser.building_collection.state = .OBJECT_EXPECT_COMMA_OR_END;
-        case .ARRAY_EXPECT_VALUE_OR_END; 
-            #through;
-        case .ARRAY_EXPECT_VALUE;
-            parser.building_collection.state = .ARRAY_EXPECT_COMMA_OR_END;
-        case;
-            add_load_error(.UNEXPECTED_BEGINNING_OF_OBJECT, parser.pos, .FATAL);
-            return false;
-        }
-    }
-
-    success := push_collection(parser, type);
-    parser.pos += 1;
-    return success;
-}
-
-post_process_collections :: (elements: *[]JSON_Element) -> bool {
-    // todo: actually can't do this here duh
-    for *element : elements.* {
-        if element.type != .INTERNAL_COLLECTION_BUILDER {
-            continue;
-        }
-
-        builder := *element._internal_collection_builder;
-
-        if builder.child_elements_counter != builder.child_elements_count {
-            add_load_error(._INTERNAL_ERROR_COLLECTION_MISSING_ELEMENTS, 0, .FATAL);
-            return false;
-        }
-        if builder.type == .OBJECT {
-            // must be even number of elements, so they can be key-value pairs
-            if (builder.child_elements_count & 0x1) != 0 { 
-                add_load_error(._INTERNAL_ERROR_OBJECT_HAS_ODD_NUMBER_OF_ELEMENTS, 0, .FATAL);
-                return false;
-            }
-            collection_elements: []JSON_KV_Pair;
-            collection_elements.data = xx *(elements.*)[builder.child_elements_offset];
-            collection_elements.count = xx (builder.child_elements_count / 2);
-            element.type = .OBJECT;
-            element.object.elements = collection_elements;
-        } else if builder.type == .ARRAY {
-            collection_elements: []JSON_Element;
-            collection_elements.data = *(elements.*)[builder.child_elements_offset];
-            collection_elements.count = xx builder.child_elements_count;
-            element.type = .ARRAY;
-            element.array.elements = collection_elements;
-        } else {
-            add_load_error(._INTERNAL_ERROR_INVALID_COLLECTION_TYPE, 0, .FATAL);
-            return false;
-        }
-    }
-    return true;
-}
-
-// -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :misc
 
 report_module_error :: (fmt: string, args: ..Any) #expand {
@@ -1200,71 +1244,72 @@ to_digit :: inline (byte: u8) -> u8 {
     return 0xff;
 }
 
-parse_utf16_word_from_hex_text :: (using parser: *JSON_String_Parser) -> u16, bool {
-    hex_string := string.{min(4, string_bytes.count - pos), string_bytes.data + pos};
+parse_utf16_word_from_hex_text :: (parser: *JSON_Parser) -> u16, bool {
+    using parser.string_parser;
+    hex_string := string.{min(4, input_string.count - pos), input_string.data + pos};
     if hex_string.count < 4 {
-        add_load_error(.UNEXPECTED_END_OF_INPUT, main_parser.pos, .FATAL);
+        add_load_error(.UNEXPECTED_END_OF_INPUT, parser.pos, .FATAL);
         return 0, false;
     }
     hex_bytes, success := hex_text_to_bytes(hex_string);
     if !success {
-        add_load_error(.IMPROPERLY_FORMED_HEX, main_parser.pos, .FATAL);
+        add_load_error(.IMPROPERLY_FORMED_HEX, parser.pos, .FATAL);
         return 0, false;
     }
     pos += 4;
     return (cast(*u16) hex_bytes.data).*, true;
 }
 
-advance_collection_state_for_string_or_return_if_invalid :: () #expand {
+advance_collection_state_for_string_or_return_if_invalid :: (using parser: *JSON_Parser) #expand {
     // if the builder stack has only one member, it's the fake top-level scope object.
-    if `main_parser.builder_stack.count != 1 {
-        if `main_parser.building_collection.state == {
+    if builder_stack.count != 0 {
+        if building_collection.state == {
         case .OBJECT_EXPECT_KEY_OR_END;
             #through;
         case .OBJECT_EXPECT_KEY;
-            `main_parser.building_collection.state = .OBJECT_EXPECT_COLON;
+            building_collection.state = .OBJECT_EXPECT_COLON;
         case .OBJECT_EXPECT_COLON;
-            add_load_error(.EXPECTED_COLON, `main_parser.pos, .FATAL);
+            add_load_error(.EXPECTED_COLON, pos, .FATAL);
             `return false;
         case .OBJECT_EXPECT_VALUE;
-            `main_parser.building_collection.state = .OBJECT_EXPECT_COMMA_OR_END;
+            building_collection.state = .OBJECT_EXPECT_COMMA_OR_END;
         case .OBJECT_EXPECT_COMMA_OR_END;
-            add_load_error(.EXPECTED_COMMA_OR_END_OF_COLLECTION, `main_parser.pos, .FATAL);
+            add_load_error(.EXPECTED_COMMA_OR_END_OF_COLLECTION, pos, .FATAL);
             `return false;
         case .ARRAY_EXPECT_VALUE_OR_END;
             #through;
         case .ARRAY_EXPECT_VALUE;
-            `main_parser.building_collection.state = .ARRAY_EXPECT_COMMA_OR_END;
+            building_collection.state = .ARRAY_EXPECT_COMMA_OR_END;
         case .ARRAY_EXPECT_COMMA_OR_END;
-            add_load_error(.EXPECTED_COMMA_OR_END_OF_COLLECTION, `main_parser.pos, .FATAL);
+            add_load_error(.EXPECTED_COMMA_OR_END_OF_COLLECTION, pos, .FATAL);
             `return false;
         }
     }
 }
 
-advance_collection_state_for_value_or_return_if_invalid :: () #expand {
+advance_collection_state_for_value_or_return_if_invalid :: (using parser: *JSON_Parser) #expand {
     // if the builder stack has only one member, it's the fake top-level scope object.
-    if `main_parser.builder_stack.count != 1 {
-        if `main_parser.building_collection.state == {
+    if builder_stack.count != 0 {
+        if building_collection.state == {
         case .OBJECT_EXPECT_KEY_OR_END;
             #through;
         case .OBJECT_EXPECT_KEY;
-            add_load_error(.EXPECTED_OBJECT_KEY, `main_parser.pos, .FATAL);
+            add_load_error(.EXPECTED_OBJECT_KEY, pos, .FATAL);
             `return false;
         case .OBJECT_EXPECT_COLON;
-            add_load_error(.EXPECTED_COLON, `main_parser.pos, .FATAL);
+            add_load_error(.EXPECTED_COLON, pos, .FATAL);
             `return false;
         case .OBJECT_EXPECT_VALUE;
-            `main_parser.building_collection.state = .OBJECT_EXPECT_COMMA_OR_END;
+            building_collection.state = .OBJECT_EXPECT_COMMA_OR_END;
         case .OBJECT_EXPECT_COMMA_OR_END;
-            add_load_error(.EXPECTED_COMMA_OR_END_OF_COLLECTION, `main_parser.pos, .FATAL);
+            add_load_error(.EXPECTED_COMMA_OR_END_OF_COLLECTION, pos, .FATAL);
             `return false;
         case .ARRAY_EXPECT_VALUE_OR_END;
             #through;
         case .ARRAY_EXPECT_VALUE;
-            `main_parser.building_collection.state = .ARRAY_EXPECT_COMMA_OR_END;
+            building_collection.state = .ARRAY_EXPECT_COMMA_OR_END;
         case .ARRAY_EXPECT_COMMA_OR_END;
-            add_load_error(.EXPECTED_COMMA_OR_END_OF_COLLECTION, `main_parser.pos, .FATAL);
+            add_load_error(.EXPECTED_COMMA_OR_END_OF_COLLECTION, pos, .FATAL);
             `return false;
         }
     }
@@ -1290,3 +1335,4 @@ advance_collection_state_for_value_or_return_if_invalid :: () #expand {
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Math";
+#import "TeRM/TeRM_Array";

@@ -19,7 +19,20 @@ _fmt_bin :: (x: $T, minimum_digits := 0) -> FormatInt #expand {
 }
 
 _fmt_verbose :: (x: $T, draw_type_name := true) -> FormatStruct #expand #modify { return T.(*Type_Info).type == .STRUCT; } {
-    return FormatStruct.{value=x, draw_type_name=draw_type_name, use_long_form_if_more_than_this_many_members=0, use_newlines_if_long_form=true};
+    return FormatStruct.{
+        value                                        = x, 
+        draw_type_name                               = draw_type_name, 
+        use_long_form_if_more_than_this_many_members = 0, 
+        use_newlines_if_long_form                    = true
+    };
+}
+
+_fmt_verbose :: (x: $T) -> FormatArray #expand #modify{ return T.(*Type_Info).type == .ARRAY; } {
+    return FormatArray.{
+        value = x,
+        separator = "\n",
+        stop_printing_after_this_many_elements=1000
+    };
 }
 
 #scope_file

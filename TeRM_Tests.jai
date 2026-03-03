@@ -815,8 +815,20 @@ thread_test :: () -> bool, string {
 json_test :: () -> bool, string {
     scope_set_working_directory(#filepath);
 
-    jason := load_json_from_file("test_supplemental/100 KB 10 Level Formatted.json", true);
-    log("%", jason.elements);
+    jason := load_json_from_file("test_supplemental/100 KB 10 Level Formatted.json", log_errors=true);
+    defer free(*jason);
+
+    test_condition(jason.errors.count == 0);
+
+    // for_each_proc :: (stack: []*JSON_Element, parent: *JSON_Element, object_key: string, value: *JSON_Element, user_data: *void) -> bool {
+    //     if parent.type == .OBJECT {
+    //         log("key: %, value: %", object_key, value.*);
+    //     } else {
+    //         log("value: %", value.*);
+    //     }
+    //     return true;
+    // }
+    // for_each_element(*jason, for_each_proc);
 
     return_test_success();
 }
@@ -974,6 +986,7 @@ serializer_test_body :: (checksum: *Serializer_Checksum_Type = null, load_checks
 #import "TeRM/TeRM_EncodeText";
 #import "TeRM/TeRM_FlagArray";
 #import "TeRM/TeRM_Log";
+#import "TeRM/TeRM_LogHelpers";
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_Metaprogram";
 #import "TeRM/TeRM_Raycast";

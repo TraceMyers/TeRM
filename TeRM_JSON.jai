@@ -1,8 +1,3 @@
-// do not use this. it's mid-development
-// why is it here? because it doesn't hurt anybody
-
-// todo: temp/allocator stuff
-
 // --- sections --- 
 // interface procedures
 // interface types
@@ -25,9 +20,7 @@ load_json :: load_json_from_file;
 load_json_from_file :: (file_path: string, numbers_always_float := false, log_errors := false) -> JSON_Load_Result {
     on_enter_load(log_errors);
 
-    // todo: go back to temp
-    file_data, success := read_entire_file(file_path, log_errors=log_errors);
-    // file_data, success := read_entire_file(file_path, log_errors=log_errors,, temp);
+    file_data, success := read_entire_file(file_path, log_errors=log_errors,,temp);
 
     if !success {
         add_load_error(.FAILED_TO_LOAD_FILE, 0, .FATAL);
@@ -58,7 +51,7 @@ load_json_from_string :: (text: string, numbers_always_float := false, log_error
     return context.json_load_result;
 }
 
-for_each_element :: (result: *JSON_Load_Result, proc: (stack: []*JSON_Element, parent_element: *JSON_Element, object_key: string, any_value: *JSON_Element, user_data: *void) -> bool, user_data: *void = null) {
+for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc, user_data: *void = null) {
     // ----------------------------
 
     _push_collection :: (element: *JSON_Element) -> bool #expand {
@@ -145,6 +138,13 @@ free :: (using result: *JSON_Load_Result) {
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------ :interface types
 
+for_each_json_element_proc :: #type (
+    stack: []*JSON_Element, 
+    parent_element: *JSON_Element, 
+    object_key: string, 
+    any_value: *JSON_Element, 
+    user_data: *void) -> bool;
+
 JSON_Load_Result :: struct {
     // recursive-intrusive list of all elements. 
     // first element is file root element
@@ -170,6 +170,7 @@ JSON_Load_Result :: struct {
     // if adding more errors would have overflowed the internal buffer, this is set
     errors_truncated: bool;
 }
+
 
 JSON_Element_Type :: enum u8 {
     // default element type. used for debugging.

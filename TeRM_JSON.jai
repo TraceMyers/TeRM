@@ -874,7 +874,6 @@ parse_boolean_or_null :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> boo
 // ----------------------------------------------------------------- :parse collection
 
 begin_parse_collection :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> bool {
-    // if the builder stack has only one member, it's the fake top-level scope object.
     if parser.builder_stack.count != 0 {
         // advance the state machine determining what symbols are valid to encounter next
         if parser.building_collection.state == {

@@ -480,9 +480,9 @@ Linear_Table :: struct($key_type: Type, $value_type: Type, $use_simple_key_hash 
 }
 
 table_init :: (table: *Linear_Table, reserve_count := 64) {
-    soa_reset_keeping_memory(table);
-    soa_reserve(table, 64);
     soa_set_allocator(table, context.allocator);
+    soa_reset(table);
+    soa_reserve(table, 64);
 }
 
 // return true if the value was added

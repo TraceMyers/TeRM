@@ -361,7 +361,6 @@ JSON_Number_Parser :: struct {
     stage: Parse_Number_Stage;
 }
 
-// helper struct for allocating the strings into the elements array
 JSON_String_Parser :: struct {
     input_string: string;
     output_string_begin: int;

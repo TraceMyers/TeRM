@@ -705,7 +705,7 @@ ceil_to_power_of_two :: inline (n: $T) -> T {
 }
 
 shift_for_power_of_two_mul_or_div :: inline (divide_by: int) -> u8 {
-    assert(is_power_of_two(divide_by));
+    assert(is_power_of_two(divide_by), "non power of two: %", divide_by);
     return xx (bit_scan_forward(divide_by) - 1);
 }
 

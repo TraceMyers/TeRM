@@ -11,7 +11,8 @@ run_all_tests :: () {
         super_allocator_test,
         string_test,
         thread_test,
-        json_text
+        json_test,
+        gltf_test,
     ]);
 }
 
@@ -825,6 +826,14 @@ json_test :: () -> bool, string {
     return_test_success();
 }
 
+gltf_test :: () -> bool, string {
+    scope_set_working_directory(#filepath);
+
+    gltf := load_gltf_from_file("test_supplemental/gltf_sample_models/avocado/glTF-Binary/Avocado.glb", log_errors=true);
+
+    return_test_success();
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 #scope_file // ---------------------------------------------------------------------------------------------- SCOPE_FILE
 // ---------------------------------------------------------------------------------------------------------------------
@@ -988,6 +997,7 @@ serializer_test_body :: (checksum: *Serializer_Checksum_Type = null, load_checks
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Threads";
 #import "TeRM/TeRM_JSON";
+#import "TeRM/TeRM_glTF";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

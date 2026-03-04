@@ -18,20 +18,18 @@
 load_json :: load_json_from_file;
 
 load_json_from_file :: (file_path: string, numbers_always_float := false, shrink_allocations := true, log_errors := false) -> JSON_Load_Result {
-    on_enter_load(log_errors);
+    on_enter_any_load_proc();
 
     file_data, success := read_entire_file(file_path, log_errors=log_errors,,temp);
+    if !success then return {};
 
-    if !success {
-        add_load_error(.FAILED_TO_LOAD_FILE, 0, .FATAL);
-        return context.json_load_result;
-    }
-
-    return load_json_from_string(file_data, numbers_always_float, shrink_allocations, log_errors);
+    load_json_from_string(file_data, numbers_always_float, shrink_allocations, log_errors);
+    return context.json_load_result;
 }
 
 load_json_from_string :: (text: string, numbers_always_float := false, shrink_allocations := true, log_errors := false) -> JSON_Load_Result {
-    on_enter_load(log_errors);
+    on_enter_any_load_proc();
+    on_enter_main_load_proc(log_errors);
 
     result := *context.json_load_result;
     result.file_size = xx text.count;
@@ -40,19 +38,16 @@ load_json_from_string :: (text: string, numbers_always_float := false, shrink_al
 
     success := parse_json(*parser);
 
-    on_exit_load(*parser, success, shrink_allocations, log_errors);
+    on_exit_main_load_proc(*parser, success, shrink_allocations, log_errors);
     return context.json_load_result;
 }
 
 for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc, user_data: *void = null) {
     // ----------------------------
 
-    _push_collection :: (element: *JSON_Element) -> bool #expand {
-        push_success := static_array_add(*`collection_stack, element, `collection_buffer.count);
-        if !push_success {
-            return false;
-        }
-        push_success = static_array_add(*`index_stack, 0, `index_buffer.count);
+    _push_collection :: (container: JSON_Element_Container) -> bool #expand {
+        push_success := static_array_add(*`collection_stack, container, `collection_buffer.count);
+        static_array_add(*`index_stack, 0, `index_buffer.count);
         if !push_success {
             return false;
         }
@@ -67,55 +62,76 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
     // ----------------------------
 
     if result.elements.count == 0 {
+        report_module_error("can't search a json result that doesn't any elements");
         return;
     }
 
-    collection_buffer: [512]*JSON_Element;
-    collection_stack: []*JSON_Element;
+    if result.elements[0].type != .ARRAY && result.elements[0].type != .OBJECT {
+        report_module_error("can't search a json result that doesn't have a collection (array, object) at the top level");
+        return;
+    }
+
+    collection_buffer: [512]JSON_Element_Container;
+    collection_stack: []JSON_Element_Container;
     collection_stack.data = collection_buffer.data;
 
     index_buffer: [collection_buffer.count]int;
     index_stack: []int;
     index_stack.data = index_buffer.data;
 
-    static_array_add(*collection_stack, *result.elements[0], collection_buffer.count);
+    // push the top-level collection element
+    static_array_add(*collection_stack, {"", *result.elements[0], false}, collection_buffer.count);
     static_array_add(*index_stack, 0, index_buffer.count);
 
     while collection_stack.count > 0 {
-        collection_index := *index_stack[index_stack.count-1];
-        collection := collection_stack[collection_stack.count-1];
+        element_index := *index_stack[index_stack.count-1];
+        collection := collection_stack[collection_stack.count-1].value;
 
-        element_key: string;
-        element_value: *JSON_Element;
+        element_container: JSON_Element_Container = ---;
+        parent_element_count: int;
 
         if collection.type == .ARRAY {
-            if collection_index.* >= collection.array.elements.count {
+            if element_index.* >= collection.array.elements.count {
                 _pop_collection();
                 continue;
             } else {
-                element_value = *collection.array.elements[collection_index.*];
+                element_container.key = "";
+                element_container.value = *collection.array.elements[element_index.*];
+                element_container.has_key = false;
+                parent_element_count = collection.array.elements.count;
             }
         } else {
-            if collection_index.* >= collection.object.elements.count {
+            if element_index.* >= collection.object.elements.count {
                 _pop_collection();
                 continue;
             } else {
-                kv_pair := *collection.object.elements[collection_index.*];
-                element_key = kv_pair.key.bytes;
-                element_value = *kv_pair.value;
+                kv_pair := *collection.object.elements[element_index.*];
+                element_container.key = kv_pair.key.utf8;
+                element_container.value = *kv_pair.value;
+                element_container.has_key = true;
+                parent_element_count = collection.object.elements.count;
             }
         }
 
-        if !proc(collection_stack, collection, element_key, element_value, user_data) {
-            return;
+        continue_searching, push_element_collection := proc(collection_stack, element_container, element_index.*, parent_element_count, user_data);
+
+        if !continue_searching {
+            break;
         }
 
-        collection_index.* += 1;
+        element_index.* += 1;
 
-        if element_value.type == .ARRAY || element_value.type == .OBJECT {
-            if !_push_collection(element_value) {
-                // todo: error
-                break;
+        if push_element_collection {
+            if element_container.value.type == .ARRAY {
+                if !_push_collection(element_container) {
+                    // todo: error
+                    break;
+                }
+            } else if element_container.value.type == .OBJECT {
+                if !_push_collection(element_container) {
+                    // todo: error
+                    break;
+                }
             }
         }
     }
@@ -130,21 +146,31 @@ free :: (using result: *JSON_Load_Result) {
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------ :interface types
 
+JSON_Element_Container :: struct {
+    // if the value element is a member of an object, this will be readable
+    key: string;
+    value: *JSON_Element;
+    // true if the value element is a member of an object
+    has_key: bool;
+}
+
 // the procedure type for use with for_each_element
+// you inform the search. 
+// bool 1 is whether to keep going at all. false = quit search.
+// bool 2 is, if the current element is a container (object, array), whether to search into it.
 for_each_json_element_proc :: #type (
     // the current stack of collections (arrays, objects) hierarchically containing each other
-    collection_stack: []*JSON_Element, 
-    // the top element in the collection stack, parent of the current element
-    parent_element: *JSON_Element, 
-    // if the parent element is an object, this will be the current element's key. maybe ""
-    // if the parent element is an array, this will be ""
-    element_key: string, 
-    // if the parent element is an object, this is the current element's value
-    // if the parent element is an array, this is a value in the array
-    element_value: *JSON_Element, 
+    // the parent of the current element is the last element in this list.
+    parent_stack: []JSON_Element_Container, 
+    // current element in the search
+    element: JSON_Element_Container,
+    // iterating over parent element, what is the index of this element?
+    element_index: int,
+    // number of elements owned by the parent (shallow ownership)
+    parent_element_count: int,
     // data you pass in
     user_data: *void
-) -> bool;
+) -> continue_searching: bool, search_element_if_it_is_a_container: bool;
 
 JSON_Load_Result :: struct {
     // recursive-intrusive list of all elements. 
@@ -196,7 +222,9 @@ JSON_Element :: union type: JSON_Element_Type {
     // fields for you~
     .OBJECT                   ,, object         : JSON_Object;
     .ARRAY                    ,, array          : JSON_Array;
-    .STRING                   ,, bytes          : string;
+    // this field is called 'utf8' because 'string' is a type / reserved keyword, I don't
+    // like shortenings like 'str' and at least utf8 is descriptive. 
+    .STRING                   ,, utf8           : string;
     .INT                      ,, i64            : s64;            
     .FLOAT                    ,, f64            : float64;
     .TRUE                     ,, _true          : void; 
@@ -298,7 +326,7 @@ JSON_Error :: struct {
     #overlay(line) _internal_file_position: s32 = ---;
 }
 
-#scope_file // ----------------------------------------------------------------------
+#scope_file // -----------------------------------------------------------------------
 
 add_load_error :: (code: JSON_Error_Code, file_position: s64, flags: JSON_Error_Flags = 0) {
     using context;
@@ -644,7 +672,7 @@ should_represent_number_with_integer :: (parser: *JSON_Parser) -> should_use_int
         // checking if the value can be an int even though a fraction was put in the number
         // is messy, so I'm going to avoid it for now.
         // todo: see if numbers with fractions can be represented as integers.
-        if fraction.count == 0 {
+        if fraction.count == 0 && exponent != 0 {
             // conservative estimation to see if an integer representation is possible.
             // if we round the exponent to the nearest power of two, that represents a
             // bit shift left or right. if we could shift left or right while only losing
@@ -1096,7 +1124,7 @@ post_process_collections :: (elements: *[]JSON_Element, strings: []u8) -> bool {
                 str.count = builder.string_length;
             }
             element.type = .STRING;
-            element.bytes = str;
+            element.utf8 = str;
         } else {
             add_load_error(._INTERNAL_ERROR_INVALID_COLLECTION_TYPE, builder.debug_filepos, .FATAL);
             return false;
@@ -1107,26 +1135,18 @@ post_process_collections :: (elements: *[]JSON_Element, strings: []u8) -> bool {
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------- :on enter and exit
 
-on_enter_load :: (log_errors: bool) #expand {
+on_enter_any_load_proc :: () #expand {
     `_mark := get_temporary_storage_mark();
     `defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(`_mark);
-
-    `defer context.json_load_initialized = false;
-    `defer context.json_load_result.errors = context.json_errors;
-
-    // making sure errors don't get reset when non-fatal errors occur during 
-    // initial wrapper procedures
-    if !context.json_load_initialized {
-        context.json_load_result = {};
-
-        context.json_errors.data = context.json_error_buffer.data;
-        context.json_errors.count = 0;
-
-        context.json_load_initialized = true;
-    }
 }
 
-on_exit_load :: (parser: *JSON_Parser, parse_success: bool, shrink_allocations: bool, log_errors: bool) {
+on_enter_main_load_proc :: (log_errors: bool) { 
+    context.json_load_result = {};
+    context.json_errors.data = context.json_error_buffer.data;
+    context.json_errors.count = 0;
+}
+
+on_exit_main_load_proc :: (parser: *JSON_Parser, parse_success: bool, shrink_allocations: bool, log_errors: bool) {
     // -----------------------------------------------------
 
     _increment_wrap :: inline (x: $T, min: T, max: T) -> T {
@@ -1353,7 +1373,6 @@ advance_collection_state_for_value_or_return_if_invalid :: (using parser: *JSON_
 #add_context json_error_buffer:       [32]JSON_Error;
 #add_context json_errors:             []JSON_Error;
 #add_context json_load_result:        JSON_Load_Result;
-#add_context json_load_initialized:   bool;
 
 #import "Basic";
 #import "File";

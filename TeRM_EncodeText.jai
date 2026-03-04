@@ -44,7 +44,7 @@ cp850_to_utf8 :: (in: *u8, out: *u8, in_size: int, out_size: int) -> s8, s8, Tex
 
 // then, I can make an encoder:
 
-CP850_TO_UTF8 :: Text_Encoder.{.CP850, .UTF8, cp850_to_utf8, 0};
+CP850_TO_UTF8 :: Text_Encoder(cp850_to_utf8).{.CP850, .UTF8, 0};
 
 // and use it:
 
@@ -85,7 +85,7 @@ ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, 
 // if you want to use one of the default encodings, and don't want the terminating null, you
 // could declare an alternative version of that encoder in your program:
 
-MY_UTF8_TO_UTF16 :: Text_Encoder.{.UTF8,  .UTF16, utf8_to_utf16,  0};
+MY_UTF8_TO_UTF16 :: Text_Encoder(utf8_to_utf16).{.UTF8,  .UTF16, 0};
 
 // user-defined error codes can also be added at import, and returned by your function so that 
 // they will be logged when something goes wrong.
@@ -97,10 +97,9 @@ MY_UTF8_TO_UTF16 :: Text_Encoder.{.UTF8,  .UTF16, utf8_to_utf16,  0};
 
 text_encoder_procedure :: #type (src: *u8, dst: *u8, src_size: int, dst_size: int) -> read_byte_count: s8, wrote_byte_count: s8, error_code: Text_Encode_Failure;
 
-Text_Encoder :: struct {
+Text_Encoder :: struct($proc: text_encoder_procedure) {
     encode_from: Text_Encoding;
     encode_to: Text_Encoding;
-    proc: text_encoder_procedure;
     terminating_null_byte_count: int; // how many null bytes to put at the end of the string
 }
 
@@ -120,7 +119,8 @@ Text_Encoding :: enum u8 {
 
 Text_Encode_Failure :: enum s32 {
     // 0 = success
-    TRUNCATED_BYTES_IN_INPUT :: 1;
+    INVALID_ENCODER_PROCEDURE :: 1;
+    TRUNCATED_BYTES_IN_INPUT;
     OUTPUT_BUFFER_IMPROPERLY_SIZED_BY_SYSTEM;
     IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT;
     UNSUPPORTED_UTF8_CODE_POINT_SIZE;
@@ -143,32 +143,27 @@ is_ascii :: inline (in: u32) -> bool {
     return (in & 0x7f) == in;
 }
 
-ANSI_TO_UTF8   :: Text_Encoder.{.ANSI,  .UTF8,  ansi_to_utf8,   1};
-ANSI_TO_UTF16  :: Text_Encoder.{.ANSI,  .UTF16, ansi_to_utf16,  2};
-ANSI_TO_UTF32  :: Text_Encoder.{.ANSI,  .UTF32, ansi_to_utf32,  4};
-ANSI_TO_ANSI   :: Text_Encoder.{.ANSI,  .ANSI,  null,           1};
+ANSI_TO_UTF8   :: Text_Encoder(ansi_to_utf8)  .{.ANSI,  .UTF8,  1};
+ANSI_TO_UTF16  :: Text_Encoder(ansi_to_utf16) .{.ANSI,  .UTF16, 2};
+ANSI_TO_UTF32  :: Text_Encoder(ansi_to_utf32) .{.ANSI,  .UTF32, 4};
 
-UTF8_TO_UTF8   :: Text_Encoder.{.UTF8,  .UTF8,  null,           1};
-UTF8_TO_UTF16  :: Text_Encoder.{.UTF8,  .UTF16, utf8_to_utf16,  2};
-UTF8_TO_UTF32  :: Text_Encoder.{.UTF8,  .UTF32, utf8_to_utf32,  4};
-UTF8_TO_ANSI   :: Text_Encoder.{.UTF8,  .ANSI,  utf8_to_ansi,   1};
+UTF8_TO_UTF16  :: Text_Encoder(utf8_to_utf16) .{.UTF8,  .UTF16, 2};
+UTF8_TO_UTF32  :: Text_Encoder(utf8_to_utf32) .{.UTF8,  .UTF32, 4};
+UTF8_TO_ANSI   :: Text_Encoder(utf8_to_ansi)  .{.UTF8,  .ANSI,  1};
 
-UTF16_TO_UTF8  :: Text_Encoder.{.UTF16, .UTF8,  utf16_to_utf8,  1};
-UTF16_TO_UTF16 :: Text_Encoder.{.UTF16, .UTF16, null,           2};
-UTF16_TO_UTF32 :: Text_Encoder.{.UTF16, .UTF32, utf16_to_utf32, 4};
-UTF16_TO_ANSI  :: Text_Encoder.{.UTF16, .ANSI,  utf16_to_ansi,  1};
+UTF16_TO_UTF8  :: Text_Encoder(utf16_to_utf8) .{.UTF16, .UTF8,  1};
+UTF16_TO_UTF32 :: Text_Encoder(utf16_to_utf32).{.UTF16, .UTF32, 4};
+UTF16_TO_ANSI  :: Text_Encoder(utf16_to_ansi) .{.UTF16, .ANSI,  1};
 
-UTF32_TO_UTF8  :: Text_Encoder.{.UTF32, .UTF8,  utf32_to_utf8,  1};
-UTF32_TO_UTF16 :: Text_Encoder.{.UTF32, .UTF16, utf32_to_utf16, 2};
-UTF32_TO_UTF32 :: Text_Encoder.{.UTF32, .UTF32, null,           4};
-UTF32_TO_ANSI  :: Text_Encoder.{.UTF32, .ANSI,  utf32_to_ansi,  1};
+UTF32_TO_UTF8  :: Text_Encoder(utf32_to_utf8) .{.UTF32, .UTF8,  1};
+UTF32_TO_UTF16 :: Text_Encoder(utf32_to_utf16).{.UTF32, .UTF16, 2};
+UTF32_TO_ANSI  :: Text_Encoder(utf32_to_ansi) .{.UTF32, .ANSI,  1};
 
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------------- :Encode String
 
 // translate a string from one encoding to another
-// encoder must be known at compile time. hopefully encourages optimizer to inline the encode proc.
-// todo: investigate if it does this
+// encoder must be known at compile time, because the encoder proc must be inlined.
 encode_text_string :: (src: string, $encoder: Text_Encoder, caller_loc := #caller_location) -> string, bool {
     temp_storage_mark := get_temporary_storage_mark();
     defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(temp_storage_mark);
@@ -199,7 +194,13 @@ encode_text_string :: (src: string, $encoder: Text_Encoder, caller_loc := #calle
             }
             src_remain := src.count - src_index;
 
-            read_count, write_count, encode_failure := encoder.proc(src.data + src_index, out_buffer + out_index, src_remain, out_remain);
+            #if #run encoder.proc != null {
+                read_count, write_count, encode_failure := inline encoder.proc(src.data + src_index, out_buffer + out_index, src_remain, out_remain);
+            } else {
+                // cannot use an encoder with no procedure
+                read_count, write_count: s8;
+                encode_failure := Text_Encode_Failure.INVALID_ENCODER_PROCEDURE;
+            }
 
             if encode_failure != 0 {
                 src_truncated := string.{min(100, src.count), src.data};

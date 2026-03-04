@@ -47,11 +47,6 @@ text_encoding_test :: () -> bool, string {
     test_condition(read_utf8_real_world_success);
     encode_success: bool;
 
-    str_a := "abc";
-    str_b := copy_string(str_a);
-
-    test_condition(str_a == str_b); 
-
     // starting with real world utf8 and moving it through all of the translation paths
     {
         to_utf32:, encode_success = encode_text_string(utf8_real_world, UTF8_TO_UTF32,, temp);
@@ -59,11 +54,6 @@ text_encoding_test :: () -> bool, string {
         back_to_utf8:, encode_success = encode_text_string(to_utf32, UTF32_TO_UTF8,, temp);
         test_condition(encode_success);
         test_condition(utf8_real_world == back_to_utf8);
-
-        loopback_utf32:, encode_success = encode_text_string(to_utf32, UTF32_TO_UTF32);
-        test_condition(encode_success);
-
-        test_condition(to_utf32 == loopback_utf32);
     }
     {
         // this uses utf16 <-> utf32 as a transition state for each code point, so that is also tested somewhat
@@ -72,14 +62,6 @@ text_encoding_test :: () -> bool, string {
         back_to_utf8:, encode_success = encode_text_string(to_utf16, UTF16_TO_UTF8,, temp);
         test_condition(encode_success);
         test_condition(utf8_real_world == back_to_utf8);
-
-        loopback_utf16:, encode_success = encode_text_string(to_utf16, UTF16_TO_UTF16,, temp);
-        test_condition(encode_success);
-        loopback_utf8:, encode_success = encode_text_string(back_to_utf8, UTF8_TO_UTF8,, temp);
-        test_condition(encode_success);
-
-        test_condition(to_utf16 == loopback_utf16);
-        test_condition(utf8_real_world == loopback_utf8);
     }
 
     {

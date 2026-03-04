@@ -67,6 +67,28 @@ GLTF_Error_Code :: enum u16 {
     JSON_CHUNK_NOT_AT_INDEX_0;
     BIN_CHUNK_NOT_AT_INDEX_1;
     JSON_CHUNK_MISSING;
+    JSON_ASSET_IS_NOT_OBJECT;
+    JSON_ASSET_HAS_MORE_THAN_ONE_ELEMENT;
+    JSON_ASSET_VERSION_INCORRECTLY_FORMATTED;
+    DUPLICATE_ASSET_FIELD;
+    DUPLICATE_SCENES_FIELD;
+    DUPLICATE_SCENE_FIELD;
+    DUPLICATE_NODES_FIELD;
+    DUPLICATE_MESHES_FIELD;
+    DUPLICATE_ACCESSORS_FIELD;
+    DUPLICATE_BUFFER_VIEWS_FIELD;
+    DUPLICATE_BUFFERS_FIELD;
+    DUPLICATE_MATERIALS_FIELD;
+    DUPLICATE_TEXTURES_FIELD;
+    DUPLICATE_IMAGES_FIELD;
+    DUPLICATE_SAMPLERS_FIELD;
+    DUPLICATE_ANIMATIONS_FIELD;
+    DUPLICATE_SKINS_FIELD;
+    DUPLICATE_CAMERAS_FIELD;
+    DUPLICATE_EXTENSIONS_FIELD;
+    DUPLICATE_EXTENSIONS_USED_FIELD;
+    DUPLICATE_EXTENSIONS_REQUIRED_FIELD;
+    DUPLICATE_EXTRAS_FIELD;
 }
 
 GLTF_Error_Flags :: enum_flags u16 {
@@ -120,7 +142,9 @@ GLTF_Parser :: struct {
     json_chunk: GLTF_Chunk;
     binary_chunk: GLTF_Chunk;
     
-    load_success := true;
+    field_visited: GLTF_Field_Flags;
+    any_load_failures: bool;
+    asset_version_validated: bool;
 }
 
 GLTF_Header :: struct {
@@ -132,6 +156,28 @@ GLTF_Header :: struct {
 GLTF_Chunk :: struct {
     type: string;
     bytes: string;
+}
+
+GLTF_Field_Flags :: enum_flags u64 {
+    ASSET;
+    SCENES;
+    SCENE;
+    NODES;
+    MESHES;
+    ACCESSORS;
+    BUFFER_VIEWS;
+    BUFFERS;
+    MATERIALS;
+    TEXTURES;
+    IMAGES;
+    SAMPLERS;
+    ANIMATIONS;
+    SKINS;
+    CAMERAS;
+    EXTENSIONS;
+    EXTENSIONS_USED;
+    EXTENSIONS_REQUIRED;
+    EXTRAS;
 }
 
 // -----------------------------------------------------------------------------------
@@ -159,9 +205,10 @@ parse_file :: (parser: *GLTF_Parser, log_errors: bool) -> success: bool {
     jason := load_json_from_string(parser.json_chunk.bytes, false, false, log_errors,, temp);
     if jason.any_fatal_errors then return false;
 
-    for_each_element(*jason, xx load_gltf_using_json, parser);
+    for_each_element(*jason, xx load_gltf_using_parsed_json, parser);
+    parser.any_load_failures |= parser.asset_version_validated;
 
-    return parser.load_success;
+    return !parser.any_load_failures;
 }
 
 parse_file_header :: (using parser: *GLTF_Parser) -> valid_header: bool {
@@ -221,27 +268,21 @@ parse_chunks :: (parser: *GLTF_Parser) -> likely_success: bool {
 parse_chunk :: (using parser: *GLTF_Parser, chunk: *GLTF_Chunk) -> success: bool {
     // all chunks are 4-byte aligned.
     align_4(*pos);
-    if pos >= file.count {
-        // after alignment, at or past end of file
+
+    MIN_READ_BYTES :: 8;
+    if pos + MIN_READ_BYTES > file.count { 
         return false;
     }
 
     chunk_length := read_u32(parser);
+    chunk.type    = read_string_safe(parser, 4); // points into file buffer, no overflow
+    chunk.bytes   = read_string(parser, chunk_length); // points into file buffer, no overflow
+
     if chunk_length == 0 {
-        add_load_error(.READ_CHUNK_LENGTH_0, pos-4);
-        return false;
+        add_load_error(.READ_CHUNK_LENGTH_0, pos-MIN_READ_BYTES);
+        // can't have 0 len chunk for the data that tells you how to load stuff
+        return chunk.type != "JSON"; 
     }
-
-    chunk.type = to_string_safe(file.data + pos, 4);
-    pos += 4;
-    if pos >= file.count {
-        add_load_error(.READING_CHUNK_OVERFLOWS_FILE, pos, .FATAL);
-        return false;
-    }
-
-    chunk.bytes.data = file.data + pos;
-    chunk.bytes.count = chunk_length;
-    pos += xx chunk.bytes.count;
     if pos > file.count {
         add_load_error(.READING_CHUNK_OVERFLOWS_FILE, pos, .FATAL);
         return false;
@@ -250,12 +291,72 @@ parse_chunk :: (using parser: *GLTF_Parser, chunk: *GLTF_Chunk) -> success: bool
     return true;
 }
 
-load_gltf_using_json :: (parent_stack: []JSON_Element_Container, element: JSON_Element_Container, element_index: int, parent_element_count: int, user_data: *GLTF_Parser) -> bool, bool {
-    // parent := *parent_stack[parent_stack.count-1];
+load_gltf_using_parsed_json :: (parent_stack: []JSON_Element_Container, element: JSON_Element_Container, element_index: int, parent_element_count: int, parser: *GLTF_Parser) -> bool, bool {
     if element.has_key {
-        log("top level key: %", element.key);
+        if element.key == {
+        case "asset";
+            if parser.field_visited & .ASSET {
+                add_load_error(.DUPLICATE_ASSET_FIELD, 0, .FATAL);
+                parser.any_load_failures = true;
+            } else {
+                parse_asset_field(parser, element);
+                parser.field_visited |= .ASSET;
+            }
+        case "scenes";
+        case "scene";
+        case "nodes";
+        case "meshes";
+        case "accessors";
+        case "bufferViews";
+        case "buffers";
+        case "materials";
+        case "textures";
+        case "images";
+        case "samplers";
+        case "animations";
+        case "skins";
+        case "cameras";
+        case "extensions";
+        case "extensionsUsed";
+        case "extensionsRequired";
+        case "extras";
+        }
     }
-    return true, false;
+    return !parser.any_load_failures /* keep iterating */, false /* only iterate over top level elements */; 
+}
+
+parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
+    if parser.field_visited & .ASSET {
+        add_load_error(.DUPLICATE_ASSET_FIELD, 0, .FATAL);
+        parser.any_load_failures = true;
+        return;
+    }
+
+    parser.field_visited |= .ASSET;
+
+    if element.value.type != .OBJECT {
+        add_load_error(.JSON_ASSET_IS_NOT_OBJECT, 0, .FATAL);
+        parser.any_load_failures = true;
+    } else if element.value.object.elements.count == 0 {
+        add_load_error(.JSON_ASSET_HAS_MORE_THAN_ONE_ELEMENT, 0, .FATAL);
+        parser.any_load_failures = true;
+    } else {
+        for subelement : element.value.object.elements {
+            if subelement.key.str    == "version" 
+            && subelement.value.type == .STRING 
+            && subelement.value.str.count >= 3
+            // according to spec, all minor versions must be backward compatible, so 
+            // supporting 2.0 means supporting 2.x to an extent
+            && begins_with(subelement.value.str, "2.") { 
+                parser.asset_version_validated = true;
+                break;
+            }
+        }
+        if !parser.asset_version_validated {
+            add_load_error(.JSON_ASSET_VERSION_INCORRECTLY_FORMATTED, 0, .FATAL);
+            parser.any_load_failures = true;
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------
@@ -364,15 +465,15 @@ HERE,
                         );
 
                         // print the file lines so the user can see the error location in the text
-                        for fcl_indices {
-                            if it_index == 0 {
-                                print(*error_string_builder, "    text       : %\n", file_context_lines[it]);
-                            } else {
-                                print(*error_string_builder, "                 %\n", file_context_lines[it]);
-                            }
-                        }
-                        // caret points at the problem location
-                        print(*error_string_builder,         "                 %^\n", spaces);
+                        // for fcl_indices {
+                        //     if it_index == 0 {
+                        //         print(*error_string_builder, "    text       : %\n", file_context_lines[it]);
+                        //     } else {
+                        //         print(*error_string_builder, "                 %\n", file_context_lines[it]);
+                        //     }
+                        // }
+                        // // caret points at the problem location
+                        // print(*error_string_builder,         "                 %^\n", spaces);
 
                         report_module_error(builder_to_string(*error_string_builder));
                     }
@@ -395,10 +496,6 @@ report_module_error :: (fmt: string, args: ..Any) #expand {
     trm_log(fmt=fmt, args=..args, header="TeRM/GLTF");
 }
 
-as_string :: inline (bytes: []u8) -> string {
-    return string.{count=bytes.count, data=bytes.data};
-}
-
 // align to multiple of 4
 align_4 :: inline (value: *int)  {
     remainder := value.* & 0x3;
@@ -408,11 +505,21 @@ align_4 :: inline (value: *int)  {
 }
 
 read_u32 :: inline (using parser: *GLTF_Parser) -> u32 {
-    // must be aligned to 4 bytes
-    assert((parser.pos & 0x3) == 0);
     u32_val := (cast(*u32) (parser.file.data + parser.pos)).*;
     parser.pos += 4;
     return u32_val;
+}
+
+read_string_safe :: inline (using parser: *GLTF_Parser, max_read_count: int) -> string {
+    str := to_string_safe(file.data + pos, max_read_count);
+    pos += 4;
+    return str;
+}
+
+read_string :: inline (using parser: *GLTF_Parser, count: int) -> string {
+    str := to_string(file.data + pos, count);
+    pos += xx count;
+    return str;
 }
 
 // -----------------------------------------------------------------------------------

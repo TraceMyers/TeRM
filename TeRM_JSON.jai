@@ -106,7 +106,7 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
                 continue;
             } else {
                 kv_pair := *collection.object.elements[element_index.*];
-                element_container.key = kv_pair.key.utf8;
+                element_container.key = kv_pair.key.str;
                 element_container.value = *kv_pair.value;
                 element_container.has_key = true;
                 parent_element_count = collection.object.elements.count;
@@ -222,9 +222,7 @@ JSON_Element :: union type: JSON_Element_Type {
     // fields for you~
     .OBJECT                   ,, object         : JSON_Object;
     .ARRAY                    ,, array          : JSON_Array;
-    // this field is called 'utf8' because 'string' is a type / reserved keyword, I don't
-    // like shortenings like 'str' and at least utf8 is descriptive. 
-    .STRING                   ,, utf8           : string;
+    .STRING                   ,, str            : string;
     .INT                      ,, i64            : s64;            
     .FLOAT                    ,, f64            : float64;
     .TRUE                     ,, _true          : void; 
@@ -245,7 +243,7 @@ JSON_Array :: struct {
 }
 
 JSON_KV_Pair :: struct {
-    key   : JSON_Element;
+    key   : JSON_Element; // guaranteed to be a string
     value : JSON_Element;
 }
 
@@ -1124,7 +1122,7 @@ post_process_collections :: (elements: *[]JSON_Element, strings: []u8) -> bool {
                 str.count = builder.string_length;
             }
             element.type = .STRING;
-            element.utf8 = str;
+            element.str = str;
         } else {
             add_load_error(._INTERNAL_ERROR_INVALID_COLLECTION_TYPE, builder.debug_filepos, .FATAL);
             return false;

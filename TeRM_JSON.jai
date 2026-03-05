@@ -514,6 +514,8 @@ parse_number :: (parser: *JSON_Parser) -> bool {
 
     advance_collection_state_for_value_or_return_if_invalid(parser);
 
+    number_begin_pos := parser.pos;
+
     success := parse_number_components(parser);
     if !success then return false;
 
@@ -537,6 +539,11 @@ parse_number :: (parser: *JSON_Parser) -> bool {
         element := push_collection_child(parser);
         element.type = .FLOAT;
         element.f64 = compose_float(base * sign, fraction, exponent * exponent_sign);
+        // this can be used for a debug comparison
+        // for *number_string {
+        //     if it.* == #char "E" then it.* = #char "e"; // string_to_float64 doesn't like 'E'
+        // }
+        // baseline := string_to_float64(number_string);
     }
 
     return true;
@@ -596,6 +603,7 @@ parse_number_components :: (parser: *JSON_Parser) -> success: bool {
                     } else {
                         stage = .BASE_NONZERO;
                     }
+                    base = digit;
                 case .BASE_ZERO;
                     add_load_error(.EXTRA_DIGITS_IN_ZERO_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                     return false;

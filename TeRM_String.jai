@@ -91,26 +91,28 @@ is_slash :: inline (code_point: u32) -> bool {
 }
 
 to_lower_in_place :: inline (str: *string) {
-    for *str {
+    for *(str.*) {
         it.* = to_lower(it.*);
     }
 }
 
 to_lower :: inline (str: string) -> string {
     out_str := alloc_string(str.count);
+    memcpy(out_str.data, str.data, str.count);
     to_lower_inline(*out_str);
     return out_str;
 }
 
 to_upper_in_place :: inline (str: *string) {
-    for *str {
+    for *(str.*) {
         it.* = to_upper(it.*);
     }
 }
 
 to_upper :: inline (str: string) -> string {
     out_str := alloc_string(str.count);
-    to_upper_inline(*out_str);
+    memcpy(out_str.data, str.data, str.count);
+    to_upper_in_place(*out_str);
     return out_str;
 }
 

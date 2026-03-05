@@ -369,9 +369,9 @@ HERE,
 
 parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     if element.value.type != .OBJECT {
-        add_parse_load_error(.JSON_OBJECT_EXPECTED, get_element_file_position(element.key), .FATAL);
+        add_parse_load_error(.JSON_OBJECT_EXPECTED, get_file_position(element.key), .FATAL);
     } else if element.value.object.elements.count == 0 {
-        add_parse_load_error(.JSON_ASSET_HAS_ZERO_ELEMENTS, get_element_file_position(element.key), .FATAL);
+        add_parse_load_error(.JSON_ASSET_HAS_ZERO_ELEMENTS, get_file_position(element.key), .FATAL);
     } else {
         for subelement : element.value.object.elements {
             // according to spec, all minor versions must be backward compatible, so 
@@ -386,11 +386,11 @@ parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
             } else if subelement.key.str == "minVersion"
             && subelement.value.type == .STRING
             && !(begins_with(subelement.value.str, "2.") || begins_with(subelement.value.str, "1.")) {
-                add_parse_load_error(.JSON_ASSET_MIN_VERSION_NOT_2_0, get_element_file_position(element.key), .FATAL);
+                add_parse_load_error(.JSON_ASSET_MIN_VERSION_NOT_2_0, get_file_position(element.key), .FATAL);
             }
         }
         if !parser.asset_version_validated {
-            add_parse_load_error(.JSON_ASSET_VERSION_INCORRECTLY_FORMATTED, get_element_file_position(element.key), .FATAL);
+            add_parse_load_error(.JSON_ASSET_VERSION_INCORRECTLY_FORMATTED, get_file_position(element.key), .FATAL);
         }
     }
 }
@@ -398,28 +398,28 @@ parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 // scenes = array of scenes, or collections of nodes.
 parse_scenes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     if element.value.type != .ARRAY {
-        add_parse_load_error(.JSON_ARRAY_EXPECTED, get_element_file_position(element.key), .FATAL);
+        add_parse_load_error(.JSON_ARRAY_EXPECTED, get_file_position(element.key), .FATAL);
     }
 
     for sub1_element : element.value.array.elements {
         if sub1_element.type != .OBJECT {
-            add_parse_load_error(.JSON_OBJECT_EXPECTED, get_element_file_position(element.key), .FATAL);
+            add_parse_load_error(.JSON_OBJECT_EXPECTED, get_file_position(element.key), .FATAL);
             return;
         }
         for sub2_element : sub1_element.object.elements {
             if sub2_element.key.str == "nodes" {
                 if sub2_element.value.type != .ARRAY {
-                    add_parse_load_error(.JSON_ARRAY_EXPECTED, get_element_file_position(element.key), .FATAL);
+                    add_parse_load_error(.JSON_ARRAY_EXPECTED, get_file_position(element.key), .FATAL);
                     return;
                 }
                 for sub3_element : sub2_element.value.array.elements {
                     if sub3_element.type != .INT {
-                        add_parse_load_error(.JSON_INTEGER_EXPECTED, get_element_file_position(element.key), .FATAL);
+                        add_parse_load_error(.JSON_INTEGER_EXPECTED, get_file_position(element.key), .FATAL);
                         return;
                     }
                     node := sub3_element.i64;
                     if node < 0 {
-                        add_parse_load_error(.JSON_NON_NEGATIVE_INTEGER_EXPECTED, get_element_file_position(element.key), .FATAL);
+                        add_parse_load_error(.JSON_NON_NEGATIVE_INTEGER_EXPECTED, get_file_position(element.key), .FATAL);
                         return;
                     }
                     
@@ -432,18 +432,18 @@ parse_scenes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 // scene = index of default scene
 parse_scene_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.SCENE_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.SCENE_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_nodes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     if element.value.type != .ARRAY {
-        add_parse_load_error(.JSON_ARRAY_EXPECTED, get_element_file_position(element.key), .FATAL);
+        add_parse_load_error(.JSON_ARRAY_EXPECTED, get_file_position(element.key), .FATAL);
     }
 
     for sub1_element : element.value.array.elements {
         if sub1_element.type != .OBJECT {
-            add_parse_load_error(.JSON_OBJECT_EXPECTED, get_element_file_position(element.key), .FATAL);
+            add_parse_load_error(.JSON_OBJECT_EXPECTED, get_file_position(element.key), .FATAL);
             return;
         }
         // note: matrix and TRS are mutually exclusive. error if both included
@@ -481,91 +481,91 @@ parse_nodes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 
 parse_meshes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.MESHES_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.MESHES_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_accessors_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.ACCESSORS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.ACCESSORS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_buffer_views_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.BUFFER_VIEWS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.BUFFER_VIEWS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_buffers_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.BUFFERS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.BUFFERS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_materials_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.MATERIALS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.MATERIALS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_textures_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.TEXTURES_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.TEXTURES_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_images_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.IMAGES_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.IMAGES_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_samplers_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.SAMPLERS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.SAMPLERS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_animations_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.ANIMATIONS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.ANIMATIONS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_skins_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.SKINS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.SKINS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_cameras_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.CAMERAS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.CAMERAS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_extensions_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.EXTENSIONS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.EXTENSIONS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_extensions_used_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.EXTENSIONS_USED_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.EXTENSIONS_USED_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_extensions_required_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.EXTENSIONS_REQUIRED_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.EXTENSIONS_REQUIRED_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_extras_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.EXTRAS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
+    add_load_error(.EXTRAS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
@@ -612,8 +612,7 @@ on_exit_main_load_proc :: (parser: *GLTF_Parser, parse_success: bool, shrink_all
 
     gltf_load_result.errors = gltf_errors;
 
-    // todo: this probably belongs as part of the json error logging, used whenever the json is minified.
-    // can detect minification by newline-to-filesize ratio
+    // todo: seems like the file text part o this and the json error reporting could be part of File
 
     for *err : gltf_errors {
         err.flags &= ~.INTERNAL_UNPROCESSED;

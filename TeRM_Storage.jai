@@ -434,6 +434,12 @@ soa_reset_keeping_memory :: (soa: *Struct_Of_Arrays) {
     soa_for_each_array(soa, "array_reset_keeping_memory(array);");
 }
 
+soa_item_count :: (soa: *Struct_Of_Arrays) -> int {
+    count: int = ---;
+    #insert #run tprint("\tcount = soa.%.count;\n", soa.array_field_names[0]);
+    return count;
+}
+
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------- :Table_Base
 // table interface
@@ -483,6 +489,10 @@ table_init :: (table: *Linear_Table, reserve_count := 64) {
     soa_set_allocator(table, context.allocator);
     soa_reset(table);
     soa_reserve(table, reserve_count);
+}
+
+table_count :: inline (table: *Linear_Table) -> int {
+    return soa_item_count(table);
 }
 
 // return true if the value was added

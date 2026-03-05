@@ -17,28 +17,34 @@
 // alt name
 load_json :: load_json_from_file;
 
-load_json_from_file :: (file_path: string, numbers_always_float := false, shrink_allocations := true, log_errors := false) -> JSON_Load_Result {
+// numbers_always_float : never parse to integer
+// shrink_allocations   : if the allocations are taking up too much space, shrink
+// json_is_minified     : you expect the json to be minified. allocation reservations are larger per file size if true.
+load_json_from_file :: (file_path: string, numbers_always_float := false, shrink_allocations := true, json_is_minified := true, log_errors := false) -> JSON_Load_Result {
     on_enter_any_load_proc();
 
     file_data, success := read_entire_file(file_path, log_errors=log_errors,,temp);
     if !success then return {};
 
-    load_json_from_string(file_data, numbers_always_float, shrink_allocations, log_errors);
+    load_json_from_string(file_data, numbers_always_float, shrink_allocations, json_is_minified, log_errors);
     return context.json_load_result;
 }
 
-load_json_from_string :: (text: string, numbers_always_float := false, shrink_allocations := true, log_errors := false) -> JSON_Load_Result {
+// numbers_always_float : never parse to integer
+// shrink_allocations   : if the allocations are taking up too much space, shrink
+// json_is_minified     : you expect the json to be minified. allocation reservations are larger per file size if true.
+load_json_from_string :: (text: string, numbers_always_float := false, shrink_allocations := true, json_is_minified := true, log_errors := false) -> JSON_Load_Result {
     on_enter_any_load_proc();
     on_enter_main_load_proc(log_errors);
 
     result := *context.json_load_result;
     result.file_size = xx text.count;
     result.allocator = context.allocator;
-    parser := JSON_Parser.{text=text, always_float=numbers_always_float};
+    parser := JSON_Parser.{text=text, always_float=numbers_always_float, user_expects_minified_json=json_is_minified};
 
     success := parse_json(*parser);
-
     on_exit_main_load_proc(*parser, success, shrink_allocations, log_errors);
+
     return context.json_load_result;
 }
 
@@ -47,13 +53,15 @@ load_json_from_string :: (text: string, numbers_always_float := false, shrink_al
 // a point before this element's result was allocated, such as when temp storage is reset.
 // if the allocation is definitely no longer valid (being able to assess validity isn't guaranteed),
 // this procedure returns -1.
-get_element_file_position :: (element: *JSON_Element) -> s32 {
+get_file_position :: (element: *JSON_Element) -> s32 {
     element_index := element - context.json_load_result.elements.data;
     if element_index >= 0 && element_index < context.json_load_result.elements.count {
         return context.json_load_result.file_positions[element_index];
     } else return -1;
 }
 
+// traverse the tree of elements from a loaded file. see for_each_json_element_proc definition for
+// how to define your per-element callback. user_data can be anything, gets passed into your callback.
 for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc, user_data: *void = null) {
     // ----------------------------
 
@@ -74,12 +82,12 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
     // ----------------------------
 
     if result.elements.count == 0 {
-        report_module_error("can't search a json result that doesn't any elements");
+        module_log("can't search a json result that doesn't any elements");
         return;
     }
 
     if result.elements[0].type != .ARRAY && result.elements[0].type != .OBJECT {
-        report_module_error("can't search a json result that doesn't have a collection (array, object) at the top level");
+        module_log("can't search a json result that doesn't have a collection (array, object) at the top level");
         return;
     }
 
@@ -147,6 +155,8 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
     }
 }
 
+// free the allocations of a result. unnecessary if the result was temp allocated. though,
+// if it was temp, you probably want to reset your temp storage mark to before the load call.
 free :: (using result: *JSON_Load_Result) {
     free(elements.data,,allocator);
     free(strings.data,,allocator);
@@ -191,6 +201,8 @@ JSON_Load_Result :: struct {
     file_positions: []s32;
     // the size of the data that was read, whether a file or string was input. 
     file_size: s32;
+    // number of strings in the strings array
+    string_count: s32;
     // if there are any errors, they will be in this list. errors are not necessarily
     // fatal. if fatal, they will be marked. fatal errors mark an unsucessful load.
     // this array points into a buffer owned by the module, and it's valid until 
@@ -373,6 +385,8 @@ JSON_Parser :: struct {
     builder_stack: [..]s32;
     building_collection: *JSON_Collection_Builder;
 
+    user_expects_minified_json: bool;
+
     number_parser: JSON_Number_Parser;
     always_float: bool;
 
@@ -411,11 +425,8 @@ JSON_String_Parser :: struct {
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------- :parse_json
 
-parse_json :: (using parser: *JSON_Parser) -> bool {
-    // todo: estimate from file size
-    array_reserve(*elements, 128);
-    array_reserve(*strings, 2048);
-    table_init(*string_lookup_table, 1024,,temp);
+parse_json :: (parser: *JSON_Parser) -> bool {
+    reserve_allocations(parser);
 
     while parser.pos < parser.text.count {
         byte := parser.text[parser.pos];
@@ -515,6 +526,37 @@ parse_json :: (using parser: *JSON_Parser) -> bool {
     }
 
     return true;
+}
+
+reserve_allocations :: (using parser: *JSON_Parser) {
+    // these reservation sizes were made from two samples: 
+    // - the minified json of a binary gltf file 
+    // - the spaced json of an example corporate data file
+    elements_per_file_byte, string_bytes_per_file_byte, strings_per_file_byte: float;
+    if parser.user_expects_minified_json {
+        elements_per_file_byte     = 0.140707;
+        string_bytes_per_file_byte = 0.295157;
+        strings_per_file_byte      = 0.032068;
+    } else {
+        elements_per_file_byte     = 0.033319;
+        string_bytes_per_file_byte = 0.082472;
+        strings_per_file_byte      = 0.005769;
+    }
+
+    // overshoot by a little, avoiding reallocations
+    OVERSHOOT_FACTOR :: 1.04;
+    elements_est := parser.text.count * elements_per_file_byte     * OVERSHOOT_FACTOR;
+    bytes_est    := parser.text.count * string_bytes_per_file_byte * OVERSHOOT_FACTOR;
+    strings_est  := parser.text.count * strings_per_file_byte      * OVERSHOOT_FACTOR;
+
+    elements_reserve_count     := max(32,  round(elements_est));
+    string_bytes_reserve_count := max(96,  round(bytes_est));
+    strings_reserve_count      := max(16,  round(strings_est));
+
+    array_reserve(*elements,         elements_reserve_count);
+    array_reserve(*file_positions,   elements_reserve_count); 
+    array_reserve(*strings,          string_bytes_reserve_count);
+    table_init(*string_lookup_table, strings_reserve_count,, temp);
 }
 
 // -----------------------------------------------------------------------------------
@@ -1185,6 +1227,7 @@ on_exit_main_load_proc :: (parser: *JSON_Parser, parse_success: bool, shrink_all
     if parse_success && shrink_allocations && json_load_result.allocator.proc != temp.proc {
         array_shrink_if_small_enough(*parser.elements, 0.9);
         array_shrink_if_small_enough(*parser.strings, 0.9);
+        array_shrink_if_small_enough(*parser.file_positions, 0.9);
     }
 
     post_process_success := post_process_collections(*parser.elements, parser.strings);
@@ -1273,7 +1316,7 @@ HERE,
                         // caret points at the problem location
                         print(*error_string_builder,         "                 %^\n", spaces);
 
-                        report_module_error(builder_to_string(*error_string_builder));
+                        module_log(builder_to_string(*error_string_builder));
                     }
 
                     processed_error_count += 1;
@@ -1290,7 +1333,7 @@ HERE,
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :misc
 
-report_module_error :: (fmt: string, args: ..Any) #expand {
+module_log :: (fmt: string, args: ..Any) #expand {
     trm_log(fmt=fmt, args=..args, header="TeRM/JSON");
 }
 

@@ -123,10 +123,7 @@ GLTF_Error_Flags :: enum_flags u16 {
 GLTF_Error :: struct {
     code: GLTF_Error_Code; 
     flags: GLTF_Error_Flags;
-    line: s32;
-    column: s32;
-    // converted to line,column on exit
-    #overlay(line) _internal_file_position: s32 = ---;
+    file_position: s32;
 }
 
 #scope_file // -----------------------------------------------------------------------
@@ -144,7 +141,7 @@ add_load_error :: (code: GLTF_Error_Code, file_position: s64, flags: GLTF_Error_
     }
 
     error := GLTF_Error.{
-        code=code, flags=flags|.INTERNAL_UNPROCESSED, _internal_file_position=xx file_position
+        code=code, flags=flags|.INTERNAL_UNPROCESSED, file_position=xx file_position
     };
 
     if gltf_errors.count == gltf_error_buffer.count {
@@ -287,7 +284,7 @@ parse_chunks :: (parser: *GLTF_Parser) -> likely_success: bool {
     }
     
     if chunk_count == 0 {
-        add_load_error(.JSON_CHUNK_MISSING, 12, .FATAL);
+        add_load_error(.JSON_CHUNK_MISSING, parser.pos, .FATAL);
         return false;
     }
 
@@ -323,8 +320,8 @@ parse_chunk :: (using parser: *GLTF_Parser, chunk: *GLTF_Chunk) -> success: bool
 // just kinda doing an exploration here to see how best to search the data and store it
 // this probably isn't indicative of the final approach
 load_gltf_using_parsed_json :: (parent_stack: []JSON_Element_Container, element: JSON_Element_Container, element_index: int, parent_element_count: int, parser: *GLTF_Parser) -> bool, bool {
-    if element.has_key {
-        if element.key == {
+    if element.key != null {
+        if element.key.str == {
         case "asset";               parse_field("asset",                parser, element);
         case "scenes";              parse_field("scenes",               parser, element);
         case "scene";               parse_field("scene",                parser, element);
@@ -372,9 +369,9 @@ HERE,
 
 parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     if element.value.type != .OBJECT {
-        add_parse_load_error(.JSON_OBJECT_EXPECTED, 0, .FATAL);
+        add_parse_load_error(.JSON_OBJECT_EXPECTED, get_element_file_position(element.key), .FATAL);
     } else if element.value.object.elements.count == 0 {
-        add_parse_load_error(.JSON_ASSET_HAS_ZERO_ELEMENTS, 0, .FATAL);
+        add_parse_load_error(.JSON_ASSET_HAS_ZERO_ELEMENTS, get_element_file_position(element.key), .FATAL);
     } else {
         for subelement : element.value.object.elements {
             // according to spec, all minor versions must be backward compatible, so 
@@ -389,11 +386,11 @@ parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
             } else if subelement.key.str == "minVersion"
             && subelement.value.type == .STRING
             && !(begins_with(subelement.value.str, "2.") || begins_with(subelement.value.str, "1.")) {
-                add_parse_load_error(.JSON_ASSET_MIN_VERSION_NOT_2_0, 0, .FATAL);
+                add_parse_load_error(.JSON_ASSET_MIN_VERSION_NOT_2_0, get_element_file_position(element.key), .FATAL);
             }
         }
         if !parser.asset_version_validated {
-            add_parse_load_error(.JSON_ASSET_VERSION_INCORRECTLY_FORMATTED, 0, .FATAL);
+            add_parse_load_error(.JSON_ASSET_VERSION_INCORRECTLY_FORMATTED, get_element_file_position(element.key), .FATAL);
         }
     }
 }
@@ -401,28 +398,28 @@ parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 // scenes = array of scenes, or collections of nodes.
 parse_scenes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     if element.value.type != .ARRAY {
-        add_parse_load_error(.JSON_ARRAY_EXPECTED, 0, .FATAL);
+        add_parse_load_error(.JSON_ARRAY_EXPECTED, get_element_file_position(element.key), .FATAL);
     }
 
     for sub1_element : element.value.array.elements {
         if sub1_element.type != .OBJECT {
-            add_parse_load_error(.JSON_OBJECT_EXPECTED, 0, .FATAL);
+            add_parse_load_error(.JSON_OBJECT_EXPECTED, get_element_file_position(element.key), .FATAL);
             return;
         }
         for sub2_element : sub1_element.object.elements {
             if sub2_element.key.str == "nodes" {
                 if sub2_element.value.type != .ARRAY {
-                    add_parse_load_error(.JSON_ARRAY_EXPECTED, 0, .FATAL);
+                    add_parse_load_error(.JSON_ARRAY_EXPECTED, get_element_file_position(element.key), .FATAL);
                     return;
                 }
                 for sub3_element : sub2_element.value.array.elements {
                     if sub3_element.type != .INT {
-                        add_parse_load_error(.JSON_INTEGER_EXPECTED, 0, .FATAL);
+                        add_parse_load_error(.JSON_INTEGER_EXPECTED, get_element_file_position(element.key), .FATAL);
                         return;
                     }
                     node := sub3_element.i64;
                     if node < 0 {
-                        add_parse_load_error(.JSON_NON_NEGATIVE_INTEGER_EXPECTED, 0, .FATAL);
+                        add_parse_load_error(.JSON_NON_NEGATIVE_INTEGER_EXPECTED, get_element_file_position(element.key), .FATAL);
                         return;
                     }
                     
@@ -435,18 +432,18 @@ parse_scenes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 // scene = index of default scene
 parse_scene_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.SCENE_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.SCENE_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_nodes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     if element.value.type != .ARRAY {
-        add_parse_load_error(.JSON_ARRAY_EXPECTED, 0, .FATAL);
+        add_parse_load_error(.JSON_ARRAY_EXPECTED, get_element_file_position(element.key), .FATAL);
     }
 
     for sub1_element : element.value.array.elements {
         if sub1_element.type != .OBJECT {
-            add_parse_load_error(.JSON_OBJECT_EXPECTED, 0, .FATAL);
+            add_parse_load_error(.JSON_OBJECT_EXPECTED, get_element_file_position(element.key), .FATAL);
             return;
         }
         // note: matrix and TRS are mutually exclusive. error if both included
@@ -484,91 +481,91 @@ parse_nodes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 
 parse_meshes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.MESHES_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.MESHES_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_accessors_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.ACCESSORS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.ACCESSORS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_buffer_views_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.BUFFER_VIEWS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.BUFFER_VIEWS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_buffers_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.BUFFERS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.BUFFERS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_materials_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.MATERIALS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.MATERIALS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_textures_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.TEXTURES_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.TEXTURES_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_images_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.IMAGES_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.IMAGES_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_samplers_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.SAMPLERS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.SAMPLERS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_animations_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.ANIMATIONS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.ANIMATIONS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_skins_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.SKINS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.SKINS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_cameras_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.CAMERAS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.CAMERAS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_extensions_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.EXTENSIONS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.EXTENSIONS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_extensions_used_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.EXTENSIONS_USED_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.EXTENSIONS_USED_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_extensions_required_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.EXTENSIONS_REQUIRED_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.EXTENSIONS_REQUIRED_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
 parse_extras_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
     // unsupported
-    add_load_error(.EXTRAS_FIELD_UNIMPLEMENTED, 0);
+    add_load_error(.EXTRAS_FIELD_UNIMPLEMENTED, get_element_file_position(element.key));
     // parser.any_load_failures = true;
 }
 
@@ -597,14 +594,13 @@ on_exit_main_load_proc :: (parser: *GLTF_Parser, parse_success: bool, shrink_all
 
     // -----------------------------------------------------
 
+    auto_release_temp();
+
     using context;
 
     if parse_success && shrink_allocations && gltf_load_result.allocator.proc != temp.proc {
-        // array_shrink_if_small_enough(*parser.elements, 0.9);
-        // array_shrink_if_small_enough(*parser.strings, 0.9);
-    }
 
-    // post_process_success := post_process_collections(*parser.elements, parser.strings);
+    }
 
     // if parse_success && post_process_success {
         // gltf_load_result.elements = parser.elements;
@@ -616,84 +612,32 @@ on_exit_main_load_proc :: (parser: *GLTF_Parser, parse_success: bool, shrink_all
 
     gltf_load_result.errors = gltf_errors;
 
-    file_context_lines: [8]string;
-    fcl_indices: [file_context_lines.count]int;
-    fcl_i := 0;
+    // todo: this probably belongs as part of the json error logging, used whenever the json is minified.
+    // can detect minification by newline-to-filesize ratio
 
-    if parser.file.count > 0 && gltf_errors.count > 0 {
-        next_text_covered_size := 0;
+    for *err : gltf_errors {
+        err.flags &= ~.INTERNAL_UNPROCESSED;
 
-        // each error originally is only recorded at a file position
-        // convert that to line, column
-        for :per_line line, line_index : parser.file {
-            text_covered_size := next_text_covered_size;
-            next_text_covered_size += line.count;
+        if log_errors {
+            remaining_bytes := max(0, parser.json_chunk.bytes.count - err.file_position);
+            display_bytes := min(remaining_bytes, 32);
+            json_file_context := string.{display_bytes, parser.json_chunk.bytes.data + err.file_position};
 
-            line_file_position_begin := line.data - parser.file.data;
-            line_file_position_end   := line_file_position_begin + line.count;
-
-            processed_error_count := 0;
-
-            file_context_lines[fcl_i] = line;
-            defer fcl_i = _increment_wrap(fcl_i, 0, file_context_lines.count-1);
-
-            for *err : gltf_errors {
-                if (err.flags & .INTERNAL_UNPROCESSED) == 0 {
-                    processed_error_count += 1;
-                    continue;
-                }
-
-                if err._internal_file_position >= line_file_position_begin 
-                && err._internal_file_position <= line_file_position_end {
-                    err.column = xx (err._internal_file_position - line_file_position_begin);
-                    err.line = xx line_index;
-                    err.flags &= ~.INTERNAL_UNPROCESSED;
-
-                    space_buffer: [128]u8 = ---;
-                    space_count := min(space_buffer.count, err.column);
-                    memset(space_buffer.data, " ", space_count);
-                    spaces := string.{space_count, space_buffer.data};
-
-                    // getting cached line indices, oldest to newest
-                    fcl_indices[0] = _increment_wrap(fcl_i, 0, file_context_lines.count-1);
-                    if fcl_indices.count > 1 then for 1..fcl_indices.count-1 {
-                        fcl_indices[it] = _increment_wrap(fcl_indices[it-1], 0, file_context_lines.count-1);
-                    }
-
-                    if log_errors {
-                        error_string_builder: String_Builder;
-                        print(*error_string_builder,
+            module_log(
 #string HERE
 
 
-    error code : %
-    flags      : %
+error code : %
+flags      : %
+file pos   : %
+file text  : %
+             ^
 HERE,
-                            err.code, 
-                            err.flags, 
-                        );
-
-                        // print the file lines so the user can see the error location in the text
-                        // for fcl_indices {
-                        //     if it_index == 0 {
-                        //         print(*error_string_builder, "    text       : %\n", file_context_lines[it]);
-                        //     } else {
-                        //         print(*error_string_builder, "                 %\n", file_context_lines[it]);
-                        //     }
-                        // }
-                        // // caret points at the problem location
-                        // print(*error_string_builder,         "                 %^\n", spaces);
-
-                        module_log(builder_to_string(*error_string_builder));
-                    }
-
-                    processed_error_count += 1;
-                }
-            }
-
-            if processed_error_count == gltf_errors.count {
-                break;
-            }
+                err.code, 
+                err.flags, 
+                err.file_position,
+                json_file_context
+            );
         }
     }
 }

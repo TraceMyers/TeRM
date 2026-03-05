@@ -42,6 +42,18 @@ load_json_from_string :: (text: string, numbers_always_float := false, shrink_al
     return context.json_load_result;
 }
 
+// this will return a valid file position until the next load, or until free. if the result
+// is temp-stored, the relevant 'free' happens after the storage mark moves to before
+// a point before this element's result was allocated, such as when temp storage is reset.
+// if the allocation is definitely no longer valid (being able to assess validity isn't guaranteed),
+// this procedure returns -1.
+get_element_file_position :: (element: *JSON_Element) -> s32 {
+    element_index := element - context.json_load_result.elements.data;
+    if element_index >= 0 && element_index < context.json_load_result.elements.count {
+        return context.json_load_result.file_positions[element_index];
+    } else return -1;
+}
+
 for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc, user_data: *void = null) {
     // ----------------------------
 
@@ -80,7 +92,7 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
     index_stack.data = index_buffer.data;
 
     // push the top-level collection element
-    static_array_add(*collection_stack, {"", *result.elements[0], false}, collection_buffer.count);
+    static_array_add(*collection_stack, {null, *result.elements[0]}, collection_buffer.count);
     static_array_add(*index_stack, 0, index_buffer.count);
 
     while collection_stack.count > 0 {
@@ -95,9 +107,8 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
                 _pop_collection();
                 continue;
             } else {
-                element_container.key = "";
+                element_container.key = null;
                 element_container.value = *collection.array.elements[element_index.*];
-                element_container.has_key = false;
                 parent_element_count = collection.array.elements.count;
             }
         } else {
@@ -106,9 +117,8 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
                 continue;
             } else {
                 kv_pair := *collection.object.elements[element_index.*];
-                element_container.key = kv_pair.key.str;
+                element_container.key   = *kv_pair.key;
                 element_container.value = *kv_pair.value;
-                element_container.has_key = true;
                 parent_element_count = collection.object.elements.count;
             }
         }
@@ -140,6 +150,7 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
 free :: (using result: *JSON_Load_Result) {
     free(elements.data,,allocator);
     free(strings.data,,allocator);
+    free(file_positions.data,,allocator);
     result.* = {};
 }
 
@@ -148,10 +159,8 @@ free :: (using result: *JSON_Load_Result) {
 
 JSON_Element_Container :: struct {
     // if the value element is a member of an object, this will be readable
-    key: string;
-    value: *JSON_Element;
-    // true if the value element is a member of an object
-    has_key: bool;
+    key   : *JSON_Element; // null if no key
+    value : *JSON_Element;
 }
 
 // the procedure type for use with for_each_element
@@ -178,6 +187,8 @@ JSON_Load_Result :: struct {
     elements: []JSON_Element;
     // all of the strings in one buffer
     strings: []u8;
+    // the file position of each element
+    file_positions: []s32;
     // the size of the data that was read, whether a file or string was input. 
     file_size: s32;
     // if there are any errors, they will be in this list. errors are not necessarily
@@ -358,6 +369,7 @@ JSON_Parser :: struct {
     pos: s64;
     elements: [..]JSON_Element;
     strings: [..]u8;
+    file_positions: [..]s32;
     builder_stack: [..]s32;
     building_collection: *JSON_Collection_Builder;
 
@@ -532,11 +544,11 @@ parse_number :: (parser: *JSON_Parser) -> bool {
         if exponent > 0 {
             base = mul_by_pow10_exponent(base, exponent, exponent_sign);
         }
-        element := push_collection_child(parser);
+        element := push_collection_child(parser, number_begin_pos);
         element.type = .INT;
         element.i64 = base * sign;
     } else {
-        element := push_collection_child(parser);
+        element := push_collection_child(parser, number_begin_pos);
         element.type = .FLOAT;
         element.f64 = compose_float(base * sign, fraction, exponent * exponent_sign);
         // this can be used for a debug comparison
@@ -706,6 +718,7 @@ parse_string :: (parser: *JSON_Parser) -> bool {
     advance_collection_state_for_string_or_return_if_invalid(parser);
 
     // get past opening quote
+    string_begin_pos := parser.pos;
     parser.pos += 1;
 
     remaining_bytes := parser.text.count - parser.pos;
@@ -787,7 +800,7 @@ parse_string :: (parser: *JSON_Parser) -> bool {
 
     // a string, for now, uses a collection builder (like an object or array) until post-processing,
     // because the strings array will resize and pointers will become invalid.
-    element := push_collection_child(parser);
+    element := push_collection_child(parser, string_begin_pos);
     element.type = .INTERNAL_COLLECTION_BUILDER;
     element._internal_collection_builder = {};
     
@@ -898,6 +911,7 @@ parse_boolean_or_null :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> boo
         else #ifx type == .FALSE then "false"
         else                          "null";
 
+    primitive_begin_pos := parser.pos;
     remaining_bytes := parser.text.count - parser.pos;
     str_in_text := string.{min(type_string.count, remaining_bytes), parser.text.data + parser.pos};
     parser.pos += str_in_text.count;
@@ -911,7 +925,7 @@ parse_boolean_or_null :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> boo
         return false;
     }
 
-    element := push_collection_child(parser);
+    element := push_collection_child(parser, primitive_begin_pos);
     element.type = type;
 
     return true;
@@ -1004,9 +1018,10 @@ begin_parse_collection :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> bo
 
 // get the in-place location of the new element within the parent collection's list,
 // the parent collection's list is allocated when the collection is pushed.
-push_collection_child :: inline (parser: *JSON_Parser) -> *JSON_Element {
+push_collection_child :: inline (parser: *JSON_Parser, file_pos: int) -> *JSON_Element {
     if parser.elements.count == 0 {
         // there is only one top-level element...
+        array_add(*parser.file_positions, xx file_pos);
         return array_add(*parser.elements);
     } else {
         // ... the rest of the elements allocate in-place within a collection
@@ -1014,6 +1029,7 @@ push_collection_child :: inline (parser: *JSON_Parser) -> *JSON_Element {
         assert(child_elements_counter < child_elements_count);
         element_index := child_elements_offset + child_elements_counter;
         new_element := *parser.elements[element_index];
+        parser.file_positions[element_index] = xx file_pos;
         child_elements_counter += 1;
         return new_element;
     }
@@ -1032,7 +1048,7 @@ push_collection :: (using parser: *JSON_Parser, collection_type: JSON_Element_Ty
     // if the parent object's list already has 1 previously instantiated element,
     // we are getting this element back from this proc call. the element itself will 
     // become a parent object with its own list at the end of the array.
-    new_collection := push_collection_child(parser);
+    new_collection := push_collection_child(parser, parser.pos-1);
     // fix: doing this before the resize below
     new_collection_index : s32 = xx (new_collection - elements.data);
     new_collection.type = .INTERNAL_COLLECTION_BUILDER;
@@ -1061,6 +1077,7 @@ push_collection :: (using parser: *JSON_Parser, collection_type: JSON_Element_Ty
             // so they're contiguously allocated. elements will have type UNINITIALIZED
             // so they can be checked later to make sure they were set correctly after this step
             array_resize(*elements, elements.count + collection_count);
+            array_resize(*file_positions, elements.count);
         } else {
             child_elements_offset = -1;
         }
@@ -1175,9 +1192,11 @@ on_exit_main_load_proc :: (parser: *JSON_Parser, parse_success: bool, shrink_all
     if parse_success && post_process_success {
         json_load_result.elements = parser.elements;
         json_load_result.strings = parser.strings;
+        json_load_result.file_positions = parser.file_positions;
     } else {
         array_reset(*parser.elements);
         array_reset(*parser.strings);
+        array_reset(*parser.file_positions);
     }
 
     json_load_result.errors = json_errors;

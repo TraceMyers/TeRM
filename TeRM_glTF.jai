@@ -374,8 +374,7 @@ HERE,
 }
 
 parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    check_type(element.value, .OBJECT);
-    if element.value.object.elements.count == 0 {
+    if json_get(*element.value.object).elements.count == 0 {
         add_parse_load_error(.JSON_ASSET_HAS_ZERO_ELEMENTS, get_file_position(element.key), .FATAL);
     } else {
         for subelement : element.value.object.elements {
@@ -438,15 +437,12 @@ parse_scene_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 }
 
 parse_nodes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    check_type(element.value, .ARRAY);
-
-    for node : element.value.array.elements {
-        check_type(*node, .OBJECT);
+    for node : json_get(*element.value.array).elements {
         // note: matrix and TRS are mutually exclusive. error if both included
         // note: if TRS, any of them are optional
         // note: skin implies a mesh must exist.
         module_log("--- node ---");
-        for node_component : node.object.elements {
+        for node_component : json_get(*node.object).elements {
             if node_component.key.str == {
             case "name";
                 module_log("name: %",        node_component.value.str);
@@ -669,26 +665,6 @@ read_string :: inline (using parser: *GLTF_Parser, count: int) -> string {
     str := to_string(file.data + pos, count);
     pos += xx count;
     return str;
-}
-
-check_type :: ($code: Code, $type: JSON_Element_Type) #expand {
-    element_name_maybe_with_asterisk :: #run code_string(code);
-    #if #run element_name_maybe_with_asterisk[0] == #char "*" {
-        element_name :: string.{element_name_maybe_with_asterisk.count-1, element_name_maybe_with_asterisk.data+1};
-        maybe_ptr :: "*";
-    } else {
-        element_name :: element_name_maybe_with_asterisk;
-        maybe_ptr :: "";
-    }
-    #insert #run tprint(
-#string HERE
-    if `%.type != .% {
-        add_parse_load_error(.JSON_%_EXPECTED, get_file_position(%`%), .FATAL);
-        `return;
-    }
-HERE,
-        element_name, type, type, maybe_ptr, element_name
-    );
 }
 
 // -----------------------------------------------------------------------------------

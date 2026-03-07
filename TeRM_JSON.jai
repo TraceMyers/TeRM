@@ -11,6 +11,19 @@
 // on enter and exit
 // misc
 
+// if you use json_get to get to the value of a json element without checking the type,
+// you may reasonably not want your program to crash if the json is syntactically correct,
+// but the element has the wrong type. pointers to these error values are passed back in that case.
+// these values are meant to be obviously wrong.
+JSON_GET_ERROR_OBJECT : JSON_Object = {.[{JSON_GET_ERROR_STRING_ELEMENT, JSON_GET_ERROR_STRING_ELEMENT}]};
+JSON_GET_ERROR_ARRAY  : JSON_Array  = {.[JSON_GET_ERROR_STRING_ELEMENT]};
+JSON_GET_ERROR_STRING : string      : "TeRM/JSON ERROR: this string is invalid because you used json_get on an element that was not of the assumed type";
+JSON_GET_ERROR_INT    : s64         = S64_MIN + 1;
+JSON_GET_ERROR_FLOAT  : float64     = #run (cast(*float64) *NaN_INT).*; // NaN
+JSON_GET_ERROR_NBOOL  : NBool       = .JSON_GET_ERROR;
+
+JSON_GET_ERROR_STRING_ELEMENT :: JSON_Element.{type=.STRING, str=JSON_GET_ERROR_STRING};
+
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------- :interface procedures
 
@@ -119,7 +132,7 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
                 element_container.value = *collection.array.elements[element_index.*];
                 parent_element_count = collection.array.elements.count;
             }
-        } else {
+        } else { // OBJECT
             if element_index.* >= collection.object.elements.count {
                 _pop_collection();
                 continue;
@@ -164,6 +177,139 @@ free :: (using result: *JSON_Load_Result) {
     result.* = {};
 }
 
+// getter without no error logs
+json_get_nl :: #bake_arguments json_get(log_errors=false);
+
+// convenience getter for dereferencing a json element to its inner value, while validating against the type enum
+// e.g. for element : json_get(*element.object).elements { ... }
+//                    ^ this makes sure element.type is .OBJECT and returns the pointer that was passed in
+// incorrect_type_response is a comptime value
+// if it's .RETURN_ERROR_VALUE (default), then you will get an error value back (see top of file)
+// if it's .ASSERT, the program will crash if the type is wrong
+// this was made this way with the understanding that some programs will be parsing json downloaded at
+// runtime (like in web stuff) which shouldn't crash the program if it's not typed correctly, 
+// and some programs will be parsing json that come from files that should always be correct, like config
+// files or glTF or what have you. In that case, you may want to crash and correct the bad json.
+json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSERT;}.RETURN_ERROR_VALUE, log_errors := true) -> T {
+    // this *might* be overkill, but it should never be wrong
+    OFFSET_TO_FIELD :: #run -> int {
+        element_type_info := cast(*Type_Info_Struct) JSON_Element;
+        tag: JSON_Element_Type = .INTERNAL_UNINITIALIZED; 
+
+        if T == {
+        case *JSON_Object;
+            tag = .OBJECT;
+        case *JSON_Array;
+            tag = .ARRAY;
+        case *string;
+            tag = .STRING;
+        case *s64;
+            tag = .INT;
+        case *float64;
+            tag = .FLOAT;
+        case *NBool;
+            tag = .NBOOL;
+        }
+
+        for element_type_info.tagged_union_bindings {
+            if it.constant_value == xx tag {
+                member_index  := it.member_index;
+                member_info   := *element_type_info.members[member_index];
+                return member_info.offset_in_bytes;
+            }
+        }
+
+        assert(false, "pass a pointer to a JSON_Element field");
+        return 0;
+    }
+
+    OFFSET_TO_TYPE :: #run -> int {
+        e: *JSON_Element;
+        return xx *e.type;
+    }
+
+    // I recall reading that the value of a tagged union is not necessarily (or never is?) stored at the top. it's
+    // probably a good idea to just do things this way forever, but especially now while the language is in flux.
+
+    // subtract the offset to 'val' from the top of the union, then add back the offset to the type enum
+    type_ptr := (cast(*u8) val) - OFFSET_TO_FIELD + OFFSET_TO_TYPE;
+    // deref to get the type
+    type := (cast(*JSON_Element_Type) type_ptr).*;
+    
+    return_val: T = val;
+
+    #if T == {
+    case *JSON_Object;
+        #if incorrect_type_response == .RETURN_ERROR_VALUE {
+            if type != .OBJECT {
+                return_val = *JSON_GET_ERROR_OBJECT;
+                if log_errors{
+                    module_error("json element is an %, but is being used as a %", type, T);
+                }
+            }
+        } else {
+            assert(type == .OBJECT, "json element is an %, but is being used as a %", type, T);
+        }
+    case *JSON_Array;
+        #if incorrect_type_response == .RETURN_ERROR_VALUE {
+            if type != .ARRAY {
+                return_val = *JSON_GET_ERROR_ARRAY;
+                if log_errors{
+                    module_error("json element is an %, but is being used as a %", type, T);
+                }
+            }
+        } else {
+            assert(type == .ARRAY, "json element is an %, but is being used as a %", type, T);
+        }
+    case *string;
+        #if incorrect_type_response == .RETURN_ERROR_VALUE {
+            if type != .STRING {
+                return_val = *JSON_GET_ERROR_STRING;
+                if log_errors{
+                    module_error("json element is an %, but is being used as a %", type, T);
+                }
+            }
+        } else {
+            assert(type == .STRING, "json element is a %, but is being used as a %", type, T);
+        }
+    case *s64;
+        #if incorrect_type_response == .RETURN_ERROR_VALUE {
+            if type != .INT {
+                return_val = *JSON_GET_ERROR_INT;
+                if log_errors{
+                    module_error("json element is an %, but is being used as a %", type, T);
+                }
+            }
+        } else {
+            assert(type == .INT, "json element is an %, but is being used as a %", type, T);
+        }
+    case *float64;
+        #if incorrect_type_response == .RETURN_ERROR_VALUE {
+            if type != .FLOAT {
+                return_val = *JSON_GET_ERROR_FLOAT;
+                if log_errors{
+                    module_error("json element is an %, but is being used as a %", type, T);
+                }
+            }
+        } else {
+            assert(type == .FLOAT, "json element is a %, but is being used as a %", type, T);
+        }
+    case *NBool;
+        #if incorrect_type_response == .RETURN_ERROR_VALUE {
+            if type != .NBOOL {
+                return_val = *JSON_GET_ERROR_NBOOL;
+                if log_errors{
+                    module_error("json element is an %, but is being used as a %", type, T);
+                }
+            }
+        } else {
+            assert(type == .NBOOL, "json element is a %, but is being used as a %", type, T);
+        }
+    }
+
+    return return_val;
+}
+
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------ :interface types
 
@@ -173,8 +319,8 @@ JSON_Element_Container :: struct {
     value : *JSON_Element;
 }
 
-// the procedure type for use with for_each_element
-// you inform the search. 
+// the procedure type for use with for_each_element. you drive the search. 
+// return values:
 // bool 1 is whether to keep going at all. false = quit search.
 // bool 2 is, if the current element is a container (object, array), whether to search into it.
 for_each_json_element_proc :: #type (
@@ -227,15 +373,25 @@ JSON_Element_Type :: enum u8 {
     // an object or array that is being or has been expored as a parent.
     // post-processed into an object or array.
     INTERNAL_COLLECTION_BUILDER;
+    // internals for nbool
+    TRUE;
+    FALSE;
+    NULL;
     // types for you~
     OBJECT;
     ARRAY;
     STRING;
     INT;
     FLOAT;
-    TRUE;
-    FALSE;
-    NULL;
+    NBOOL;
+}
+
+// nullable bool
+NBool :: enum s8 {
+    JSON_GET_ERROR :: -128;
+    NULL           :: -1;
+    FALSE          ::  0;
+    TRUE           ::  1;
 }
 
 JSON_Element :: union type: JSON_Element_Type {
@@ -248,9 +404,7 @@ JSON_Element :: union type: JSON_Element_Type {
     .STRING                   ,, str            : string;
     .INT                      ,, i64            : s64;            
     .FLOAT                    ,, f64            : float64;
-    .TRUE                     ,, _true          : void; 
-    .FALSE                    ,, _false         : void; 
-    .NULL                     ,, _null          : void; 
+    .NBOOL                    ,, nbool          : NBool;
 }
 
 JSON_Object :: struct {
@@ -968,7 +1122,16 @@ parse_boolean_or_null :: (parser: *JSON_Parser, $type: JSON_Element_Type) -> boo
     }
 
     element := push_collection_child(parser, primitive_begin_pos);
-    element.type = type;
+    element.type = .NBOOL;
+
+    #if type == {
+    case .TRUE;
+        element.nbool = .TRUE;
+    case .FALSE;
+        element.nbool = .FALSE;
+    case .NULL;
+        element.nbool = .NULL;
+    }
 
     return true;
 }
@@ -1334,7 +1497,11 @@ HERE,
 // ----------------------------------------------------------------------------- :misc
 
 module_log :: (fmt: string, args: ..Any) #expand {
-    trm_log(fmt=fmt, args=..args, header="TeRM/JSON");
+    trm_log(fmt=tprint("TeRM/JSON: %", fmt), args=..args);
+}
+
+module_error :: (fmt: string, args: ..Any) #expand {
+    trm_error(fmt=tprint("TeRM/JSON: %", fmt), args=..args);
 }
 
 mul_by_pow10_exponent :: (x: s64, exponent: s64, exponent_sign: s64) -> s64 {
@@ -1442,10 +1609,13 @@ advance_collection_state_for_value_or_return_if_invalid :: (using parser: *JSON_
 #add_context json_errors:             []JSON_Error;
 #add_context json_load_result:        JSON_Load_Result;
 
+NaN_INT : s64 = 0x7fff_ffff_ffff_ffff;
+
 #import "Basic";
 #import "File";
 #import "String";
 #import "Bit_Operations";
+#import "Math";
 
 #import "TeRM/TeRM_EncodeText";
 #import "TeRM/TeRM_String";

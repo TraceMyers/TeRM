@@ -27,6 +27,8 @@ load_gltf_from_string :: (file_data: string, shrink_allocations := true, log_err
     on_enter_main_load_proc(log_errors);
 
     parser := GLTF_Parser.{file=file_data};
+    context.gltf_parser = *parser;
+    defer context.gltf_parser = null;
     success := parse_file(*parser, log_errors);
     
     on_exit_main_load_proc(*parser, success, shrink_allocations, log_errors);
@@ -66,13 +68,15 @@ GLTF_Error_Code :: enum u16 {
     UNKNOWN_CHUNK_TYPE_AT_FILE_LOCATION;
     JSON_CHUNK_NOT_AT_INDEX_0;
     BIN_CHUNK_NOT_AT_INDEX_1;
+    FAILED_PARSING_JSON_CHUNK;
     JSON_CHUNK_MISSING;
     JSON_OBJECT_EXPECTED;
     JSON_ARRAY_EXPECTED;
-    JSON_INTEGER_EXPECTED;
+    JSON_INT_EXPECTED;
     JSON_NON_NEGATIVE_INTEGER_EXPECTED;
     JSON_ASSET_HAS_ZERO_ELEMENTS;
     JSON_ASSET_VERSION_INCORRECTLY_FORMATTED;
+    JSON_ASSET_VERSION_NOT_2;
     JSON_ASSET_MIN_VERSION_NOT_2_0;
     DUPLICATE_ASSET_FIELD;
     DUPLICATE_SCENES_FIELD;
@@ -129,7 +133,7 @@ GLTF_Error :: struct {
 #scope_file // -----------------------------------------------------------------------
 
 add_parse_load_error :: (code: GLTF_Error_Code, file_position: s64, flags: GLTF_Error_Flags = 0) #expand {
-    `parser.any_load_failures = true;
+    context.gltf_parser.any_load_failures = true;
     add_load_error(code, file_position, flags);
 }
 
@@ -229,7 +233,10 @@ parse_file :: (parser: *GLTF_Parser, log_errors: bool) -> success: bool {
 
     // this guy is everywhere
     jason := load_json_from_string(parser.json_chunk.bytes, false, false, log_errors,, temp);
-    if jason.any_fatal_errors then return false;
+    if jason.any_fatal_errors {
+        add_load_error(.FAILED_PARSING_JSON_CHUNK, parser.pos, .FATAL);
+        return false;
+    }
 
     for_each_element(*jason, xx load_gltf_using_parsed_json, parser);
     parser.any_load_failures |= parser.asset_version_validated;
@@ -238,11 +245,9 @@ parse_file :: (parser: *GLTF_Parser, log_errors: bool) -> success: bool {
 }
 
 parse_file_header :: (using parser: *GLTF_Parser) -> valid_header: bool {
-    header_u32         := read_u32(parser);
-    header.magic.data   = xx *header_u32;
-    header.magic.count  = 4;
-    header.version      = read_u32(parser);
-    header.length       = read_u32(parser);
+    header.magic   = read_string(parser, 4);
+    header.version = read_u32(parser);
+    header.length  = read_u32(parser);
     if header.magic != "glTF" {
         add_load_error(.FILE_MAGIC_INVALID, 0, .FATAL);
         return false;
@@ -265,20 +270,21 @@ parse_chunks :: (parser: *GLTF_Parser) -> likely_success: bool {
         CHUNK_HEADER_SIZE :: 8;
         chunk_location := parser.pos - (chunk.bytes.count + CHUNK_HEADER_SIZE);
 
-        if chunk.type == "JSON" {
+        if chunk.type == {
+        case "JSON";
             if chunk_count != 0 {
                 add_load_error(.JSON_CHUNK_NOT_AT_INDEX_0, chunk_location, .FATAL);
                 return false;
             }
             chunk_count += 1;
-        } else if chunk.type == "BIN" {
+        case "BIN";
             if chunk_count != 1 {
                 add_load_error(.BIN_CHUNK_NOT_AT_INDEX_1, chunk_location, .FATAL);
                 return false;
             }
             chunk_count += 1;
             break;
-        } else {
+        case;
             break;
         }
     }
@@ -301,7 +307,7 @@ parse_chunk :: (using parser: *GLTF_Parser, chunk: *GLTF_Chunk) -> success: bool
     }
 
     chunk_length := read_u32(parser);
-    chunk.type    = read_string_safe(parser, 4); // points into file buffer, no overflow
+    chunk.type    = read_string_up_to(parser, 4); // points into file buffer, no overflow
     chunk.bytes   = read_string(parser, chunk_length); // points into file buffer, no overflow
 
     if chunk_length == 0 {
@@ -356,7 +362,7 @@ parse_field :: ($name: string, parser: *GLTF_Parser, element: JSON_Element_Conta
         return tprint(
 #string HERE
     if parser.field_visited & .% {
-        add_parse_load_error(.DUPLICATE_%_FIELD, 0, .FATAL);
+        add_parse_load_error(.DUPLICATE_%_FIELD, get_file_position(element.key), .FATAL);
         return;
     }
     parser.field_visited |= .%;   
@@ -368,25 +374,31 @@ HERE,
 }
 
 parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    if element.value.type != .OBJECT {
-        add_parse_load_error(.JSON_OBJECT_EXPECTED, get_file_position(element.key), .FATAL);
-    } else if element.value.object.elements.count == 0 {
+    check_type(element.value, .OBJECT);
+    if element.value.object.elements.count == 0 {
         add_parse_load_error(.JSON_ASSET_HAS_ZERO_ELEMENTS, get_file_position(element.key), .FATAL);
     } else {
         for subelement : element.value.object.elements {
+            key := json_get(*subelement.key.str, .ASSERT).*;
+
             // according to spec, all minor versions must be backward compatible, so 
             // supporting 2.0 means supporting 2.x to an extent
-            if subelement.key.str    == "version" 
-            && subelement.value.type == .STRING 
-            && begins_with(subelement.value.str, "2.") { 
-                parser.asset_version_validated = true;
+            if key == "version" {
+                version := json_get(*subelement.value.str, .ASSERT).*;
+                if begins_with(version, "2.") { 
+                    parser.asset_version_validated = true;
+                } else {
+                    add_parse_load_error(.JSON_ASSET_VERSION_NOT_2, get_file_position(element.key), .FATAL);
+                    return;
+                }
             // also according to the spec, you can just set a minVersion and I guess
             // the above rule is a lie. or, maybe they mean something like:
             // the file has version 2.x but minVersion = 1.x ok?
-            } else if subelement.key.str == "minVersion"
-            && subelement.value.type == .STRING
-            && !(begins_with(subelement.value.str, "2.") || begins_with(subelement.value.str, "1.")) {
-                add_parse_load_error(.JSON_ASSET_MIN_VERSION_NOT_2_0, get_file_position(element.key), .FATAL);
+            } else if key == "minVersion" {
+                min_version := json_get(*subelement.value.str, .ASSERT).*;
+                if min_version != "2.0" && !begins_with(min_version, "1.") {
+                    add_parse_load_error(.JSON_ASSET_MIN_VERSION_NOT_2_0, get_file_position(element.key), .FATAL);
+                }
             }
         }
         if !parser.asset_version_validated {
@@ -397,29 +409,18 @@ parse_asset_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 
 // scenes = array of scenes, or collections of nodes.
 parse_scenes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    if element.value.type != .ARRAY {
-        add_parse_load_error(.JSON_ARRAY_EXPECTED, get_file_position(element.key), .FATAL);
-    }
-
-    for sub1_element : element.value.array.elements {
-        if sub1_element.type != .OBJECT {
-            add_parse_load_error(.JSON_OBJECT_EXPECTED, get_file_position(element.key), .FATAL);
-            return;
-        }
-        for sub2_element : sub1_element.object.elements {
-            if sub2_element.key.str == "nodes" {
-                if sub2_element.value.type != .ARRAY {
-                    add_parse_load_error(.JSON_ARRAY_EXPECTED, get_file_position(element.key), .FATAL);
-                    return;
-                }
-                for sub3_element : sub2_element.value.array.elements {
-                    if sub3_element.type != .INT {
-                        add_parse_load_error(.JSON_INTEGER_EXPECTED, get_file_position(element.key), .FATAL);
-                        return;
-                    }
-                    node := sub3_element.i64;
-                    if node < 0 {
-                        add_parse_load_error(.JSON_NON_NEGATIVE_INTEGER_EXPECTED, get_file_position(element.key), .FATAL);
+    for scene : json_get(*element.value.array, .ASSERT).elements {
+        for scene_component : json_get(*scene.object, .ASSERT).elements {
+            if scene_component.key.str == {
+            case "nodes";
+                for node : json_get(*scene_component.value.array, .ASSERT).elements {
+                    node_index := json_get(*node.i64, .ASSERT).*;
+                    if node_index < 0 {
+                        add_parse_load_error(
+                            .JSON_NON_NEGATIVE_INTEGER_EXPECTED, 
+                            get_file_position(element.key), 
+                            .FATAL
+                        );
                         return;
                     }
                     
@@ -437,41 +438,36 @@ parse_scene_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 }
 
 parse_nodes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    if element.value.type != .ARRAY {
-        add_parse_load_error(.JSON_ARRAY_EXPECTED, get_file_position(element.key), .FATAL);
-    }
+    check_type(element.value, .ARRAY);
 
-    for sub1_element : element.value.array.elements {
-        if sub1_element.type != .OBJECT {
-            add_parse_load_error(.JSON_OBJECT_EXPECTED, get_file_position(element.key), .FATAL);
-            return;
-        }
+    for node : element.value.array.elements {
+        check_type(*node, .OBJECT);
         // note: matrix and TRS are mutually exclusive. error if both included
         // note: if TRS, any of them are optional
         // note: skin implies a mesh must exist.
         module_log("--- node ---");
-        for sub2_element : sub1_element.object.elements {
-            if sub2_element.key.str == {
+        for node_component : node.object.elements {
+            if node_component.key.str == {
             case "name";
-                module_log("name: %", sub2_element.value.str);
+                module_log("name: %",        node_component.value.str);
             case "children";
-                module_log("children: %", sub2_element.value.array.elements);
+                module_log("children: %",    node_component.value.array.elements);
             case "matrix";
-                module_log("matrix: %", sub2_element.value.array.elements);
+                module_log("matrix: %",      node_component.value.array.elements);
             case "transation";
-                module_log("translation: %", sub2_element.value.array.elements);
+                module_log("translation: %", node_component.value.array.elements);
             case "rotation";
-                module_log("rotation: %", sub2_element.value.array.elements);
+                module_log("rotation: %",    node_component.value.array.elements);
             case "scale";
-                module_log("scale: %", sub2_element.value.array.elements);
+                module_log("scale: %",       node_component.value.array.elements);
             case "mesh";
-                module_log("mesh: %", sub2_element.value.i64);
+                module_log("mesh: %",        node_component.value.i64);
             case "camera";
-                module_log("camera: %", sub2_element.value.i64);
+                module_log("camera: %",      node_component.value.i64);
             case "skin";
-                module_log("skin: %", sub2_element.value.i64);
+                module_log("skin: %",        node_component.value.i64);
             case "weights";
-                module_log("scale: %", sub2_element.value.array.elements);
+                module_log("scale: %",       node_component.value.array.elements);
             case "extensions";
             case "extras";
             }
@@ -594,9 +590,8 @@ on_exit_main_load_proc :: (parser: *GLTF_Parser, parse_success: bool, shrink_all
 
     // -----------------------------------------------------
 
-    auto_release_temp();
-
     using context;
+    auto_release_temp();
 
     if parse_success && shrink_allocations && gltf_load_result.allocator.proc != temp.proc {
 
@@ -645,7 +640,7 @@ HERE,
 // ----------------------------------------------------------------------------- :misc
 
 module_log :: (fmt: string, args: ..Any) #expand {
-    trm_log(fmt=fmt, args=..args, header="TeRM/GLTF");
+    trm_log(fmt=fmt, args=..args, header="TeRM/glTF");
 }
 
 // align to multiple of 4
@@ -662,8 +657,10 @@ read_u32 :: inline (using parser: *GLTF_Parser) -> u32 {
     return u32_val;
 }
 
-read_string_safe :: inline (using parser: *GLTF_Parser, max_read_count: int) -> string {
+read_string_up_to :: inline (using parser: *GLTF_Parser, max_read_count: int) -> string {
     str := to_string_safe(file.data + pos, max_read_count);
+    // advances by 4 anyway, because this proc is used in a context where the string is <= 4 bytes,
+    // but the next item is always 4 bytes away.
     pos += 4;
     return str;
 }
@@ -674,6 +671,26 @@ read_string :: inline (using parser: *GLTF_Parser, count: int) -> string {
     return str;
 }
 
+check_type :: ($code: Code, $type: JSON_Element_Type) #expand {
+    element_name_maybe_with_asterisk :: #run code_string(code);
+    #if #run element_name_maybe_with_asterisk[0] == #char "*" {
+        element_name :: string.{element_name_maybe_with_asterisk.count-1, element_name_maybe_with_asterisk.data+1};
+        maybe_ptr :: "*";
+    } else {
+        element_name :: element_name_maybe_with_asterisk;
+        maybe_ptr :: "";
+    }
+    #insert #run tprint(
+#string HERE
+    if `%.type != .% {
+        add_parse_load_error(.JSON_%_EXPECTED, get_file_position(%`%), .FATAL);
+        `return;
+    }
+HERE,
+        element_name, type, type, maybe_ptr, element_name
+    );
+}
+
 // -----------------------------------------------------------------------------------
 
 // errors are cleared and added per-load and per-save, for each thread. 
@@ -682,6 +699,7 @@ read_string :: inline (using parser: *GLTF_Parser, count: int) -> string {
 #add_context gltf_error_buffer:       [32]GLTF_Error;
 #add_context gltf_errors:             [..]GLTF_Error;
 #add_context gltf_load_result:        GLTF_Load_Result;
+#add_context gltf_parser:             *GLTF_Parser;
 
 #import "Basic";
 #import "File";
@@ -690,3 +708,4 @@ read_string :: inline (using parser: *GLTF_Parser, count: int) -> string {
 #import "TeRM/TeRM_JSON";
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_String";
+#import "TeRM/TeRM_Metaprogram";

@@ -1,13 +1,14 @@
 // -- sections --
 // Misc Metaprogramming
 // Enumarray
+// Offset_Buffer
 
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------- Misc Metaprogramming
 
 code_string :: ($code: Code) -> string #expand {
     builder: String_Builder;
-    assert(Program_Print.print_expression(*builder, Compiler.compiler_get_nodes(code)));
+    assert(Program_Print.print_expression(*builder, compiler_get_nodes(code)));
     return builder_to_string(*builder);
 }
 
@@ -120,11 +121,379 @@ generate_parallel_enum_and_array :: ($create_infos: ..Enumarray_Create_Info, enu
     return out_str;
 }
 
+
+// -----------------------------------------------------------------------------------
+// --------------------------------------------------------------------- Offset_Buffer
+// for using a single buffer that can resize over time without making pointers invalid,
+// by saving offsets to pointer locations. assign() allows for assigning values
+// deep into an offset-based structure (e.g. yourthing.array[0].children[2].name)
+// by first creating the allocation for the new thing if needed (string, array), 
+// traversing the ast and creating temp pointer-based locals, and assigning the value 
+// to the assign location if called for. then, when all resizing is done, you can 
+// convert all offsets to real pointers.
+//
+// this is really only useful if you can't just make/have a bigger buffer than you need and 
+// allocate into that, then when finished, copy into a new, smaller buffer. so, maybe if you're space
+// constrained.
+
+// example usage:
+offset_buffer_example :: () {
+    Thing       :: struct { name: string; }
+    Some_Struct :: struct { things: []Thing; allocations: string; allocator: Allocator; }
+
+    offbuff: Offset_Buffer("s");
+
+    s: Some_Struct;
+
+    // allocate an array of strings at s.things. s.things's data pointer is not a real pointer, but an 
+    // offset into offbuff's resize array.
+    assign(*offbuff, s.things, new_offset_array(Thing, 10));
+
+    // copies "hey there" into the single buffer.
+    // the string at s.things[0].name is also has an offset into that buffer for its 'data' field.
+    assign(*offbuff, s.things[0].name, "a good name for a thing");
+
+    // will log "a good name for a thing". can use get() while pointers are still offsets.
+    log("first name: %", get(*offbuff, s.things[0].name)); 
+
+    // convert the offsets to pointers, so you don't have to use get() anymore.
+    s.things = convert_to_pointer_array(*offbuff, s.things);
+    for *thing : s.things {
+        thing.name = convert_to_pointer_string(*offbuff, thing.name);
+    }
+
+    // s owns the allocation. (maybe shrink right before?)
+    s.allocations = string.{offbuff.buffer.count, offbuff.buffer.data};
+    s.allocator = offbuff.buffer.allocator;
+    offbuff = {};
+
+    // go do stuff...
+
+    // come back later and just free once for all allocations
+    free(s.allocations.data);
+    s = {};
+}
+
+Offset_Buffer :: struct($begin_hosting_ident_name: string, $max_traverse_ast_steps := 16) {
+    buffer: [..]u8;
+}
+
+assign :: (offset: *Offset_Buffer, $assign_location: Code, value: $T) #expand {
+    #insert -> string {
+        value_tinfo := cast(*Type_Info) T;
+        // if the value is a string or array type, it it needs to be allocated first so the traversal
+        // doesn't end up with invalid pointers
+        if value_tinfo.type == {
+        case .STRING;
+            return tprint("\tallocation_for_value := copy_to_offset_string(offset, value);\n");
+        case .ARRAY;
+            return tprint("\tallocation_for_value := make_offset_array(offset, value);\n");
+        }
+        return "";
+    }
+
+    #insert #run,stallable generate_offset_buffer_pointer(type_of(offset), assign_location, T);
+
+    #insert -> string {
+        value_tinfo := cast(*Type_Info) T;
+        // if the value is a string or array type, it it needs to be allocated first so the traversal
+        // doesn't end up with invalid pointers
+        if value_tinfo.type == {
+        case .STRING;
+            return tprint("\toffset_buffer_pointer.* = allocation_for_value;\n");
+        case .ARRAY;
+            return tprint("\toffset_buffer_pointer.* = allocation_for_value;\n");
+        }
+        return "offset_buffer_ptr.* = xx value;";
+    }
+}
+
+// traverse the code ast in 'value_of_location' and find its place in the offset buffer,
+// returning the value. note that if T is a struct and T has offset pointer members,
+// trying to access/log those pointers will crash unless you convert them to real pointers.
+get :: (offset: *Offset_Buffer, $value_of_location: Code) -> $T #expand 
+#modify {
+    root := compiler_get_nodes(value_of_location);
+    assert(root.kind == .BINARY_OPERATOR);
+    bin_op := cast(*Code_Binary_Operator) root;
+
+    if bin_op.operator_type == .ARRAY_SUBSCRIPT {
+        assert(bin_op.left.kind == .BINARY_OPERATOR, "left ident kind: %", bin_op.left.kind);
+        left_bin_op := cast(*Code_Binary_Operator) bin_op.left;
+        assert(left_bin_op.right.kind == .IDENT);
+
+        right_ident := cast(*Code_Ident) left_bin_op.right;
+        if right_ident.type.type == {
+        case .STRING;
+            T = u8;
+            return true;
+        case .ARRAY;
+            array_tinfo := cast(*Type_Info_Array) right_ident.type;
+            T = (cast(*Type) *array_tinfo.element_type).*;
+            return true;
+        case;
+            assert(false);
+        }
+    } else if bin_op.operator_type == #char "." {
+        assert(bin_op.right.kind == .IDENT);
+        right_ident := cast(*Code_Ident) bin_op.right;
+        T = (cast(*Type) *right_ident.type).*;
+        return true;
+    }
+
+    T = void;
+    return false;
+} {
+    #insert #run generate_offset_buffer_pointer(type_of(offset), value_of_location, T);
+    #insert -> string {
+        value_tinfo := cast(*Type_Info) T;
+        if value_tinfo.type == {
+        case .STRING;
+            return tprint("return convert_to_pointer_string(offset, offset_buffer_pointer.*);");
+        case .ARRAY;
+            return tprint("return convert_to_pointer_array(offset, offset_buffer_pointer.*);");
+        case .POINTER;
+            assert(false, "(for now) getting pointers values is disallowed because they can be interpreted in three different ways: pointer to external, offset to internal, or index to internal");
+        case;
+            return tprint("return offset_buffer_pointer.*;");
+        }
+        return "return null";
+    }
+}
+
+new_offset_array :: inline ($T: Type, count: int) -> []T {
+    dummy: []T = ---;
+    dummy.data = null;
+    dummy.count = count;
+    return dummy;
+}
+
+make_offset_array :: inline ($T: Type, offset: int, count: int) -> []T {
+    offset_array: []T = ---;
+    offset_array.data = xx offset;
+    offset_array.count = count;
+    return offset_array;
+}
+
+make_offset_array :: (offset: *Offset_Buffer, $T: Type, count: int) -> []T {
+    TYPE_SIZE  :: #run size_of(T);
+    TYPE_ALIGN :: #run align_of(T);
+    buffer_pos := offset.buffer.count;
+    buffer_pos_plus_align_offset := ceil_to_power_of_two_multiple(buffer_pos, TYPE_ALIGN);
+    align_offset := buffer_pos_plus_align_offset - buffer_pos;
+    array_resize(*offset.buffer, buffer_pos_plus_align_offset + TYPE_SIZE * count);
+    return make_offset_array(T, buffer_pos + align_offset, count);
+}
+
+make_offset_array :: inline (offset: *Offset_Buffer, array: []$T) -> []T {
+    assert(array.data == null);
+    return make_offset_array(offset, T, array.count);
+}
+
+make_offset_string :: inline (offset: *Offset_Buffer, count: int) -> string {
+    array := make_offset_array(offset, u8, count);
+    return string.{array.count, array.data};
+}
+
+copy_to_offset_string :: inline (offset: *Offset_Buffer, str: string) -> string {
+    hosted_str := make_offset_string(offset, str.count);
+    pointer_str := convert_to_pointer_string(offset, hosted_str);
+    memcpy(pointer_str.data, str.data, pointer_str.count);
+    return hosted_str;
+}
+
+convert_to_pointer :: inline (offset: *Offset_Buffer, offset_by: int) -> *u8 {
+    return offset.buffer.data + offset_by;
+}
+
+convert_to_pointer_string :: inline (offset: *Offset_Buffer, str: string) -> string {
+    return string.{str.count, convert_to_pointer(offset, xx str.data)};
+}
+
+convert_to_pointer_array :: inline (offset: *Offset_Buffer, array: []$T) -> []T {
+    out_array: []T = ---;
+    out_array.data = xx convert_to_pointer(offset, xx array.data);
+    out_array.count = array.count;
+    return out_array;
+}
+
+generate_offset_buffer_pointer :: ($buf_type: Type, $pointer_to_location: Code, $T: Type) -> string {
+    auto_release_temp();
+
+    ast: [..]*Code_Node;
+    array_reserve(*ast, buf_type.max_traverse_ast_steps,,temp);
+
+    root, _ := compiler_get_nodes(pointer_to_location);
+    assert(root.kind == .BINARY_OPERATOR);
+    bin_op := cast(*Code_Binary_Operator) root;
+
+    // traverse top-down over binary tree ast like 'yourthing.array[0].name'
+    //                      .
+    //                    /   \
+    //                  []     name
+    //                /    \
+    //              .       0
+    //            /   \
+    //   yourthing     array
+    for 0..buf_type.max_traverse_ast_steps-1 {
+        if bin_op.left.kind == .BINARY_OPERATOR {
+            if bin_op.right.kind == .IDENT || bin_op.right.kind == .LITERAL {
+                array_add(*ast, bin_op.right);
+                array_add(*ast, bin_op);
+            } else {
+                assert(false, "invalid right op kind: %", bin_op.right.kind);
+            }
+            bin_op = cast(*Code_Binary_Operator) bin_op.left;
+        } else {
+            if bin_op.right.kind == .IDENT {
+                array_add(*ast, bin_op.right);
+                assert(bin_op.left.kind == .IDENT || bin_op.left.kind == .CONTEXT);
+                array_add(*ast, bin_op);
+                array_add(*ast, bin_op.left);
+            } else {
+                assert(false);
+            }
+            break;
+        }
+    }
+    assert(ast[0].kind == .IDENT || ast[0].kind == .LITERAL);
+
+    prev_local: string;
+    name_id_counter: int;
+    active_operator : enum {DOT::1; SUBSCRIPT;} = 0;
+
+    code_builder: String_Builder;
+    code_builder.allocator = temp;
+
+    found_key: bool;
+
+    // iterating over ast in reverse, which is forward as it's expressed in code/text
+    for < ast {
+        // a new local value will represent a conversion from offset-based pointer/string/array
+        // to pointer-based, if it is used.
+        new_local := tprint("_local_value_%", name_id_counter);
+        name_id_counter += 1;
+
+        // every other operator must be a . or a []
+        if it.kind == .BINARY_OPERATOR {
+            bin_op := cast(*Code_Binary_Operator) it;
+            if bin_op.operator_type == .ARRAY_SUBSCRIPT {
+                assert(active_operator == 0);
+                active_operator = .SUBSCRIPT;
+            } else if bin_op.operator_type == #char "." {
+                assert(active_operator == 0);
+                active_operator = .DOT;
+            } else {
+                assert(false);
+            }
+        // every other operator must be an Ident, as in a code node that identifies
+        // a constant or variable value, which may or may not have runtime storage.
+        } else if it.kind == .CONTEXT {
+            assert(it_index == ast.count-1);
+            prev_local = "context";
+        } else if it.kind == .LITERAL {
+            assert(active_operator == .SUBSCRIPT);
+
+            literal := cast(*Code_Literal) it;
+            assert(literal.value_type == .NUMBER);
+            assert((literal.value_flags & .FLOAT) == 0);
+
+            if it_index == 0 {
+                // at the end of the reversed ast, the ident at the end of the expression
+                // e.g. 'name' in 'context.gltf_asset.name'
+                print(*code_builder, "\toffset_buffer_pointer := *%[%];\n", prev_local, literal._u64);
+            } else {
+                // creating a local that points into an array.
+                // the literal is an int subscript
+                print(*code_builder, "\t% := *%[%];\n", new_local, prev_local, literal._u64);
+                prev_local = new_local;
+            }
+
+            active_operator = 0;
+        } else if it.kind == .IDENT {
+            ident := cast(*Code_Ident) it;
+            defer active_operator = 0;
+
+            if !found_key {
+                // if we haven't found the key yet, then we're just replaying the 
+                // ast as typed. no offset-based storage yet
+                if ident.name == buf_type.begin_hosting_ident_name {
+                    // found a match to the key that tells us to begin offset-based storage
+                    found_key = true;
+                }
+                if active_operator == .DOT {
+                    prev_local = tprint("%.%", prev_local, ident.name);
+                } else if active_operator == .SUBSCRIPT {
+                    prev_local = tprint("%[%]", prev_local, ident.name);
+                } else {
+                    assert(it_index == ast.count-1);
+                    prev_local = tprint("`%", ident.name);
+                }
+                continue;
+            }
+
+            if active_operator == .DOT {
+                if it_index == 0 {
+                    // at the end of the reversed ast, the ident at the end of the expression
+                    // e.g. 'name' in 'context.gltf_asset.name'
+                    print(*code_builder, "\toffset_buffer_pointer := *%.%;\n", prev_local, ident.name);
+                } else {
+                    next_bin_op := cast(*Code_Binary_Operator)(ast[it_index-1]);
+                    if next_bin_op.operator_type == .ARRAY_SUBSCRIPT {
+                        if ident.type.type == .ARRAY {
+                            // field is an array. creating a local temp that converts the array's
+                            // 'data' field into a pointer.
+                            print(*code_builder, "\t% := convert_to_pointer_array(offset, %.%);\n", new_local, prev_local, ident.name);
+                            prev_local = new_local;
+                        } else if ident.type.type == .STRING {
+                            // field is a string. creating a local temp that converts the strings's
+                            // 'data' field into a pointer.
+                            print(*code_builder, "\t% := convert_to_pointer_string(offset, %.%);\n", new_local, prev_local, ident.name);
+                            prev_local = new_local;
+                        } else {
+                            assert(false);
+                        }
+                    } else {
+                        if ident.type.type == .POINTER {
+                            // field is a pointer. creating a local temp that converts the 
+                            // offset stored at the pointer's location intoa real pointer.
+                            print(*code_builder, "\t% := convert_to_pointer(offset, %.%);\n", new_local, prev_local, ident.name);
+                            prev_local = new_local;
+                        } else {
+                            // field isn't a pointer. nothing to convert.
+                            prev_local = tprint("%.%", prev_local, ident.name);
+                        }
+                    }
+                }
+            } else if active_operator == .SUBSCRIPT {
+                // creating a local that points into an array
+                print(*code_builder, "\t% := *%[`%];\n", new_local, prev_local, ident.name);
+                prev_local = new_local;
+            } else {
+                assert(false);
+            }
+        }
+    }
+
+    procedure_body := builder_to_string(*code_builder);
+    log("%\n-", procedure_body);
+    return procedure_body;
+}
+
 #scope_file
+
+is_power_of_two :: inline (val: $T) -> bool {
+    return val > 0 && (val & (val - 1)) == 0;
+}
+
+ceil_to_power_of_two_multiple :: inline (n: $T, power_of_two_size: T) -> T {
+    assert(is_power_of_two(power_of_two_size));
+    return (n + power_of_two_size-1) & ~(power_of_two_size-1);
+}
 
 S64_MAX :: 0x7fff_ffff_ffff_ffff;
 
-Compiler :: #import "Compiler";
+#import "Compiler";
 Program_Print :: #import "Program_Print";
 #import "Basic";
 #import "String";

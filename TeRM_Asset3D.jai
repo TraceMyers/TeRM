@@ -1,6 +1,6 @@
 INALID_ASSET3D_INDEX_S16 : s16 : -1;
 
-free_cpu_side_buffers :: (using asset: *Asset3D) {
+free_cpu_side_buffers :: (using asset: *Asset_3D) {
     free(cpu_buffers_allocation.data);
     cpu_buffers_allocation = {};
     for mesh_buffers {
@@ -12,42 +12,69 @@ free_cpu_side_buffers :: (using asset: *Asset3D) {
 // best approach to have assets refer to assets is to divide an asset into parts, one of which 
 // includes the data you want to be referenced by other assets. either have this special split-off 
 // asset be managed specially with references to its referencers, or just make it permantently allocated.
-free :: (using asset: *Asset3D) {
+free :: (using asset: *Asset_3D) {
     free(cpu_keep_allocation.data);
     free(cpu_buffers_allocation.data);
     asset.* = {};
 }
 
-Asset3D :: struct {
-    scenes         : []Scene;
+
+Asset_3D :: struct {
+    file_path      : string;
+    scene_roots    : []Scene_Root;
+    scenes         : []Scene_3D;
     meshes         : []Mesh;
-    mesh_instances : []Mesh_Instance;
     mesh_buffers   : []Mesh_Buffer;
-    cameras        : []Camera;
+    images         : []Image;
+    textures       : []Texture;
+    cameras        : []Camera_Info;
     indices        : []s32;
+    materials      : []Material;
+    skins          : []Mesh_Skin;
+    primary_scene  : int;
 
     // all allocations *except* buffer data.
-    cpu_keep_allocation: string;
+    cpu_self_allocation: string;
     // any fields called 'cpu_allocation' are loaded here. if this is empty, the
     // cpu-side buffers have been freed.
     // todo: prob should be a staging buffer if it's used that way...
     cpu_buffers_allocation: string;
 }
 
-Scene :: struct {
+Scene_Root :: struct {
     name: string;
-    children: []Scene;
-    mesh_instance: *Mesh_Instance;
+    scenes: []*Scene_3D;
 }
 
-Camera :: struct {
-    info: *Camera_Info;
-    transform: Matrix4;
+Scene_3D :: struct {
+    name: string;
+    children: []*Scene_3D;
+
+    mesh: *Mesh;
+    skin: *Mesh_Skin;
+    camera: *Camera_Info;
+
+    morph_weights: []float32;
+    joint_transforms: []Matrix4;
+    inverse_joint_transforms: []Matrix4;
+
+    // the file data may have these pos/rot/scale instead of a matrix,
+    // for now anyway, this is only for internal processing. always matrix.
+    transform_mode: enum {NONE; TRS; MATRIX;};
+
+    using tform_data: union {
+        transform: Matrix4;
+        using trs: struct {
+            _internal_position: Vector3    = ---;
+            _internal_rotation: Quaternion = ---;
+            _internal_scale: Vector3       = ---;
+        };
+    }
 }
 
 Mesh :: struct {
     name: string;
-    sections: []Mesh_Section;
+    sections: []*Mesh_Section;
 }
 
 Mesh_Buffer_Attribute :: struct {
@@ -106,24 +133,11 @@ Mesh_Morph_Target :: struct {
     // todo: morphin' time
 }
 
-Mesh_Instance :: struct {
-    mesh: *Mesh;
-    skin_instance: *Mesh_Skin_Instance;
-    transform: Matrix4;
-    morph_weights: []float32;
-}
-
 Mesh_Skin :: struct {
     name: string;
     joint_names: []string;
     joint_parents: []s16;
     inverse_bind_transforms: []Matrix4;
-}
-
-Mesh_Skin_Instance :: struct {
-    skin: *Mesh_Skin;
-    joint_transforms: []Matrix4;
-    inverse_joint_transforms: []Matrix4;
 }
 
 Material_Flags :: enum_flags u16 {
@@ -237,6 +251,7 @@ Mesh_Data_Type :: enum u8 {
     TRIANGLE_FAN;
 }
 
+
 // GLTF_Animation :: struct {
 //     name:     string;
 //     channels: []GLTF_Animation_Channel; // required
@@ -276,4 +291,5 @@ Mesh_Data_Type :: enum u8 {
 
 #import "TeRM/TeRM_Camera";
 #import "TeRM/TeRM_Color";
+#import "TeRM/TeRM_Metaprogram";
 #import "Math";

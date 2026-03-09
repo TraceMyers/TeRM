@@ -194,8 +194,8 @@ GLTF_Parser :: struct {
     any_load_failures: bool;
     asset_version_validated: bool;
 
-    // result_alloc: Offset_Buffer("asset");
-    // result_buffers: Offset_Buffer("asset");
+    buffer_views: []Buffer_View_Internal;
+    accessors: []Accessor_Internal;
 }
 
 GLTF_Header :: struct {
@@ -279,35 +279,207 @@ parse_file :: no_inline (parser: *GLTF_Parser, log_errors: bool) -> success: boo
 }
 
 post_process_asset :: (using asset: *Asset_3D) -> bool {
-    // todo: copy allocation
-    // todo: rebase all pointers
-
-    for *scene_root : scene_roots {
-        for 0..scene_root.scenes.count-1 {
-            scene_root.scenes[it] = *scenes[cast(s64) scene_root.scenes[it]];
-        }
-    }
-
-    for *scene : scenes {
+    for *scene_real : scenes {
+        scene := cast(*Scene_3D_Internal) scene_real;
         for 0..scene.children.count-1 {
             if cast(s64) scene.children[it] == it {
                 // todo: fatal error
                 return false;
             }
-            scene.children[it] = *scenes[cast(int) scene.children[it]];
         }
-        if scene.mesh != null {
-            scene.mesh = *meshes[cast(int) scene.mesh];
-        }
-        if scene.skin != null {
-            scene.skin = *skins[cast(int) scene.skin];
-        }
-        if scene.camera != null {
-            scene.camera = *cameras[cast(int) scene.camera];
+
+        if (scene._internal_transform_flags & (.TRANSLATION | .ROTATION | .SCALE)) != 0 {
+            // set the transform from input TRS
+            translation_vec: Vector3 = ---;
+            rotation_quat: Quaternion = ---;
+            scale_vec: Vector3 = ---;
+
+            if (scene._internal_transform_flags & .TRANSLATION) != 0 {
+                translation_vec = scene._internal_translation;
+            } else {
+                translation_vec = {};
+            }
+            if (scene._internal_transform_flags & .ROTATION) != 0 {
+                rotation_quat = scene._internal_rotation;
+            } else {
+                rotation_quat = {};
+            }
+            if (scene._internal_transform_flags & .SCALE) != 0 {
+                scale_vec = scene._internal_scale;
+            } else {
+                scale_vec = {1,1,1};
+            }
+
+            // gltf is            +Y up    +Z fore  -X right
+            // this rebases it to +Y fore  +Z up    +X right
+            basis_change := Matrix3.{_11=-1, _32=1, _23=1};
+            rotation_quat = change_basis_forward(rotation_quat, basis_change);
+
+            mat3by3 := Matrix3_Identity;
+            scale(*mat3by3, scale_vec);
+            mat3by3 = rotate(mat3by3, rotation_quat);
+            scene.transform = make_matrix4(mat3by3);
+            translate(*scene.transform, translation_vec);
+
+        } else if (scene._internal_transform_flags & .MATRIX) == 0 {
+            // no transform input, assume identity is wanted
+            scene.transform = Matrix4_Identity;
+        } // else matrix was loaded
+    }
+
+    for *material : materials {
+        if (material.flags & (.ALBEDO_TEXTURE_SET | .ALBEDO_FACTOR_SET)) == .ALBEDO_TEXTURE_SET {
+            // if the albedo texture was set but not the factor, set the factor to white
+            // so that it doesn't turn stuff magenta. magenta is to indicate nothing is set.
+            material.albedo_factor = COLOR4F_WHITE;
+            material.flags |= .ALBEDO_FACTOR_DEFAULTED_TO_WHITE;
         }
     }
 
+    move_asset_allocation(asset);
     return true;
+}
+
+move_asset_allocation :: (using asset: *Asset_3D) {
+    // we want allocations to look like this:
+    // 
+    // Asset
+    // {
+    //     meshes[] o--------------------------------------------------.
+    //     scenes[] o.                                                 |
+    //     ...       |         .---------------------------------------|-----------.
+    // }             |         |                                       |           |
+    //               v         o                                       v           v
+    // Buffer [ ... [scene1:  mesh ... |scene2: ... |scene3: ... ] ... [mesh1: ... |mesh2: ...] ... ] 
+    //
+    // however, at this point in the process, top level arrays (meshes, scenes, ...) point into 
+    // a buffer owned by this module. and, pointer fields within the buffer are storing indices 
+    // to top-level arrays. so, this proc needs to: 
+    //
+    //     {1} make an allocation that can be owned by the result and copy the gltf module buffer 
+    //          (above 'Buffer') data into it.
+    //     {2} make all of the top level arrays in the asset point into the new buffer
+    //         {2a} rebase_pointer handles the rebasing
+    //     {3} convert indices (fake pointers) into pointers that also point into the new buffer.
+    //         {3a} rebase_pointer also handles this
+
+    // {1} copy from the gltf load buffer into a new allocation owned by the load result
+    new_allocation := alloc(context.gltf_buffer.count);
+    memcpy(new_allocation, context.gltf_buffer.data, context.gltf_buffer.count);
+
+    // {2a/3a}
+    // this could be two procedures but it's fine
+    rebase_pointer :: (asset: *Asset_3D, ptr: *$T, new_allocation: *u8, ptr_is_index: bool) -> *void {
+        if ptr_is_index {
+            i := cast(s32) ptr;
+            if i == -1 {
+                return null;
+            }
+            #if T == {
+            case Scene_3D;
+                return ifx asset.scenes.data        == null then null else *asset.scenes[i];
+            case Mesh;
+                return ifx asset.meshes.data        == null then null else *asset.meshes[i];
+            case Mesh_Skin;
+                return ifx asset.mesh_skins.data    == null then null else *asset.mesh_skins[i];
+            case Camera_Info;
+                return ifx asset.cameras.data       == null then null else *asset.cameras[i];
+            case Texture;
+                return ifx asset.textures.data      == null then null else *asset.textures[i];
+            case Image;
+                return ifx asset.images.data        == null then null else *asset.images[i];
+            case Index_Buffer;
+                return ifx asset.index_buffers.data == null then null else *asset.index_buffers[i];
+            case Material;
+                return ifx asset.materials.data     == null then null else *asset.materials[i];
+            }
+            return null;
+        } else {
+            based_ptr := cast(int) ptr - cast(int) context.gltf_buffer.data;
+            if based_ptr >= 0 && based_ptr < context.gltf_buffer.count {
+                return new_allocation + based_ptr;
+            } else {
+                return ptr;
+            }
+        }
+    }
+
+    // generating code to nullify pointers that are set to -1 and rebase all pointers to the new allocation.
+    #insert -> string {
+        fix_pointers_in_struct :: (
+            fixes: *String_Builder, 
+            struct_tinfo: *Type_Info_Struct, 
+            struct_name: string, 
+            depth: int, 
+            depth_spaces_data: *u8, 
+            depth_spaces_max: int,
+            top_level_pass: bool
+        ) {
+            depth_str := string.{min(depth * 4, depth_spaces_max), depth_spaces_data};
+            for member : struct_tinfo.members {
+                if member.type.type == {
+                case .ARRAY;
+                    full_member_path    := tprint("%.%", struct_name, member.name);
+                    member_array_tinfo  := cast(*Type_Info_Array) member.type;
+                    array_element_tinfo := member_array_tinfo.element_type;
+
+                    if top_level_pass {
+                        print(fixes,
+#string HERE
+%%.data = rebase_pointer(asset, %.data, new_allocation, false);
+HERE,
+                            depth_str, full_member_path, full_member_path
+                        );
+                        continue;
+                    }
+
+                    if array_element_tinfo.type == {
+                    case .STRUCT;
+                        print(fixes, "%for *% {\n", depth_str, full_member_path);
+                        fix_pointers_in_struct(fixes, xx array_element_tinfo, "it", depth + 1, depth_spaces_data, depth_spaces_max, false);
+                        print(fixes, "%}\n", depth_str);
+                    case .POINTER; 
+                        print(fixes,
+#string HERE
+%for *% {
+%    it.* = rebase_pointer(asset, it.*, new_allocation, true);
+%}
+HERE,
+                            depth_str, full_member_path, depth_str, depth_str
+                        );
+                    }
+                case .POINTER;
+                    full_member_path := tprint("%.%", struct_name, member.name);
+                    print(fixes,
+#string HERE
+%% = rebase_pointer(asset, %, new_allocation, true);
+HERE,
+                        depth_str, full_member_path, full_member_path
+                    );
+                case .STRUCT;
+                    full_member_path := tprint("%.%", struct_name, member.name);
+                    fix_pointers_in_struct(fixes, xx member.type, full_member_path, depth + 1, depth_spaces_data, depth_spaces_max, false);
+                }
+            }
+        }
+
+        depth_spaces_buffer: [128]u8 = ---;
+        for *depth_spaces_buffer {
+            it.* = #char " ";
+        }
+
+        pointer_manipulations: String_Builder;
+
+        // {2} set all the top level array pointers
+        fix_pointers_in_struct(*pointer_manipulations, cast(*Type_Info_Struct) Asset_3D, "asset", 1, depth_spaces_buffer.data, depth_spaces_buffer.count, true);
+
+        // {3} fix pointers within the top level arrays
+        fix_pointers_in_struct(*pointer_manipulations, cast(*Type_Info_Struct) Asset_3D, "asset", 1, depth_spaces_buffer.data, depth_spaces_buffer.count, false);
+
+        output := builder_to_string(*pointer_manipulations);
+        // log(output);
+        return output;
+    }
 }
 
 parse_file_header :: (using parser: *GLTF_Parser) -> valid_header: bool {
@@ -389,8 +561,6 @@ parse_chunk :: (using parser: *GLTF_Parser, chunk: *GLTF_Chunk) -> success: bool
     return true;
 }
 
-// just kinda doing an exploration here to see how best to search the data and store it
-// this probably isn't indicative of the final approach
 load_gltf_using_parsed_json :: (parent_stack: []JSON_Element_Container, element: JSON_Element_Container, element_index: int, parent_element_count: int, parser: *GLTF_Parser) -> bool, bool {
     if element.key != null {
         if element.key.str == {
@@ -534,6 +704,7 @@ process_nodes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
 
     using context.gltf_asset;
     scenes = gltf_alloc_array(Scene_3D, nodes.count);
+    scenes_internal := cast,force([]Scene_3D_Internal) scenes;
 
     for node, ni : nodes {
         // note: matrix and TRS are mutually exclusive. error if both included
@@ -543,61 +714,61 @@ process_nodes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
             key := json_get(*node_component.key.str).*;
             if key == {
             case "name";
-                scenes[ni].name = gltf_copy_string(json_get(*node_component.value.str).*);
+                scenes_internal[ni].name = gltf_copy_string(json_get(*node_component.value.str).*);
             case "children";
                 children := json_get(*node_component.value.array).elements;
-                scenes[ni].children = gltf_alloc_array(*Scene_3D, children.count);
+                scenes_internal[ni].children = gltf_alloc_array(*Scene_3D, children.count);
                 for child, ci : children {
-                    scenes[ni].children[ci] = xx json_get(*child.i64).*;
+                    scenes_internal[ni].children[ci] = xx json_get(*child.i64).*;
                 }
             case "matrix";
-                if scenes[ni].transform_mode == .TRS {
+                if scenes_internal[ni]._internal_transform_flags != 0 {
                     // todo: error
                     return;
                 }
-                scenes[ni].transform_mode = .MATRIX;
+                scenes_internal[ni]._internal_transform_flags |= .MATRIX;
                 mat_components := json_get(*node_component.value.array).elements;
                 for cmp : mat_components {
-                    scenes[ni].transform.floats[it_index] = xx json_get(*cmp.f64).*;
+                    scenes_internal[ni].transform.floats[it_index] = xx json_get(*cmp.f64).*;
                 }
             case "translation";
-                if scenes[ni].transform_mode == .MATRIX {
+                if (scenes_internal[ni]._internal_transform_flags & (.MATRIX | .TRANSLATION)) != 0 {
                     // todo: error
                     return;
                 }
-                scenes[ni].transform_mode = .TRS;
+                scenes_internal[ni]._internal_transform_flags |= .TRANSLATION;
                 position_components := json_get(*node_component.value.array).elements;
                 for cmp : position_components {
-                    scenes[ni]._internal_position.component[it_index] = xx json_get(*cmp.f64).*;
+                    scenes_internal[ni]._internal_translation.component[it_index] = xx json_get(*cmp.f64).*;
                 }
             case "rotation";
-                if scenes[ni].transform_mode == .MATRIX {
+                if (scenes_internal[ni]._internal_transform_flags & (.MATRIX | .ROTATION)) != 0 {
                     // todo: error
                     return;
                 }
-                scenes[ni].transform_mode = .TRS;
+                scenes_internal[ni]._internal_transform_flags |= .ROTATION;
                 quat_components := json_get(*node_component.value.array).elements;
                 for cmp : quat_components {
-                    scenes[ni]._internal_rotation.component[it_index] = xx json_get(*cmp.f64).*;
+                    scenes_internal[ni]._internal_rotation.component[it_index] = xx json_get(*cmp.f64).*;
                 }
             case "scale";
-                if scenes[ni].transform_mode == .MATRIX {
+                if (scenes_internal[ni]._internal_transform_flags & (.MATRIX | .SCALE)) != 0 {
                     // todo: error
                     return;
                 }
-                scenes[ni].transform_mode = .TRS;
+                scenes_internal[ni]._internal_transform_flags |= .SCALE;
                 scale_components := json_get(*node_component.value.array).elements;
                 for cmp : scale_components {
-                    scenes[ni]._internal_scale.component[it_index] = xx json_get(*cmp.f64).*;
+                    scenes_internal[ni]._internal_scale.component[it_index] = xx json_get(*cmp.f64).*;
                 }
             case "mesh";
-                scenes[ni].mesh = xx json_get(*node_component.value.i64).*;
+                scenes_internal[ni].mesh      = xx json_get(*node_component.value.i64).*;
             case "camera";
-                module_log("camera: %",      node_component.value.i64);
+                scenes_internal[ni].camera    = xx json_get(*node_component.value.i64).*;
             case "skin";
-                module_log("skin: %",        node_component.value.i64);
+                scenes_internal[ni].mesh_skin = xx json_get(*node_component.value.i64).*;
             case "weights";
-                module_log("weights: %",       node_component.value.array.elements);
+                module_log("weights: %",     node_component.value.array.elements);
             case "extensions";
             case "extras";
             }
@@ -623,10 +794,47 @@ process_meshes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) 
                 asset_meshes.*[mi].name = gltf_copy_string(json_get(*mesh_component.value.str).*);
             case "primitives";
                 primitives := json_get(*mesh_component.value.array).elements;
-                for prim : primitives {
-                    prim_fields := json_get(*mesh_component.value.array).elements;
-                    for field : prim_fields {
-                        module_log("field: %", field);
+                mesh_sections := *asset_meshes.*[mi].sections;
+                mesh_sections.* = gltf_alloc_array(Mesh_Section, primitives.count);
+                for prim, pi : primitives {
+                    mesh_section := *(mesh_sections.*[pi]);
+                    prim_fields := json_get(*prim.object).elements;
+                    for field, fi : prim_fields {
+                        key := json_get(*field.key.str).*;
+                        if key == {
+                        case "attributes";
+                            attributes := json_get(*field.value.object).elements;
+                            mesh_section.attributes = gltf_alloc_array(Mesh_Data_Attribute, attributes.count);
+                            for attrib, ai : attributes {
+                                attrib_key := json_get(*attrib.key.str).*;
+                                attrib_value := json_get(*attrib.value.i64).*;
+                                mesh_section.attributes[ai].accessor = xx attrib_value;
+                                if attrib_key == {
+                                case "POSITION";
+                                    mesh_section.attributes[ai].type = .POSITION;
+                                case "NORMAL";
+                                    mesh_section.attributes[ai].type = .NORMAL;
+                                case "TANGENT";
+                                    mesh_section.attributes[ai].type = .TANGENT;
+                                case "TEXCOORD_0";
+                                    mesh_section.attributes[ai].type = .TEXCOORD_0;
+                                case "TEXCOORD_1";
+                                    mesh_section.attributes[ai].type = .TEXCOORD_1;
+                                case "COLOR";
+                                    mesh_section.attributes[ai].type = .COLOR;
+                                case "JOINTS";
+                                    mesh_section.attributes[ai].type = .JOINTS;
+                                case "WEIGHTS";
+                                    mesh_section.attributes[ai].type = .WEIGHTS;
+                                }
+                            }
+                        case "indices";
+                            mesh_section.indices  = xx json_get(*field.value.i64).*;
+                        case "material";
+                            mesh_section.material = xx json_get(*field.value.i64).*;
+                        case;
+                            // todo: error, unsupported
+                        }
                     }
                 }
             case;
@@ -638,15 +846,108 @@ process_meshes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) 
 }
 
 process_accessors_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    // unsupported
-    // add_load_error(.ACCESSORS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
-    // parser.any_load_failures = true;
+    accessor_elems := json_get(*element.value.array).elements;
+    if accessor_elems.count == 0 {
+        // todo: nonfatal error
+        return;
+    }
+
+    parser.accessors.data = alloc(size_of(Accessor_Internal) * accessor_elems.count,, temp);
+    parser.accessors.count = accessor_elems.count;
+
+    for accessor_elem, ai : accessor_elems {
+        accessor_parts := json_get(*accessor_elem.object).elements;
+        for part : accessor_parts {
+            key := json_get(*part.key.str).*;
+            if key == {
+            case "name";
+                parser.accessors[ai].name = gltf_copy_string(json_get(*part.value.str).*);
+            case "bufferView";
+                parser.accessors[ai].buffer_view = xx json_get(*part.value.i64).*;
+            case "byteOffset";
+                parser.accessors[ai].byte_offset = xx json_get(*part.value.i64).*;
+            case "count";
+                parser.accessors[ai].count = xx json_get(*part.value.i64).*;
+            case "componentType";
+                gltf_primitive := json_get(*part.value.i64).*;
+                if gltf_primitive == {
+                case 5120;
+                    parser.accessors[ai].component_type = .S8;
+                case 5121;
+                    parser.accessors[ai].component_type = .U8;
+                case 5122;
+                    parser.accessors[ai].component_type = .S16;
+                case 5123;
+                    parser.accessors[ai].component_type = .U16;
+                case 5125;
+                    parser.accessors[ai].component_type = .U32;
+                case 5126;
+                    parser.accessors[ai].component_type = .F32;
+                case;
+                    // todo: fatal error unimplemented
+                }
+            case "type";
+                type := json_get(*part.value.str).*;
+                if type == {
+                case "SCALAR";
+                    parser.accessors[ai].type = .SCALAR;
+                case "VEC2";
+                    parser.accessors[ai].type = .VEC2;
+                case "VEC3";
+                    parser.accessors[ai].type = .VEC3;
+                case "VEC4";
+                    parser.accessors[ai].type = .VEC4;
+                case "MAT2";
+                    parser.accessors[ai].type = .MAT2;
+                case "MAT3";
+                    parser.accessors[ai].type = .MAT3;
+                case "MAT4";
+                    parser.accessors[ai].type = .MAT4;
+                case;
+                    // todo: fatal error unimplemented
+                }
+            case "normalized";
+            case "min";
+            case "max";
+            case "sparse";
+                // todo: fatal error unimplemented
+            case;
+                // todo: nonfatal error
+            }
+        }
+    }
 }
 
 process_buffer_views_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    // unsupported
-    // add_load_error(.BUFFER_VIEWS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
-    // parser.any_load_failures = true;
+    buffer_view_elems := json_get(*element.value.array).elements;
+    if buffer_view_elems.count == 0 {
+        // todo: nonfatal error
+        return;
+    }
+
+    parser.buffer_views.data = alloc(size_of(Buffer_View_Internal) * buffer_view_elems.count,, temp);
+    parser.buffer_views.count = buffer_view_elems.count;
+
+    for bv, bi : buffer_view_elems {
+        bv_elems := json_get(*bv.object).elements;
+        for elem : bv_elems {
+            key := json_get(*elem.key.str).*;
+            if key == {
+            case "buffer";
+                parser.buffer_views[bi].buffer = xx json_get(*elem.value.i64).*;
+            case "byteOffset";
+                parser.buffer_views[bi].byte_offset = xx json_get(*elem.value.i64).*;
+            case "byteLength";
+                parser.buffer_views[bi].byte_length = xx json_get(*elem.value.i64).*;
+            case "byteStride";
+                parser.buffer_views[bi].byte_stride = xx json_get(*elem.value.i64).*;
+            case "target";
+                parser.buffer_views[bi].target = xx json_get(*elem.value.i64).*;
+            case;
+                // todo: nonfatal error
+            }
+        }
+    }
 }
 
 process_buffers_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
@@ -656,21 +957,120 @@ process_buffers_field :: (parser: *GLTF_Parser, element: JSON_Element_Container)
 }
 
 process_materials_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    // unsupported
-    // add_load_error(.MATERIALS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
-    // parser.any_load_failures = true;
+    materials := json_get(*element.value.array).elements;
+    
+    material_buffer  := *context.gltf_asset.materials;
+    material_buffer.* = gltf_alloc_array(Material, materials.count);
+    
+    for mat, mi : materials {
+        material := *(material_buffer.*)[mi];
+        for mat_prop, mpi : json_get(*mat.object).elements {
+            key := json_get(*mat_prop.key.str).*;
+            if key == {
+            case "name";
+                material.name = gltf_copy_string(json_get(*mat_prop.value.str).*);
+            case "pbrMetallicRoughness";
+                metallic_roughness := json_get(*mat_prop.value.object).elements;
+                for mr_prop : metallic_roughness {
+                    mr_prop_key := json_get(*mr_prop.key.str).*;
+                    if mr_prop_key == {
+                    case "baseColorTexture";
+                        mr_prop_items := json_get(*mr_prop.value.object).elements;
+                        for item : mr_prop_items {
+                            item_key := json_get(*item.key.str).*;
+                            if item_key == {
+                            case "index";
+                                material.albedo_texture = xx json_get(*item.value.i64).*;
+                                material.flags |= .ALBEDO_TEXTURE_SET;
+                            case;
+                                // todo: nonfatal error
+                            }
+                        }
+                    case "metallicRoughnessTexture";
+                        mr_prop_items := json_get(*mr_prop.value.object).elements;
+                        for item : mr_prop_items {
+                            item_key := json_get(*item.key.str).*;
+                            if item_key == {
+                            case "index";
+                                material.metallic_texture = xx json_get(*item.value.i64).*;
+                                material.roughness_texture = xx json_get(*item.value.i64).*;
+                                material.flags |= .METALLIC_TEXTURE_SET;
+                                material.flags |= .ROUGHNESS_TEXTURE_SET;
+                            case;
+                                // todo: nonfatal error
+                            }
+                        }
+                    case;
+                        // todo: nonfatal error
+                    }
+                }
+            case "normalTexture";
+                normal_texture := json_get(*mat_prop.value.object).elements;
+                for norm_prop : normal_texture {
+                    norm_prop_key := json_get(*norm_prop.key.str).*;
+                    if norm_prop_key == {
+                    case "index";
+                        material.normal_texture = xx json_get(*norm_prop.value.i64).*;
+                        material.flags |= .NORMAL_TEXTURE_SET;
+                    case;
+                        // todo: nonfatal error
+                    }
+                }
+            case;
+                // todo: nonfatal error
+            }
+        }
+    }
 }
 
 process_textures_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    // unsupported
-    // add_load_error(.TEXTURES_FIELD_UNIMPLEMENTED, get_file_position(element.key));
-    // parser.any_load_failures = true;
+    texture_elems := json_get(*element.value.array).elements;
+    if texture_elems.count == 0 {
+        // todo: nonfatal error
+    }
+
+    using context.gltf_asset;
+    textures = gltf_alloc_array(Texture, texture_elems.count);
+
+    for texture_elem, ti : texture_elems {
+        texture_elem_obj_elems := json_get(*texture_elem.object).elements;
+        for elem : texture_elem_obj_elems {
+            elem_key := json_get(*elem.key.str).*;
+            if elem_key == {
+            case "source";
+                textures[ti].image = xx json_get(*elem.value.i64).*;
+            case "sampler";
+                // todo: nonfatal error
+            case;
+                // todo: nonfatal error
+            }
+        }
+    }
 }
 
 process_images_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    // unsupported
-    // add_load_error(.IMAGES_FIELD_UNIMPLEMENTED, get_file_position(element.key));
-    // parser.any_load_failures = true;
+    image_elems := json_get(*element.value.array).elements;
+    if image_elems.count == 0 {
+        // todo: nonfatal error
+    }
+
+    using context.gltf_asset;
+    images = gltf_alloc_array(Image, image_elems.count);
+
+    for image_elem, imgi : image_elems {
+        image_elem_obj_elems := json_get(*image_elem.object).elements;
+        for elem : image_elem_obj_elems {
+            key := json_get(*elem.key.str).*;
+            if key == {
+            case "mimeType";
+                images[imgi].mime_type = json_get(*elem.value.str).*;
+            case "bufferView";
+                (cast(*Image_Internal) *images[imgi])._internal_buffer_view = xx json_get(*elem.value.i64).*;
+            case;
+                // todo: nonfatal error
+            }
+        }
+    }
 }
 
 process_samplers_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
@@ -736,30 +1136,12 @@ on_enter_main_load_proc :: (log_errors: bool) {
 }
 
 on_exit_main_load_proc :: (parser: *GLTF_Parser, parse_success: bool, shrink_allocations: bool, log_errors: bool) {
-    // -----------------------------------------------------
-
-    _increment_wrap :: inline (x: $T, min: T, max: T) -> T {
-        if x >= max {
-            return min;
-        } else return x + 1;
-    }
-
-    // -----------------------------------------------------
-
     using context;
     auto_release_temp();
 
     if parse_success && shrink_allocations && gltf_load_result.allocator.proc != temp.proc {
 
     }
-
-    // if parse_success && post_process_success {
-        // gltf_load_result.elements = parser.elements;
-        // gltf_load_result.strings = parser.strings;
-    // } else {
-    //     array_reset(*parser.elements);
-    //     array_reset(*parser.strings);
-    // }
 
     gltf_load_result.errors = gltf_errors;
 
@@ -799,9 +1181,9 @@ init_buffer :: () {
     using context;
     if gltf_buffer.data == null {
         assert(gltf_buffer_data.data == null);
-        ONE_MB :: 1024 * 1024;
-        gltf_buffer_data.data = alloc(ONE_MB,,context.default_allocator);
-        gltf_buffer_data.count = ONE_MB;
+        BUFFER_SIZE :: 512 * 1024; // 512KB
+        gltf_buffer_data.data = alloc(BUFFER_SIZE,,context.default_allocator);
+        gltf_buffer_data.count = BUFFER_SIZE;
     }
 
     gltf_buffer.data = gltf_buffer_data.data;
@@ -842,18 +1224,72 @@ gltf_alloc :: (size: int, align := 1) -> *u8 {
 
 gltf_alloc_array :: ($T: Type, count: int) -> []T {
     TYPE_ALIGN :: #run align_of(T);
+
     array: []T = ---;
     array.data = xx gltf_alloc(size_of(T) * count, TYPE_ALIGN);
     array.count = ifx array.data == null then 0 else count;
-    tinfo := cast(*Type_Info) T;
+
+    ini :: initializer_of(T);
+
     // initialize only the structs that have nonzero values by default
     // the buffer is zeroed already.
-    #if T == {
-    case Material;
-        for *array {
+    for *array {
+        // if the type has an initializer, initialize, otherwise it already has zeroed memory.
+        // confirmed that types without '=' expressions in their definitions don't have initializers
+        #if ini {
             it.* = {};
         }
+
+        // insert special initialization for internal versions of structs, such as Material_Internal
+        #insert -> string {
+            special_instructions: String_Builder;
+
+            internal_type: Type = void;
+            for INTERNAL_ASSET_TYPE_REGISTRY {
+                if it.asset_type == T {
+                    internal_type = it.internal_type;
+                    break;
+                }
+            }
+
+            if internal_type == void {
+                internal_type = T;
+            }
+
+            tinfo_struct_internal := cast(*Type_Info_Struct) internal_type;
+            for member : tinfo_struct_internal.members {
+                if member.type.type == .POINTER {
+                    // initialize an internal index field to -1
+                    print(*special_instructions, 
+#string HERE
+        {
+            internal_index_field := (it.(*u8) + %).(*s32);
+            internal_index_field.* = -1;
+        }
+HERE,
+                        member.offset_in_bytes
+                    );
+                } else for note : member.notes {
+                    if note == {
+                    case "u8_zero_init";
+                        // initialize an internal byte field to 0
+                        print(*special_instructions, 
+#string HERE
+        {
+            internal_u8_field := it.(*u8) + %;
+            internal_u8_field.* = -1;
+        }
+HERE,
+                            member.offset_in_bytes
+                        );
+                    }
+                }
+            }
+
+            return builder_to_string(*special_instructions);
+        }
     }
+
     return array;
 }
 
@@ -906,6 +1342,67 @@ read_string :: inline (using parser: *GLTF_Parser, count: int) -> string {
 }
 
 // -----------------------------------------------------------------------------------
+// ------------------------------------------------------------------- :internal types
+
+// internal types used for things like internal flags and using integer indexes
+// instead of pointers until post-processing.
+
+// nodes like 'index_init' tell the array allocator to put a -1 on the field, indicating no index.
+// #overlay doesn't allow initializing values on the struct definition.
+// that used to be a thing you could do, but it was understandably taken out.
+
+Internal_Asset_Type_Registry_Item :: struct {
+    asset_type: Type;
+    internal_type: Type;
+}
+
+// this list needs to be kept current with alternative types that do internal things
+INTERNAL_ASSET_TYPE_REGISTRY :: Internal_Asset_Type_Registry_Item.[
+    {Scene_3D, Scene_3D_Internal},
+];
+
+Scene_3D_Internal :: struct {
+    using #as scene_3d: Scene_3D;
+    #overlay(scene_3d.transform) using trs: struct {
+        _internal_translation: Vector3;
+        _internal_rotation: Quaternion;
+        _internal_scale: Vector3;
+        // the file data may have these pos/rot/scale instead of a matrix,
+        // for now anyway, this is only for internal processing. always matrix.
+        _internal_transform_flags: enum_flags u8 { 
+            TRANSLATION; 
+            ROTATION;
+            SCALE;
+            MATRIX;
+        }; @u8_zero_init
+    };
+}
+
+Buffer_View_Internal :: struct {
+    buffer: s32;
+    byte_length: s32;
+    byte_offset: s32;
+    byte_stride: s32;
+    target: s32;
+}
+
+Accessor_Internal :: struct {
+    name: string; // DO NOT FORGET to ship this name with something in the asset
+    buffer_view: s32;
+    byte_offset: s32;
+    count: s32;
+    component_type: Mesh_Data_Primitive;
+    type: Mesh_Data_Shape;// rename -> shape
+    normalized: bool;// rename -> normalized_integers
+    min: float32;
+    max: float32;
+    // sparse: ?
+}
+
+Image_Internal :: struct {
+    using #as image: Image;
+    #overlay(image.cpu_allocation.data) _internal_buffer_view: *Buffer_View_Internal;
+}
 
 // errors are cleared and added per-load and per-save, for each thread. 
 // if the number of errors maxes out, errors are no longer stored.
@@ -918,6 +1415,7 @@ read_string :: inline (using parser: *GLTF_Parser, count: int) -> string {
 #add_context gltf_buffer:             []u8;
 #add_context gltf_buffer_data:        []u8;
 #add_context gltf_buffer_zero_mark:   int;
+
 
 #import "Basic";
 #import "File";
@@ -932,3 +1430,5 @@ read_string :: inline (using parser: *GLTF_Parser, count: int) -> string {
 #import "TeRM/TeRM_Asset3D";
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_LogHelpers";
+#import "TeRM/TeRM_Color";
+#import "TeRM/TeRM_Camera";

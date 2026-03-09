@@ -28,9 +28,9 @@ Asset_3D :: struct {
     images         : []Image;
     textures       : []Texture;
     cameras        : []Camera_Info;
-    indices        : []s32;
+    index_buffers  : []Index_Buffer;
     materials      : []Material;
-    skins          : []Mesh_Skin;
+    mesh_skins     : []Mesh_Skin;
     primary_scene  : int;
 
     // all allocations *except* buffer data.
@@ -39,6 +39,12 @@ Asset_3D :: struct {
     // cpu-side buffers have been freed.
     // todo: prob should be a staging buffer if it's used that way...
     cpu_buffers_allocation: string;
+}
+
+Index_Buffer :: struct {
+    type: enum u8 {U16;U32;};
+    count: s32;
+    cpu_allocation: string;
 }
 
 Scene_Root :: struct {
@@ -51,36 +57,26 @@ Scene_3D :: struct {
     children: []*Scene_3D;
 
     mesh: *Mesh;
-    skin: *Mesh_Skin;
+    mesh_skin: *Mesh_Skin;
     camera: *Camera_Info;
 
     morph_weights: []float32;
     joint_transforms: []Matrix4;
     inverse_joint_transforms: []Matrix4;
 
-    // the file data may have these pos/rot/scale instead of a matrix,
-    // for now anyway, this is only for internal processing. always matrix.
-    transform_mode: enum {NONE; TRS; MATRIX;};
-
-    using tform_data: union {
-        transform: Matrix4;
-        using trs: struct {
-            _internal_position: Vector3    = ---;
-            _internal_rotation: Quaternion = ---;
-            _internal_scale: Vector3       = ---;
-        };
-    }
+    transform: Matrix4;
 }
 
 Mesh :: struct {
     name: string;
-    sections: []*Mesh_Section;
+    sections: []Mesh_Section;
 }
 
-Mesh_Buffer_Attribute :: struct {
-    type: Mesh_Buffer_Attribute_Type;
-    primitive: Mesh_Buffer_Attribute_Primitive;
-    offset: s16;
+Mesh_Data_Attribute :: struct {
+    type: Mesh_Data_Attribute_Type;
+    primitive: Mesh_Data_Primitive;
+    offset: u8;
+    accessor: u8;
 }
 
 Texture :: struct {
@@ -93,8 +89,6 @@ Texture :: struct {
 }
 
 Mesh_Buffer :: struct {
-    using #as graphics_buffer: Graphics_Buffer;
-    attributes: []Mesh_Buffer_Attribute;
     count: s32;
     normalized: bool;
     // if there is a position attribute, this is the min of the position bbox
@@ -102,27 +96,30 @@ Mesh_Buffer :: struct {
     // if there is a position attribute, this is the max of the position bbox
     position_max: Vector3; 
     rewrites: []Sparse_Graphics_Buffer_Rewrite;
+    cpu_allocation: string;
 }
 
 Image :: struct {
-    using #as graphics_buffer: Graphics_Buffer;
-    mime_type: string;
-}
-
-Graphics_Buffer :: struct {
-    name: string;
-    uri: string;
     cpu_allocation: string;
+    mime_type: string;
+    width: s16;
+    height: s16;
+    type: enum {
+        RGBA8_INT;
+        RG8_INT;
+        R8_INT;
+    };
 }
 
 Sparse_Graphics_Buffer_Rewrite :: struct {
     attribute_index: int;
-    indices: []u32;
+    indices: Index_Buffer;
     values: string;
 }
 
 Mesh_Section :: struct {
-    indices: *Mesh_Buffer;
+    attributes: []Mesh_Data_Attribute;
+    indices: *Index_Buffer;
     vertices: *Mesh_Buffer;
     material: *Material;
     data_type: Mesh_Data_Type;
@@ -141,12 +138,17 @@ Mesh_Skin :: struct {
 }
 
 Material_Flags :: enum_flags u16 {
-    ALBEDO_SET;
-    METALLIC_SET;
-    ROUGHNESS_SET;
-    NORMAL_SET;
-    OCCLUSION_SET;
-    EMISSIVE_SET;
+    ALBEDO_TEXTURE_SET;
+    ALBEDO_FACTOR_SET;
+    ALBEDO_FACTOR_DEFAULTED_TO_WHITE;
+    METALLIC_TEXTURE_SET;
+    METALLIC_FACTOR_SET;
+    ROUGHNESS_TEXTURE_SET;
+    ROUGHNESS_FACTOR_SET;
+    NORMAL_TEXTURE_SET;
+    OCCLUSION_TEXTURE_SET;
+    EMISSIVE_TEXTURE_SET;
+    EMISSIVE_FACTOR_SET;
     DOUBLE_SIDED;
 }
 
@@ -159,8 +161,12 @@ Texture_Alpha_Mode :: enum u8 {
 Material :: struct {
     name: string;
 
+    flags: Material_Flags;
+    alpha_mode: Texture_Alpha_Mode;
+    discard_alpha_cutoff := 0.5;
+
     // default values are meant to look obviously unconfigured
-    albedo_factor := Color4f.{1, 0, 1, 1};
+    albedo_factor := COLOR4F_MAGENTA;
     metallic_factor := 1.0; 
     roughness_factor := 1.0;
     emissive_factor: Color3f;
@@ -178,29 +184,15 @@ Material :: struct {
     normal_uv:    s8;
     occlusion_uv: s8;
     emissive_uv:  s8;
-
-    flags: Material_Flags;
-    alpha_mode: Texture_Alpha_Mode;
-    discard_alpha_cutoff := 0.5;
 }
 
-Vertex_Attribute_Type :: enum u8 {
-    POSITION;       // Vec3
-    NORMAL;         // Vec3
-    TANGENT;        // Vec4
-    UV_UPPER_LEFT;  // Vec2
-    UV_LOWER_RIGHT; // Vec2
-    COLOR;          // Vec4
-    JOINTS;         // Vec4
-    WEIGHTS;        // Vec4
-}
-
-Mesh_Buffer_Attribute_Type :: enum u8 {
+Mesh_Data_Attribute_Type :: enum u8 {
     // vertex attributes
     POSITION :: 1;
     NORMAL;
     TANGENT;
-    TEXCOORD;
+    TEXCOORD_0;
+    TEXCOORD_1;
     COLOR;
     JOINTS;
     WEIGHTS;
@@ -217,7 +209,17 @@ Mesh_Buffer_Attribute_Type :: enum u8 {
     INVERSE_BIND_MATRICES;
 }
 
-Mesh_Buffer_Attribute_Primitive :: enum u8 {
+Mesh_Data_Shape :: enum u8 {
+    SCALAR;
+    VEC2;
+    VEC3;
+    VEC4;
+    MAT2;
+    MAT3;
+    MAT4;
+}
+
+Mesh_Data_Primitive :: enum u8 {
     S8 :: 1;
     U8;
     S16;

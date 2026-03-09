@@ -150,7 +150,7 @@ offset_buffer_example :: () {
     assign(*offbuff, s.things, new_offset_array(Thing, 10));
 
     // copies "hey there" into the single buffer.
-    // the string at s.things[0].name is also has an offset into that buffer for its 'data' field.
+    // the string at s.things[0].name also has an offset into that buffer for its 'data' field.
     assign(*offbuff, s.things[0].name, "a good name for a thing");
 
     // will log "a good name for a thing". can use get() while pointers are still offsets.

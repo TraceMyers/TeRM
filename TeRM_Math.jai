@@ -231,6 +231,11 @@ change_basis_backward :: inline (vector: Vector3, fore: Vector3, right: Vector3,
     return {dot(right, vector), dot(fore, vector), dot(up, vector)};
 }
 
+change_basis_forward :: (quaternion: Quaternion, basis_change: Matrix3) -> Quaternion {
+    basis_quat := get_rotation(basis_change);
+    return normalize(basis_quat * quaternion * conjugate(basis_quat));
+}
+
 distance_squared :: inline (q1: Quaternion, q2: Quaternion) -> float {
     diff := Vector4.{
         q1.x - q2.x,

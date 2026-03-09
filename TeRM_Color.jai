@@ -3,6 +3,7 @@ COLOR4F_RED         :: Color4f.{1,0,0,1};
 COLOR4F_GREEN       :: Color4f.{0,1,0,1};
 COLOR4F_BLUE        :: Color4f.{0,0,1,1};
 COLOR4F_BLACK       :: Color4f.{0,0,0,1};
+COLOR4F_MAGENTA     :: Color4f.{1,0,1,1};
 
 COLOR4F_BRIGHT_PURPLE      :: Color4f.{0.65, 0.1, 0.82, 1};
 

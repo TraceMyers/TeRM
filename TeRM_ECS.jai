@@ -5,14 +5,20 @@
     component_declarations: []Component_Declaration = .[]
 ) {
     // bringing these imports to your doorstep
+    #import "Basic";
+    #import "Math";
     #import "TeRM/TeRM_FlagArray";
     #import "TeRM/TeRM_Storage";
     #import "TeRM/TeRM_String";
     #import "TeRM/TeRM_LogHelpers";
     #import "TeRM/TeRM_Metaprogram";
+    #import "TeRM/TeRM_Math";
 
-    Component_Declaration :: struct { name: string; T: Type; }
+    Component_Declaration :: struct { name: string; id_type: Type; data_type: Type; }
 };
+
+// -----------------------------------------------------------------------------------
+// -------------------------------------------------------------------------- :globals
 
 // the ecs data pools array for the module was put on the context for this reason:
 //
@@ -23,24 +29,31 @@
 // set the world's ecs pools.
 #add_context ecs_component_pools: []Pool(int); 
 
-#insert ecs_enum_def;    // declaring generated enum name definition
-#insert ecs_to_type_def; // declaring generated enum name -> type procedure
+#insert ecs_enum_def;         // declaring generated enum name definition
+#insert ecs_enum_to_type_def; // declaring generated enum name -> type procedure
 
-// -----------------------------------------------------------------------------------
+#if ENABLE_EXAMPLE { // --------------------------------------------------------------
 // -------------------------------------------------------------------------- :example
 
-#if ENABLE_EXAMPLE {
     ECS_COMPONENT_COUNT :: 3;
 
-    // create strings containing ecs system definitions.
-    ecs_pools_def, ecs_enum_def, ecs_to_type_def :: #run declare_ecs_fields(
+    example_component_declarations := Component_Declaration.[
         // each of these entries represents:
         //     - an entry in the Component_Name enum             (e.g. Component_Name.POSITION)
-        //     - an optional index field on any Entity subclass  (e.g. component_id_position: u16)
+        //     - an optional index field on any Entity subclass  (e.g. component_id_position: s16)
         //     - an array of the given data type                 (e.g. ecs_positions: [..]Vector3)
-        {name = "position",    T = Vector3},
-        {name = "velocity",    T = Vector3},
-        {name = "orientation", T = Quaternion}
+        //
+        // id_type determines the maximum number of entities that can have the given component.
+        // because velocity has id_type s16, the maximum number of entities that can have
+        // a velocity component is 32,767.
+        {name = "position",    id_type = s32, data_type = Vector3},
+        {name = "velocity",    id_type = s16, data_type = Vector3},
+        {name = "orientation", id_type = s16, data_type = Quaternion}
+    ];
+
+    // create strings containing ecs system definitions.
+    ecs_pools_def, ecs_enum_def, ecs_enum_to_type_def :: #run declare_ecs_fields(
+        ..example_component_declarations
     );
 
     // declaring the component pools once in the global scope.
@@ -53,7 +66,7 @@
         handle: s32;
     }
 
-    My_Entity :: Entity ( 
+    My_Entity_A :: Entity ( 
         struct {
             gadgets: []Entity_Gadget;
         },
@@ -62,33 +75,59 @@
         .ORIENTATION
     );
 
+    My_Entity_B :: Entity ( 
+        struct {
+            gadgets: []Entity_Gadget;
+        },
+        .POSITION, 
+    );
+
+    // this guy has a pointer to a struct on it that looks like
+    // for convenience's sake. also, 
+    My_Entity_C :: Entity ( 
+        base_type = struct {
+            gadgets: []Entity_Gadget;
+        },
+        declare_pointer_storage = true,
+        ..components =
+            .POSITION, 
+            .VELOCITY, 
+            .ORIENTATION
+    );
+
     term_ecs_example :: () {
         // tell this module where the pools are
         context.ecs_component_pools = ecs_component_pools;
 
-        ent_a: My_Entity;        
+        ent_a: My_Entity_A;        
         init(*ent_a);
-        log("ent: %", _fmt_verbose(ent_a));
+        log("an initialized entity type a: %", _fmt_verbose(ent_a));
+        log("\ntype a has component velocity: %\n--", has_component(*ent_a, .VELOCITY));
 
-        ent_b: My_Entity;
-        init(*ent_b);
-        log("ent: %", _fmt_verbose(ent_b));
+        ent_b: My_Entity_B;
+        // init(*ent_b);
+        log("an uninitialized entity type b: %", _fmt_verbose(ent_b));
+        log("\ntype b has component velocity: %\n--", has_component(*ent_b, .VELOCITY));
+
+        pool := get_component_pool(.POSITION);
+        log("pool type: %", pool.*);
     }
-} else {
+
+} else { // --------------------------------------------------------------------------
+
     ECS_COMPONENT_COUNT :: #run component_declarations.count;
 
-    ecs_pools_def, ecs_enum_def, ecs_to_type_def :: #run declare_ecs_fields(
+    ecs_pools_def, ecs_enum_def, ecs_enum_to_type_def :: #run declare_ecs_fields(
         ..component_declarations
     );
+
 }
 
 // -----------------------------------------------------------------------------------
 // --------------------------------------------------------------------------- :Entity
 
-INVALID_COMPONENT_ID : s16 : 0xffff;
-
-Entity :: struct ($T: Type, $components: ..Component_Name) {
-    using #as base: T;
+Entity :: struct ($base_type: Type, $components: ..Component_Name, $declare_pointer_storage := false) {
+    using #as base: base_type;
 
     #if components.count > 0 {
         // a flag array for runtime inspection of what components an entity has
@@ -96,13 +135,29 @@ Entity :: struct ($T: Type, $components: ..Component_Name) {
 
         #insert -> string {
             builder: String_Builder;
+            declarations := #ifx ENABLE_EXAMPLE then example_component_declarations else component_declarations;
             for components {
                 field_lower := to_lower(tprint("%\n", it),,temp);
-                print(*builder, "component_id_%: s16 = INVALID_COMPONENT_ID;\n", field_lower);
+                print(*builder, "component_id_%: % = cast,trunc(%) 0xffff_ffff;\n", field_lower, declarations[it].id_type, declarations[it].id_type);
             }
             return builder_to_string(*builder);
         }
     }
+}
+
+// -----------------------------------------------------------------------------------
+// ----------------------------------------------------------------------- :components
+
+// if you're referring to a component whose name is known at compile time, you can have 
+// it typecasted automatically. it's a little more convenient and less error prone to say
+// 
+// position_pool := get_component_pool(.POSITION);
+//
+// ... than it is to say...
+//
+// position_pool := cast(*Pool(Vector3)) *context.ecs_component_pools[Component_Name.POSITION];
+get_component_pool :: inline ($name: Component_Name) -> *Pool(component_to_type[xx name]) {
+    return cast(*Pool(component_to_type[xx name])) *context.ecs_component_pools[name];
 }
 
 // -----------------------------------------------------------------------------------
@@ -117,6 +172,10 @@ init :: (ent: *Entity) {
 
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------- :per-entity component interaction
+
+has_component :: inline (e: *Entity, name: Component_Name) -> bool {
+    return is_set(*e.component_flags, name);
+}
 
 // run arbitrary code over all components on an entity
 ecs_for_each_component :: inline (ent: *Entity, $body: Code) {
@@ -151,9 +210,14 @@ ecs_component_do :: (ent: *Entity, $name: Component_Name, $body: Code) #expand {
 // inserted code can work on the component, the pool of the component, the component
 // id on the entity, etc.
 ecs_component_do_impl :: (ent: *Entity, $name: Component_Name, $body: string) #expand {
+    `component: *component_to_type[name] = null;
+
     `component_name  :: name;
     `component_id    := #insert #run tprint("*ent.component_id_%;", to_lower(tprint("%", name)));
     `component_pool  := cast(*Pool(component_to_type[name])) *context.ecs_component_pools[name];
+    if `component_id.* != cast,trunc(type_of(`component_id.*)) 0xffff_ffff {
+        `component    = *(`component_pool.*)[`component_id.*];
+    }
     #insert body;
 }
 
@@ -169,7 +233,7 @@ declare_ecs_fields :: (declarations: ..Component_Declaration) -> pools: string, 
         enum_name := to_upper(decl.name,,temp);
         
         print(*enum_builder, "    %;\n", enum_name);
-        print(*to_type_builder, "\t%,\n", decl.T);
+        print(*to_type_builder, "\t%,\n", decl.data_type);
     }
 
     print(*enum_builder, "}\n");
@@ -182,7 +246,5 @@ declare_ecs_fields :: (declarations: ..Component_Declaration) -> pools: string, 
     return pools, enum_def, to_type;
 }
 
-#scope_export
-
-#import "Basic";
-#import "Math";
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

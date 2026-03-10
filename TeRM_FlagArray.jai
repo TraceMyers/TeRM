@@ -77,5 +77,7 @@ div_ceil :: inline (a: $Int_Type, b: Int_Type) -> Int_Type
     return ((a - 1) / b) + 1;
 }
 
+#import "Basic";
+
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

@@ -99,7 +99,7 @@ to_lower_in_place :: inline (str: *string) {
 to_lower :: inline (str: string) -> string {
     out_str := alloc_string(str.count);
     memcpy(out_str.data, str.data, str.count);
-    to_lower_inline(*out_str);
+    to_lower_in_place(*out_str);
     return out_str;
 }
 

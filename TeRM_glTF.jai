@@ -270,6 +270,7 @@ parse_file :: no_inline (parser: *GLTF_Parser, log_errors: bool) -> success: boo
     {
         using context.gltf_asset;
         module_log("asset: %", _fmt_verbose(context.gltf_asset.*));
+        module_log("asset self allocation size: %", context.gltf_asset.cpu_self_allocation.count);
         // module_log("file path: %", file_path);
         // module_log("roots: %", scene_roots);
         // module_log("meshes: %", meshes);
@@ -366,6 +367,8 @@ move_asset_allocation :: (using asset: *Asset_3D) {
     // {1} copy from the gltf load buffer into a new allocation owned by the load result
     new_allocation := alloc(context.gltf_buffer.count);
     memcpy(new_allocation, context.gltf_buffer.data, context.gltf_buffer.count);
+    asset.cpu_self_allocation.data = new_allocation;
+    asset.cpu_self_allocation.count = context.gltf_buffer.count;
 
     // {2a/3a}
     // this could be two procedures but it's fine

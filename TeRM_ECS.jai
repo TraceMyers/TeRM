@@ -106,37 +106,6 @@ Entity :: struct ($T: Type, $components: ..Component_Name) {
 }
 
 // -----------------------------------------------------------------------------------
-// --------------------------------------------------------------- :declare_ecs_fields
-
-// call this once in your program to declare the entity fields that will be handled by
-// this system
-
-declare_ecs_fields :: (declarations: ..Component_Declaration) -> pools: string, enum_def: string, component_to_type_proc_def: string {
-    enum_builder: String_Builder;
-    to_type_builder: String_Builder;
-
-    print(*enum_builder, "Component_Name :: enum u16 {\n");
-    print(*to_type_builder, "component_to_type :: Type.[\n");
-
-    for decl : declarations {
-        assert(decl.name != "");
-        enum_name := to_upper(decl.name,,temp);
-        
-        print(*enum_builder, "    %;\n", enum_name);
-        print(*to_type_builder, "\t%,\n", decl.T);
-    }
-
-    print(*enum_builder, "}\n");
-    print(*to_type_builder, "];\n");
-
-    pools    := tprint("ecs_component_pools: [%]Pool(int);\n", declarations.count);
-    enum_def := builder_to_string(*enum_builder);
-    to_type  := builder_to_string(*to_type_builder);
-
-    return pools, enum_def, to_type;
-}
-
-// -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------ :init and deinit
 
 init :: (ent: *Entity) {
@@ -186,6 +155,31 @@ ecs_component_do_impl :: (ent: *Entity, $name: Component_Name, $body: string) #e
     `component_id    := #insert #run tprint("*ent.component_id_%;", to_lower(tprint("%", name)));
     `component_pool  := cast(*Pool(component_to_type[name])) *context.ecs_component_pools[name];
     #insert body;
+}
+
+declare_ecs_fields :: (declarations: ..Component_Declaration) -> pools: string, enum_def: string, component_to_type_proc_def: string {
+    enum_builder: String_Builder;
+    to_type_builder: String_Builder;
+
+    print(*enum_builder, "Component_Name :: enum u16 {\n");
+    print(*to_type_builder, "component_to_type :: Type.[\n");
+
+    for decl : declarations {
+        assert(decl.name != "");
+        enum_name := to_upper(decl.name,,temp);
+        
+        print(*enum_builder, "    %;\n", enum_name);
+        print(*to_type_builder, "\t%,\n", decl.T);
+    }
+
+    print(*enum_builder, "}\n");
+    print(*to_type_builder, "];\n");
+
+    pools    := tprint("ecs_component_pools: [%]Pool(int);\n", declarations.count);
+    enum_def := builder_to_string(*enum_builder);
+    to_type  := builder_to_string(*to_type_builder);
+
+    return pools, enum_def, to_type;
 }
 
 #scope_export

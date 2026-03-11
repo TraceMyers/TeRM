@@ -39,7 +39,7 @@
 #if ENABLE_EXAMPLE { // --------------------------------------------------------------
 // -------------------------------------------------------------------------- :example
 
-    ECS_COMPONENT_COUNT :: 3;
+    ENTITY_COMPONENT_COUNT :: 3;
 
     // example decls. normally you supply them through the module import param
     example_component_declarations := Component_Declaration.[
@@ -130,7 +130,7 @@
 
 } else { // --------------------------------------------------------------------------
 
-    ECS_COMPONENT_COUNT :: #run component_declarations.count;
+    ENTITY_COMPONENT_COUNT :: #run component_declarations.count;
 
     component_pools_def, component_enum_def, component_enum_to_type_def :: #run declare_entity_components(
         ..component_declarations

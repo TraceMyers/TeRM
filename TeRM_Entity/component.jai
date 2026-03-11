@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------- :basic query
 
 to_type :: inline (name: Component_Name) -> Type {
-    return component_to_type[name.(int)];
+    return COMPONENT_TYPES[name.(int)];
 }
 
 is_component_index_valid :: (index: $T) -> bool {
@@ -32,18 +32,22 @@ invalidate_component_index :: (index: *$T) {
 // ... than it is to say...
 //
 // position_array := cast(*[..]Vector3) *context.component_arrays[Component_Name.POSITION];
-get_component_array :: ($name: Component_Name) -> *[..]extract_type(component_to_type[xx name]).T {
-    return cast(*[..]component_to_type[xx name]) *context.entity_component_arrays[name];
+get_component_array :: ($name: Component_Name) -> *[..]extract_type(importer.component_declarations[xx name]).type {
+    return cast(*[..]COMPONENT_TYPES[xx name]) *context.entity_component_arrays[name];
 }
 
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------- :per-entity component interaction
 
-get_component :: (ent: *Entity, $name: Component_Name) -> *extract_type(component_to_type[xx name]).T {
+get_component :: (ent: *Entity, $name: Component_Name) -> *$T 
+#modify {
+    T = importer.component_declarations[xx name].type;
+    return true;
+} {
     #if ent.declare_component_pointers {
         return #insert #run tprint("*ent.%;", to_lower(tprint("%", name)));
     } else {
-        component_array := cast(*[..]component_to_type[name]) *context.entity_component_arrays[name];
+        component_array := cast(*[..]T) *context.entity_component_arrays[name];
         component_id := #insert #run tprint("*ent.component_id_%;", to_lower(tprint("%", name)));
         if component_id.* != cast,trunc(type_of(component_id.*)) 0xffff_ffff {
             return *(component_array.*)[component_id.*];
@@ -87,10 +91,11 @@ component_do :: (ent: *Entity, $name: Component_Name, $body: Code) #expand {
 // inserted code can work on the component, the array of the component, the component
 // id on the entity, etc.
 component_do_impl :: (ent: *Entity, $name: Component_Name, $body: string, $declare_component_index := -1) #expand {
-    `component: *component_to_type[name] = null;
+    `component_type :: #run importer.component_declarations[name].type;
+    `component: *component_type = null;
 
     `component_name :: name;
-    `component_array := cast(*[..]component_to_type[name]) *context.entity_component_arrays[name];
+    `component_array := cast(*[..]`component_type) *context.entity_component_arrays[name];
 
     #if declare_component_index >= 0 {
         `component_index := declare_component_index;
@@ -114,39 +119,11 @@ component_do_impl :: (ent: *Entity, $name: Component_Name, $body: string, $decla
     #insert body;
 }
 
-generate_entity_system_declarations :: (declarations: ..Component_Declaration) -> allocators: string, enum_def: string, component_to_type_proc_def: string {
-    enum_builder: String_Builder;
-    to_type_builder: String_Builder;
-
-    print(*enum_builder, "Component_Name :: enum u16 {\n");
-    print(*to_type_builder, "component_to_type :: Type.[\n");
-
-    for decl : declarations {
-        assert(decl.name != "");
-        enum_name := to_upper(decl.name,,temp);
-        
-        print(*enum_builder, "    %;\n", enum_name);
-        print(*to_type_builder, "\t%,\n", decl.data_type);
-    }
-
-    print(*enum_builder, "}\n");
-    print(*to_type_builder, "];\n");
-
-    allocators := tprint(
-#string HERE
-entity_component_arrays: [%][..]int;
-HERE, declarations.count);
-    enum_def   := builder_to_string(*enum_builder);
-    to_type    := builder_to_string(*to_type_builder);
-
-    return allocators, enum_def, to_type;
-}
-
 // this is used to get the compiler to allow me to define the return type by indexing into a Type.[],
 // as in:
-// proc :: ($name: Component_Name) -> extract_type(component_to_type[name]).T
+// proc :: ($name: Component_Name) -> extract_type(COMPONENT_TYPES[name]).T
 // if I don't wrap, compiler complains that you can't index with an enum or that you can't use []
-extract_type :: struct ($T: Type) { thing: T; }
+extract_type :: struct ($decl: Component_Declaration) { type :: decl.type; }
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

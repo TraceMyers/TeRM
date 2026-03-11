@@ -888,6 +888,7 @@ process_accessors_field :: (parser: *GLTF_Parser, element: JSON_Element_Containe
                     parser.accessors[ai].component_type = .F32;
                 case;
                     // todo: fatal error unimplemented
+                    return;    
                 }
             case "type";
                 type := json_get(*part.value.str).*;
@@ -908,6 +909,7 @@ process_accessors_field :: (parser: *GLTF_Parser, element: JSON_Element_Containe
                     parser.accessors[ai].type = .MAT4;
                 case;
                     // todo: fatal error unimplemented
+                    return;
                 }
             case "normalized";
             case "min";

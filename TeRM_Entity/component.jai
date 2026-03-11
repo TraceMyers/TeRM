@@ -6,6 +6,14 @@ to_type :: inline (name: Component_Name) -> Type {
     return component_to_type[name.(int)];
 }
 
+is_component_index_valid :: (index: $T) -> bool {
+    #if #run (cast(*Type_Info_Integer) T).signed {
+        return index >= 0;
+    } else {
+        return index != #run max_value(T);
+    }
+}
+
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------- :components
 
@@ -29,7 +37,7 @@ get_component :: (ent: *Entity, $name: Component_Name) -> $T
     T = to_type(name);
     return true;
 } {
-    #if ent.declare_pointers {
+    #if ent.declare_component_pointers {
         return #insert #run tprint("*ent.%;", to_lower(tprint("%", name)));
     } else {
         component_pool := cast(*Pool(component_to_type[name])) *context.entity_component_pools[name];
@@ -85,15 +93,14 @@ component_do_impl :: (ent: *Entity, $name: Component_Name, $body: string, $decla
         `component_index := declare_component_index;
     }
 
-    #if ent.declare_pointers {
+    #if ent.declare_component_pointers {
         `component_pointer := #insert #run tprint("*ent.%_pointer;", to_lower(tprint("%", name)));
         `component = #insert #run tprint("*ent.%;", to_lower(tprint("%", name)));
-        `component_id: int;
-        if `component == null {
-            `component_id = -1;
-        } else {
-            `component_id = `component - `component_pool.items.data;
-        }
+        `component_id_value: int = -1;
+        `component_id := *component_id_value;
+        if `component != null {
+            component_id_value = `component - `component_pool.items.data;
+        } 
     } else {
         `component_id := #insert #run tprint("*ent.component_id_%;", to_lower(tprint("%", name)));
         if `component_id.* != cast,trunc(type_of(`component_id.*)) 0xffff_ffff {

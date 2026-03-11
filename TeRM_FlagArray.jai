@@ -25,7 +25,7 @@ set :: inline (arr: *Flag_Array($T), enum_val: T) {
     arr.flag_sets[indexer.index] |= ((1).(u8) << indexer.bit);
 }
 
-unset :: inline (arr: *Flag_Array($T), enum_val: T) {
+clear :: inline (arr: *Flag_Array($T), enum_val: T) {
     indexer := convert_to_lfa_indexer(xx enum_val);
     arr.flag_sets[indexer.index] &= ~((1).(u8) << indexer.bit);
 }
@@ -36,9 +36,9 @@ set :: inline (arr: *Flag_Array($T), enum_vals: []T) {
     }
 }
 
-unset :: inline (arr: *Flag_Array($T), enum_vals: []T) {
+clear :: inline (arr: *Flag_Array($T), enum_vals: []T) {
     for enum_vals {
-        unset(arr, it);
+        clear(arr, it);
     }
 }
 
@@ -59,7 +59,16 @@ are_any_set :: inline (array: *Flag_Array($T), enum_vals: []T) -> bool {
     return any_set;
 }
 
-unset_all :: inline (arr: *Flag_Array($T)) {
+are_any_set :: inline (array: *Flag_Array) -> bool {
+    for array.flag_sets {
+        if it != 0 {
+            return true;
+        }
+    }
+    return false;
+}
+
+clear_all :: inline (arr: *Flag_Array($T)) {
     memset(arr.flag_sets.data, 0x00, arr.flag_sets.count);
 }
 

@@ -2,7 +2,13 @@
 // -----------------------------------------------------------------------------------
 // --------------------------------------------------------------------------- :Entity
 
+Entity_Ref :: struct {
+    eid:   u32;
+    index: s32;
+}
+
 Entity :: struct ($base_type: Type, $components: ..Component_Name, $declare_component_pointers := false, $using_component_pointers := false) {
+    using ref: Entity_Ref;
     using #as base: base_type;
 
     #if components.count > 0 {
@@ -36,15 +42,22 @@ Entity :: struct ($base_type: Type, $components: ..Component_Name, $declare_comp
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------ :init and deinit
 
+// todo: spawns and destroys are all queued and done by the next frame.
+// todo: think about multithreading model. probably just force spawning and destruction
+// to be single threaded.
+
 init :: (ent: *Entity) {
     assert(!are_any_set(*ent.component_flags));
+
+    ent.eid = atomic_add(*entity_id_counter, 1);
+
     for_each_component(ent, #code {
         assert(!is_component_index_valid(component_id.*));
         #if ent.declare_component_pointers {
-            id := pool_acquire(component_pool);
-            component_pointer.* = xx *(component_pool.*)[id];
+            component_pointer.* = xx array_add(component_array);
         } else {
-            component_id.* = xx pool_acquire(component_pool);
+            array_add(component_array);
+            component_id.* = xx (component_array.count - 1);
         }
         set(*ent.component_flags, component_name);
     });
@@ -53,7 +66,8 @@ init :: (ent: *Entity) {
 deinit :: (ent: *Entity) {
     for_each_component(ent, #code {
         if is_component_index_valid(component_id.*) {
-            pool_release(component_pool, component_id.*);
+            array_add(*queued_component_releases, {component_name, component_id.*});
+            invalidate_component_index(component_id);
             #if ent.declare_component_pointers {
                 component_pointer.* = null;
             }
@@ -61,3 +75,10 @@ deinit :: (ent: *Entity) {
     });
     clear_all(*ent.component_flags);
 }
+
+#scope_module
+
+entity_id_counter: u32;
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

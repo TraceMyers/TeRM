@@ -20,18 +20,19 @@
 
 #load "entity.jai";
 #load "component.jai";
+#load "storage.jai";
 
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------------------- :globals
 
-// the component pools array for the module was put on the context for this reason:
+// the components array for the module was put on the context for this reason:
 //
 // the actual array data is declared wherever you like. this is just a pointer and a count.
-// so, if you just want a single global set of pools, just set this field once 
-// (see term_entity_example()). or, if you want, say, one set of pools per world, you
+// so, if you just want a single global set of arrays, just set this field once 
+// (see term_entity_example()). or, if you want, say, one set of arrays per world, you
 // might map one world to one context, and so each time you push a world's context, also
-// set the world's component pools.
-#add_context entity_component_pools: []Pool(int); 
+// set the world's component arrays.
+#add_context entity_component_arrays: [][..]int; 
 
 #insert component_enum_def;         // declaring generated enum name definition
 #insert component_enum_to_type_def; // declaring generated enum name -> type procedure
@@ -64,12 +65,11 @@
     ];
 
     // create strings containing component system definitions.
-    component_pools_def, component_enum_def, component_enum_to_type_def :: #run declare_entity_components(
-        ..example_component_declarations
-    );
+    component_arrays_def, component_enum_def, component_enum_to_type_def :: 
+        #run generate_entity_system_declarations(..example_component_declarations);
 
-    // declaring the component pools once in the global scope.
-    #insert component_pools_def;
+    // declaring the component arrays once in the global scope.
+    #insert component_arrays_def;
 
     Entity_Gadget :: struct {
         handle: s32;
@@ -106,7 +106,7 @@
     // call this for an explanatory printout
     term_entity_example :: () {
         // tell this module where the allocators are
-        context.entity_component_pools = entity_component_pools;
+        context.entity_component_arrays = entity_component_arrays;
 
         ent_a: My_Entity_A;        
         init(*ent_a);
@@ -128,9 +128,14 @@
         log("ent_c.velocity = %", ent_c.velocity);
         log("ent_c.orientation = %\n\n", ent_c.orientation);
 
-        pool := get_component_pool(.TRANSFORM);
-        log("transform component [0] after entity c velocity change: %\n\n", pool.*[0]);
+        array := get_component_array(.TRANSFORM);
+        log("transform component [0] after entity c velocity change: %\n\n", array.*[0]);
 
+        get_component(*ent_a, .POSITION).x -= 2;
+        pos := get_component(*ent_a, .POSITION);
+        pos.y = 100/5;
+        log("entity a position after getting component and changing x and y: %\n\n", pos.*);
+        
         deinit(*ent_a);
         log("entity a after deinit: %\n\n", ent_a);
 
@@ -141,9 +146,8 @@
 
     ENTITY_COMPONENT_COUNT :: #run component_declarations.count;
 
-    component_pools_def, component_enum_def, component_enum_to_type_def :: #run declare_entity_components(
-        ..component_declarations
-    );
+    component_arrays_def, component_enum_def, component_enum_to_type_def :: 
+        #run generate_entity_system_declarations(..component_declarations);
 
 }
 
@@ -152,7 +156,7 @@
 LONG_EXPLANATION :: #string,\% HERE
 the default storage behavior is, for each component an entity 
 has, declare an int id on the entity. that id is then used to 
-index into that particular component's pool. optionally, maybe 
+index into that particular component's array. optionally, maybe 
 for special types who need to reference their component from an 
 individual perspective a lot, the entity can instead store a 
 pointer to each component. by default, the top-level field has 
@@ -178,7 +182,7 @@ the cache.
 three individual pointers, rather than one, referring to a Vec3, 
 Vec3 and a Quat, puts 8+8+8=24 bytes of pointer storage on 
 the entity, compared to 12+12+16=40 bytes of data storage in
-the component pool. that's a 60\% increase in the amount of 
+the component array. that's a 60\% increase in the amount of 
 data required to represent this architecture decision to
 add indirection. 
 
@@ -214,3 +218,8 @@ My_Entity_C {
 }
 
 HERE
+
+#import "Atomics";
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

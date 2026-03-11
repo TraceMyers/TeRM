@@ -847,12 +847,12 @@ Job_Data_Item :: struct {
     name: string;
     age: int; // it's just a number
     bytes: [..]u8;
-    lock: s32;
+    lock: RW_Lock;
     job_finished_counter : *s32;
 }
 
 Job :: struct {
-    rw_type: RW_Lock_Type;
+    rw_mode: RW_Lock_Mode;
     data: *Job_Data_Item;
 }
 
@@ -862,13 +862,14 @@ thread_group_proc :: (group: *Thread_Group, thread: *Thread, work: *void) -> Thr
     }
     job := cast(*Job) work;
     data := job.data;
-    if job.rw_type == .WRITE {
+    if job.rw_mode == .WRITE {
         scope_read_write_lock(*data.lock, .WRITE);
         data.age += 1;
         array_add(*data.bytes, cast(u8) (data.age & 0xff));
     } else {
         scope_read_write_lock(*data.lock, .READ);
-        // we're not expecting ordered operations here. just trying to make sure the data is read.
+        // we're not expecting ordered operations / mutation correctness in this block. 
+        // just trying to make sure the data is read, and that works for the test.
         context.thread_output_dump[context.thread_output_dump_counter] += xx data.age;
         if data.bytes.count > 0 {
             context.thread_output_dump[context.thread_output_dump_counter] += xx data.bytes[data.bytes.count-1];

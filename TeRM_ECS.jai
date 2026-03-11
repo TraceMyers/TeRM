@@ -13,6 +13,7 @@
     #import "TeRM/TeRM_LogHelpers";
     #import "TeRM/TeRM_Metaprogram";
     #import "TeRM/TeRM_Math";
+    #import "TeRM/TeRM_Allocation";
 
     Component_Declaration :: struct { name: string; id_type: Type; data_type: Type; }
 };
@@ -52,15 +53,12 @@
     ];
 
     // create strings containing ecs system definitions.
-    ecs_pools_def, ecs_enum_def, ecs_enum_to_type_def :: #run declare_ecs_fields(
+    ecs_allocators_def, ecs_enum_def, ecs_enum_to_type_def :: #run declare_ecs_fields(
         ..example_component_declarations
     );
 
     // declaring the component pools once in the global scope.
-    // it's actually just a string literal, provided for convenience. 
-    // if you just want to declare the pools directly in code and name it whatever you want, 
-    // the declaration looks like 'whatever_you_want: [ECS_COMPONENT_COUNT]Pool(int);'
-    #insert ecs_pools_def;
+    #insert ecs_allocators_def;
 
     Entity_Gadget :: struct {
         handle: s32;
@@ -88,7 +86,7 @@
         base_type = struct {
             gadgets: []Entity_Gadget;
         },
-        declare_pointer_storage = true,
+        declare_pointers = true,
         ..components =
             .POSITION, 
             .VELOCITY, 
@@ -96,28 +94,40 @@
     );
 
     term_ecs_example :: () {
-        // tell this module where the pools are
+        // tell this module where the allocators are
         context.ecs_component_pools = ecs_component_pools;
 
         ent_a: My_Entity_A;        
         init(*ent_a);
-        log("an initialized entity type a: %", _fmt_verbose(ent_a));
+        log("an initialized entity with three components: %", _fmt_verbose(ent_a));
         log("\ntype a has component velocity: %\n--", has_component(*ent_a, .VELOCITY));
 
         ent_b: My_Entity_B;
         // init(*ent_b);
-        log("an uninitialized entity type b: %", _fmt_verbose(ent_b));
+        log("an uninitialized entity with only a position component: %", _fmt_verbose(ent_b));
         log("\ntype b has component velocity: %\n--", has_component(*ent_b, .VELOCITY));
 
         pool := get_component_pool(.POSITION);
         log("pool type: %", pool.*);
+
+        ent_c: My_Entity_C;
+        init(*ent_c);
+        log("an initialized entity with three components and pointer storage: %", _fmt_verbose(ent_c));
+
+        ent_c.velocity += {1,1,1};
+        ent_c.orientation = {};
+        log("--\nentities with pointer storage can access those fields as if they were declared on the struct."); 
+        log("you don't use normal pointer ref/deref syntax. because of keyword 'using', everything auto-derefs.\n--");
+        log("ent_c.position = %", ent_c.position);
+        log("ent_c.velocity = %", ent_c.velocity);
+        log("ent_c.orientation = %", ent_c.orientation);
     }
 
 } else { // --------------------------------------------------------------------------
 
     ECS_COMPONENT_COUNT :: #run component_declarations.count;
 
-    ecs_pools_def, ecs_enum_def, ecs_enum_to_type_def :: #run declare_ecs_fields(
+    ecs_allocators_def, ecs_enum_def, ecs_enum_to_type_def :: #run declare_ecs_fields(
         ..component_declarations
     );
 
@@ -126,19 +136,27 @@
 // -----------------------------------------------------------------------------------
 // --------------------------------------------------------------------------- :Entity
 
-Entity :: struct ($base_type: Type, $components: ..Component_Name, $declare_pointer_storage := false) {
+Entity :: struct ($base_type: Type, $components: ..Component_Name, $declare_pointers := false) {
     using #as base: base_type;
 
     #if components.count > 0 {
         // a flag array for runtime inspection of what components an entity has
         component_flags: Flag_Array(Component_Name);
 
-        #insert -> string {
+        #if declare_pointers then #insert -> string {
+            builder: String_Builder;
+            declarations := #ifx ENABLE_EXAMPLE then example_component_declarations else component_declarations;
+            for components {
+                field_lower := to_lower(tprint("%", it),,temp);
+                print(*builder, "\tusing %_pointer: *struct { %: %; };\n", field_lower, field_lower, declarations[it].data_type);
+            }
+            return builder_to_string(*builder);
+        } else #insert -> string {
             builder: String_Builder;
             declarations := #ifx ENABLE_EXAMPLE then example_component_declarations else component_declarations;
             for components {
                 field_lower := to_lower(tprint("%\n", it),,temp);
-                print(*builder, "component_id_%: % = cast,trunc(%) 0xffff_ffff;\n", field_lower, declarations[it].id_type, declarations[it].id_type);
+                print(*builder, "\tcomponent_id_%: % = cast,trunc(%) 0xffff_ffff;\n", field_lower, declarations[it].id_type, declarations[it].id_type);
             }
             return builder_to_string(*builder);
         }
@@ -165,7 +183,12 @@ get_component_pool :: inline ($name: Component_Name) -> *Pool(component_to_type[
 
 init :: (ent: *Entity) {
     ecs_for_each_component(ent, #code {
-        component_id.* = xx pool_acquire(component_pool);
+        #if ent.declare_pointers {
+            id := pool_acquire(component_pool);
+            component_pointer.* = xx *(component_pool.*)[id];
+        } else {
+            component_id.* = xx pool_acquire(component_pool);
+        }
         set(*ent.component_flags, component_name);
     });
 }
@@ -185,14 +208,13 @@ ecs_for_each_component :: inline (ent: *Entity, $body: Code) {
             print(*builder, 
 #string HERE
     {
-        ecs_component_do_impl(ent, .%, #run code_string(body));
+        ecs_component_do_impl(ent, .%, #run code_string(body), %);
     }
 HERE,
-                cmp
+                cmp, ci
             );
         }
         output := builder_to_string(*builder);
-        log(output);
         return output;
     }
 }
@@ -209,19 +231,36 @@ ecs_component_do :: (ent: *Entity, $name: Component_Name, $body: Code) #expand {
 // for a given component, create a space of variables and constants where the
 // inserted code can work on the component, the pool of the component, the component
 // id on the entity, etc.
-ecs_component_do_impl :: (ent: *Entity, $name: Component_Name, $body: string) #expand {
+ecs_component_do_impl :: (ent: *Entity, $name: Component_Name, $body: string, $declare_component_index := -1) #expand {
     `component: *component_to_type[name] = null;
 
     `component_name  :: name;
-    `component_id    := #insert #run tprint("*ent.component_id_%;", to_lower(tprint("%", name)));
     `component_pool  := cast(*Pool(component_to_type[name])) *context.ecs_component_pools[name];
-    if `component_id.* != cast,trunc(type_of(`component_id.*)) 0xffff_ffff {
-        `component    = *(`component_pool.*)[`component_id.*];
+
+    #if declare_component_index >= 0 {
+        `component_index := declare_component_index;
     }
+
+    #if ent.declare_pointers {
+        `component_pointer := #insert #run tprint("*ent.%_pointer;", to_lower(tprint("%", name)));
+        `component = #insert #run tprint("*ent.%;", to_lower(tprint("%", name)));
+        `component_id: int;
+        if `component == null {
+            `component_id    = -1;
+        } else {
+            `component_id    = `component - `component_pool.items.data;
+        }
+    } else {
+        `component_id    := #insert #run tprint("*ent.component_id_%;", to_lower(tprint("%", name)));
+        if `component_id.* != cast,trunc(type_of(`component_id.*)) 0xffff_ffff {
+            `component    = *(`component_pool.*)[`component_id.*];
+        }
+    }
+
     #insert body;
 }
 
-declare_ecs_fields :: (declarations: ..Component_Declaration) -> pools: string, enum_def: string, component_to_type_proc_def: string {
+declare_ecs_fields :: (declarations: ..Component_Declaration) -> allocators: string, enum_def: string, component_to_type_proc_def: string {
     enum_builder: String_Builder;
     to_type_builder: String_Builder;
 
@@ -239,11 +278,14 @@ declare_ecs_fields :: (declarations: ..Component_Declaration) -> pools: string, 
     print(*enum_builder, "}\n");
     print(*to_type_builder, "];\n");
 
-    pools    := tprint("ecs_component_pools: [%]Pool(int);\n", declarations.count);
-    enum_def := builder_to_string(*enum_builder);
-    to_type  := builder_to_string(*to_type_builder);
+    allocators := tprint(
+#string HERE
+ecs_component_pools: [%]Pool(int);
+HERE, declarations.count);
+    enum_def   := builder_to_string(*enum_builder);
+    to_type    := builder_to_string(*to_type_builder);
 
-    return pools, enum_def, to_type;
+    return allocators, enum_def, to_type;
 }
 
 // Copyright (c) 2026 Trace Myers

@@ -87,10 +87,6 @@
 // 3. update pointers to components, only for entities that use this feature
 // 4. (implicit) end handshake, crashing if step 3 was not completed correctly
 
-// also, if an entity changes its location within an entity array, or moves to a new array,
-// you need to call on_entity_change_array_location(). if the entity array reallocates, but the
-// entity's relative location in the array is the same, you don't need to call it.
-
 Component_Allocation_Request :: struct($T: Type) {
     entity: *T;
     unique_id: u64;
@@ -340,13 +336,6 @@ free_components :: (handshake: *Component_Management_Handshake, destroyed_entiti
     for ent : destroyed_entities {
         ent.component_sentinel = {};
     }
-}
-
-// any time an entity changes its position in an array, or moves to a new array, this
-// needs to be called. if the array allocation moved, but the entity is still
-// at the same relative position, you don't need to call this.
-on_entity_change_array_location :: (entity: *$I/interface Component_Info, array_entity_belongs_to: []I) {
-
 }
 
 prepare_rebase_entity_pointers :: () -> []int, []int {

@@ -16,9 +16,6 @@
 #add_context entity_id_arrays:        [][..]s64;  // todo: rename
 #add_context tracked_entity_arrays:   *[..]*void; // todo: rename
 
-get_id_from_component_sentinel: (ent: *Component_Sentinel) -> s64;
-get_component_sentinel_from_id: (id: s64) -> *Component_Sentinel;
-
 // optional convenience string generator. #insert #run wherever you want your entity component storage.
 generate_entity_component_storage_declaration :: (
     components_name := "entity_component_storage",

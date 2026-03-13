@@ -86,18 +86,20 @@ array_shrink :: (array: *[..]$T) {
     }
 }
 
-array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion := 0.75, minimum_count := 8) {
+array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion := 0.75, minimum_count := 8) -> bool {
     if array.count < minimum_count && array.count != 0 {
-        return;
+        return false;
     }
     if array.allocated == 0 {
         assert(array.data == null);
         assert(array.count == 0);
-        return;
+        return false;
     }
     if array.count.(float) / array.allocated.(float) <= realloc_if_using_leq_proportion {
         array_shrink(array);
+        return true;
     }
+    return false;
 }
 
 static_array_add :: inline (array: *[]$T, item: T, upper_bound: s64) -> bool {

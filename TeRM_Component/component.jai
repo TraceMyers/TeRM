@@ -17,7 +17,7 @@ Component_Info :: struct (
     #if components.count > 0 {
         #if declare_component_pointers {
             using #as component_sentinel := Component_Sentinel.{
-                component_flags   = #run generate_component_flag_array(..components),
+                component_flags   = #run make_flag_array(..components),
                 description_flags = .HAS_POINTERS_TO_COMPONENTS
             };
             #insert -> string {
@@ -34,7 +34,7 @@ Component_Info :: struct (
             }
         } else {
             using #as component_sentinel := Component_Sentinel.{
-                component_flags   = #run generate_component_flag_array(..components),
+                component_flags   = #run make_flag_array(..components),
                 description_flags = 0
             };
             #insert -> string {
@@ -118,6 +118,22 @@ get_component_array :: ($name: Component_Name) -> *[..]$T
     return cast(*[..]T) *context.entity_component_arrays[name];
 }
 
+// returns array of indices to entity arrays
+get_entities_that_have_component :: (name: Component_Name) -> []s32 {
+    arrays: [..]s32;
+    arrays.allocator = temp;
+    array_reserve(*arrays, min(context.entity_array_references.count, 256));
+
+    for ref, ref_index : context.entity_array_references.* {
+        if is_set(*ref.component_flags, name) {
+            array_add(*arrays, ref_index);
+            break;
+        }
+    }
+
+    return arrays;
+}
+
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------------------- :codegen
 
@@ -137,31 +153,10 @@ get_component :: (sent: *Component_Sentinel, $name: Component_Name) -> *$T
     }
 }
 
-
-for_all_component_types :: ($body: Code) {
-    #insert -> string {
-        builder: String_Builder;
-        for 0..enum_highest_value(Component_Name) {
-            print(*builder, 
-#string HERE
-    {
-        {
-            `component_index :: %;
-            `component_id    :: Component_Name.%;
-            `component_type  :: #run importer.component_declarations[component_id].type;
-            `component_array := cast(*[..]`component_type) *context.entity_component_arrays[component_id];
-            #insert body;
-        }
-    }
-HERE,
-                it, cast(Component_Name) it
-            );
-        }
-        output := builder_to_string(*builder);
-        return output;
-    }
-}
-
+// for each of the component types in the list (known at compile time), generate
+// a scope with the component's id, type and array to refer to, and insert a block
+// of code into that scope. in other words, an unrolled loop.
+//
 // this isn't a macro because macro backtick declarations are all put into the outer scope,
 // which piles them all into the same scope, which causes a redefine error per 
 // declaration x number of components. loops don't have this problem, but this isn't a loop.
@@ -229,14 +224,6 @@ OFFSET_FROM_TOP_OF_ENTITY_TO_FIRST_ID :: #run -> int {
         }
     }
     return 0;
-}
-
-generate_component_flag_array :: (components: ..Component_Name) -> Flag_Array(Component_Name) {
-    flags: Flag_Array(Component_Name);
-    for component : components {
-        set(*flags, component);
-    }
-    return flags;
 }
 
 // Copyright (c) 2026 Trace Myers

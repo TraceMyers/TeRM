@@ -76,6 +76,14 @@ set_all :: inline (arr: *Flag_Array($T)) {
     memset(arr.flag_sets.data, 0xff, arr.flag_sets.count);
 }
 
+make_flag_array :: (enum_vals: ..$T) -> Flag_Array(T) {
+    flags: Flag_Array(T);
+    for val : enum_vals {
+        set(*flags, val);
+    }
+    return flags;
+}
+
 #scope_file
 
 div_ceil :: inline (a: $Int_Type, b: Int_Type) -> Int_Type 

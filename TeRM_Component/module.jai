@@ -11,12 +11,23 @@
 // for telling the module where your entity component storage is.
 // e.g. context.entity_component_arrays = entity_component_storage;
 #add_context entity_component_arrays: [][..]u8;
-#add_context entity_pointer_arrays:   [][..]s32;
+#add_context entity_pointer_arrays:   [][..]_Entity_Pointer;
 #add_context entity_array_references: *[..]Entity_Array_Reference;
+
+_Entity_Pointer :: struct {
+     array: s32; 
+     entity: s32; 
+}
 
 Entity_Array_Reference :: struct {
     ref: *[]u8;
+
+    // components information stored two ways: 
+    // array for iterating over 
     components: []Component_Name;
+    // flags for checking if the entity type has a component
+    component_flags: Flag_Array(Component_Name);
+
     type_stride: int;
     type_sentinel_offset: int;
     type_has_component_pointers: bool;

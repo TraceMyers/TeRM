@@ -1,3 +1,5 @@
+// note that this module is in flux and not quite ready yet.
+
 // on ecs
 
 // in general, if you are using ecs-style storage and not primarily
@@ -71,17 +73,17 @@ Static_Transform :: struct {
 // b.) an array of the given component type.
 
 COMPONENT_DECLARATIONS :: Component_Declaration.[
-    {"position",            Vector3,               s16},
-    {"velocity",            Vector3,               s16},
-    {"orientation",         Quaternion,            s16},
-    {"static_transform",    Static_Transform,      s32}
+    {"position",            Vector3},
+    {"velocity",            Vector3},
+    {"orientation",         Quaternion},
+    {"static_transform",    Static_Transform}
 ];
 
 // the names must be unique, because they will be used to generate an enum.
 
 // 4. import
 
-#import "TeRM/TeRM_Entity"(
+#import "TeRM/TeRM_Component"(
     // defining a type with constant fields is how we move types into the module.
     // the module parameter 'importer' is of type 'Type', you are defining a type.
     // the fields must be constant.
@@ -112,7 +114,7 @@ COMPONENT_DECLARATIONS :: Component_Declaration.[
 
 Camera :: struct {
     // NOTE : must be using #as / #as using!
-    using #as base: Entity(
+    using #as base: Component_Info(
         ..components =
             Component_Name.static_transform,
         // declare_component_pointers=true, 

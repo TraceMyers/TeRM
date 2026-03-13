@@ -87,11 +87,6 @@
 // 3. update pointers to components, only for entities that use this feature
 // 4. (implicit) end handshake, crashing if step 3 was not completed correctly
 
-Component_Allocation_Request :: struct($T: Type) {
-    entity: *T;
-    unique_id: u64;
-}
-
 Component_Management_Handshake :: struct {
     entity_pointers_updated:            []bool;
     component_moved_allocation:         []bool;

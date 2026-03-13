@@ -5,55 +5,35 @@
         component_declarations :: *void.[];
         component_decl_type    :: void;
         uppercase_enum_names   :: false;
+        cmp_get_id             :: void;
+        cmp_get_sentinel       :: void;
     }
 };
 
 // for telling the module where your entity component storage is.
 // e.g. context.entity_component_arrays = entity_component_storage;
 #add_context entity_component_arrays: [][..]u8;
-#add_context entity_pointer_arrays:   [][..]_Entity_Pointer;
-#add_context entity_array_references: *[..]Entity_Array_Reference;
+#add_context entity_id_arrays:        [][..]s64;  // todo: rename
+#add_context tracked_entity_arrays:   *[..]*void; // todo: rename
 
-_Entity_Pointer :: struct {
-     array: s32; 
-     entity: s32; 
-}
-
-Entity_Array_Reference :: struct {
-    // a pointer to an entity array, type stripped
-    ref: *[]u8;
-
-    // components information stored two ways: 
-    // array for when you need to do something over all components
-    components: []Component_Name;
-    // flags for o(1) checking if an entity type has a component
-    component_flags: Flag_Array(Component_Name);
-
-    // for iterating over entity arrays without knowing the type:
-    // the iteration stride to get to each entity/element; size + alignment
-    type_stride: int;
-    // the offset from an entity/element to its Component_Sentinel
-    type_sentinel_offset: int;
-
-    // a runtime copy of Component_Info.declare_component_pointers
-    type_has_component_pointers: bool;
-}
+get_id_from_component_sentinel: (ent: *Component_Sentinel) -> s64;
+get_component_sentinel_from_id: (id: s64) -> *Component_Sentinel;
 
 // optional convenience string generator. #insert #run wherever you want your entity component storage.
 generate_entity_component_storage_declaration :: (
     components_name := "entity_component_storage",
-    pointers_name   := "entity_pointer_storage",
-    entities_name   := "entity_storage_references"
+    pointers_name   := "entity_id_storage",
+    tracked_name    := "tracked_entity_storage"
 ) -> string {
     return tprint(
 #string HERE
 %: [%][..]u8;
-%: [%][..]_Entity_Pointer;
-%: [..]Entity_Array_Reference;
+%: [%][..]s64;
+%: [..]*void;
 HERE,
         components_name, importer.component_declarations.count,
         pointers_name,   importer.component_declarations.count,
-        entities_name
+        tracked_name
     );
 }
 

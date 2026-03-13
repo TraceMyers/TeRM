@@ -14,11 +14,13 @@ Component_Info :: struct (
     $declare_component_pointers := false, 
     $using_component_pointers   := false
 ) {
+    comptime_cid :: #run -> int { value := component_info_type_id_counter; component_info_type_id_counter += 1; return value; };
+
     #if components.count > 0 {
         #if declare_component_pointers {
             using #as component_sentinel := Component_Sentinel.{
-                component_flags   = #run make_flag_array(..components),
-                description_flags = .HAS_POINTERS_TO_COMPONENTS
+                component_flags        = #run make_flag_array(..components),
+                description_flags      = .HAS_POINTERS_TO_COMPONENTS
             };
             #insert -> string {
                 builder: String_Builder;
@@ -34,8 +36,8 @@ Component_Info :: struct (
             }
         } else {
             using #as component_sentinel := Component_Sentinel.{
-                component_flags   = #run make_flag_array(..components),
-                description_flags = 0
+                component_flags        = #run make_flag_array(..components),
+                description_flags      = 0
             };
             #insert -> string {
                 builder: String_Builder;
@@ -184,6 +186,8 @@ HERE,
 // -----------------------------------------------------------------------------------
 
 #scope_module
+
+component_info_type_id_counter: u16 = 0;
 
 // for a given component, create a space of variables and constants where the
 // inserted code can work on the component, the array of the component, the component

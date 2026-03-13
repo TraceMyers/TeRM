@@ -329,6 +329,8 @@ resize_in_use :: (using pool: *Pool($T), new_count: s64) {
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------- :Struct_Of_Arrays
 
+// todo: make it so this stores in one block of memory rather than n blocks
+
 // implementation that converts a type into a struct wherein each field is an array 
 // corresponding a field of the struct.
 // in other words, instead of storing your data like so:

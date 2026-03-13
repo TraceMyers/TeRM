@@ -57,7 +57,7 @@ on_create_entities :: (new_entities: []*$I/interface Component_Info, entity_arra
         new_component_array_size := component_array.count + new_entities.count;
 
         array_resize(component_array, new_component_array_size);
-        array_resize(*entity_pointer_arrays[component_id], new_component_array_size);
+        array_resize(*context.entity_pointer_arrays[component_id], new_component_array_size);
 
         if component_array.data != xx allocation_min_addresses[component_id] {
             component_moved_allocation[component_id] = true;
@@ -77,7 +77,7 @@ on_create_entities :: (new_entities: []*$I/interface Component_Info, entity_arra
             // should have little to no cache perf hit except when the array
             // itself reallocates, because then the whole thing needs to be copied.
             // otherwise, you get only one cache line pull from it, per component free.
-            entity_pointer_arrays[component_id][assigned_component_index] = {xx entity_array_index, xx entity_index};
+            context.entity_pointer_arrays[component_id][assigned_component_index] = {xx entity_array_index, xx entity_index};
 
             if ent.description_flags & .HAS_POINTERS_TO_COMPONENTS {
                 pointer := get_component_pointer_at_index(ent, component_index);
@@ -102,13 +102,14 @@ on_create_entities :: (new_entities: []*$I/interface Component_Info, entity_arra
 
 // these entities will have their components deallocated and their Component_Info struct will be cleared.
 on_destroy_entities :: (destroyed_entities: []*$I/interface Component_Info, entity_array_index: int) {
-    if new_entities.count == 0 {
+    if destroyed_entities.count == 0 {
         return;
     }
 
     auto_release_temp();
 
-    entity_array               := cast,force([]I) context.entity_array_references.*[entity_array_index];
+    entity_array_ref           := context.entity_array_references.*[entity_array_index];
+    entity_array               := cast,force([]I) entity_array_ref.ref.*;
     components_that_moved      := make_dynamic_array(Component_Name, I.components.count,, temp);
     allocation_min_addresses, allocation_max_addresses := prepare_rebase_entity_pointers();
 
@@ -134,7 +135,7 @@ on_destroy_entities :: (destroyed_entities: []*$I/interface Component_Info, enti
                 component_array.count -= 1;
             } else {
                 // remove-swap with last element in components array
-                component_array[assigned_component_index] = component_array[component_array.count-1];
+                component_array.*[assigned_component_index] = component_array.*[component_array.count-1];
                 component_array.count -= 1;
 
                 //                            .------------------ 1. this component was just removed because 
@@ -144,20 +145,21 @@ on_destroy_entities :: (destroyed_entities: []*$I/interface Component_Info, enti
                 //                            ^           |^        
                 //                            |           || 
                 //      2. the end component  .-----------.|
-                //      is copied into the old             | 3. this entity owns this component, which just moved.
-                //      component's place                  |    so, we need to re-point it to the new location
+                //      is copied into the old             | 3. this entity owns this component, 
+                //      component's place                  |    which just moved. so, we need to
+                //                                         |    re-point it to the new location
                 //                                         |
                 // some entity array [   |   |   |   |   | e |   ]
 
-                index_based_pointer := entity_pointer_arrays[component_id][assigned_component_index];
+                index_based_pointer := context.entity_pointer_arrays[component_id][assigned_component_index];
 
-                owning_entity_array_ref := entity_array_references.*[index_based_pointer.array];
+                owning_entity_array_ref := context.entity_array_references.*[index_based_pointer.array];
                 owning_entity_array     := owning_entity_array_ref.ref.*;
                 type_stride             := owning_entity_array_ref.type_stride;
-                sentinel_offset         := owning_entity_array_ref.sentinel_offset;
+                sentinel_offset         := owning_entity_array_ref.type_sentinel_offset;
 
-                owning_entity_location  := cast(*u8) owning_entity_array + type_stride * index_based_pointer.entity;
-                owning_sentinel         := (*Component_Sentinel) (owning_entity_location + sentinel_offset);
+                owning_entity_location  := cast(*u8) owning_entity_array.data + type_stride * index_based_pointer.entity;
+                owning_sentinel         := cast(*Component_Sentinel) (owning_entity_location + sentinel_offset);
 
                 for :per_component owning_sentinel {
                     if it != component_id {
@@ -166,7 +168,7 @@ on_destroy_entities :: (destroyed_entities: []*$I/interface Component_Info, enti
 
                     if owning_sentinel.description_flags & .HAS_POINTERS_TO_COMPONENTS {
                         pointer := get_component_pointer_at_index(owning_sentinel, component_index);
-                        pointer.* = *component_array[assigned_component_index];
+                        pointer.* = *(component_array.*)[assigned_component_index];
                     } else {
                         id := get_component_id_at_index(ent, component_index);
                         id.* = xx assigned_component_index;
@@ -177,18 +179,25 @@ on_destroy_entities :: (destroyed_entities: []*$I/interface Component_Info, enti
             }
         }
 
-        // todo make minium_count a parameter per array
-        if array_shrink_if_small_enough(*component_array, minimum_count = 256) {
+        // todo make minimum_count a parameter per array
+        if array_shrink_if_small_enough(component_array, minimum_count = 256) {
             array_add(*components_that_moved, component_id);
         }
     });
+
+    for ent : destroyed_entities {
+        ent.component_sentinel = {};
+    }
 
     if components_that_moved.count > 0 {
         execute_rebase_entity_pointers(components_that_moved, allocation_min_addresses, allocation_max_addresses);
     }
 }
 
-on_move_entity_memory_location :: (*$I/interface *Component_Info, old_entity_index: s32, old_array_index: s32, new_array_index: s32) {
+// any time an entity changes its position in an array, or moves to a new array, this
+// needs to be called. new_array_index only needs to be supplied if the entity changed
+// to a new entity array.
+on_move_entity_array_location :: (entity: *$I/interface Component_Info, new_array_index : s32 = -1) {
 
 }
 

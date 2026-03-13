@@ -20,16 +20,22 @@ _Entity_Pointer :: struct {
 }
 
 Entity_Array_Reference :: struct {
+    // a pointer to an entity array, type stripped
     ref: *[]u8;
 
     // components information stored two ways: 
-    // array for iterating over 
+    // array for when you need to do something over all components
     components: []Component_Name;
-    // flags for checking if the entity type has a component
+    // flags for o(1) checking if an entity type has a component
     component_flags: Flag_Array(Component_Name);
 
+    // for iterating over entity arrays without knowing the type:
+    // the iteration stride to get to each entity/element; size + alignment
     type_stride: int;
+    // the offset from an entity/element to its Component_Sentinel
     type_sentinel_offset: int;
+
+    // a runtime copy of Component_Info.declare_component_pointers
     type_has_component_pointers: bool;
 }
 
@@ -42,7 +48,7 @@ generate_entity_component_storage_declaration :: (
     return tprint(
 #string HERE
 %: [%][..]u8;
-%: [%][..]s32;
+%: [%][..]_Entity_Pointer;
 %: [..]Entity_Array_Reference;
 HERE,
         components_name, importer.component_declarations.count,

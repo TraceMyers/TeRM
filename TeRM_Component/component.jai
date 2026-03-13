@@ -23,7 +23,7 @@ Component_Info :: struct (
             #insert -> string {
                 builder: String_Builder;
                 for components {
-                    field_lower := to_lower(tprint("%", it),,temp);
+                    field_lower := to_lower(tprint("%", cast(Component_Name) it),,temp);
                     #if using_component_pointers {
                         print(*builder, "\tusing %_pointer: *struct { using %: #run importer.component_declarations[%].type; };\n", field_lower, field_lower, cast(int) it);
                     } else {
@@ -59,7 +59,7 @@ Component_Description_Flags :: enum_flags u8 {
 
 per_component :: (sent: *Component_Sentinel, body: Code, flags: For_Flags) #expand {
     `it_index: int;
-    for i : 0..enum_max_value(Component_Name) {
+    for i : 0..enum_highest_value(Component_Name) {
         `it := cast(Component_Name) i;
         if has_component(sent, `it) {
             defer it_index += 1;

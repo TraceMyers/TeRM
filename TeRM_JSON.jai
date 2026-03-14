@@ -477,6 +477,7 @@ JSON_Error_Code :: enum u16 {
     EXPECTED_COMMA_OR_END_OF_COLLECTION;
     UNEXPECTED_END_OF_INPUT;
     IMPROPERLY_FORMED_HEX;
+    INVALID_ESCAPE_CODE_IN_STRING;
     _INTERNAL_ERROR_MARKER_COUNT_DOES_NOT_MATCH_COLLECTION_COUNT;
     _INTERNAL_ERROR_BUILDER_STACK_DEPLETED;
     _INTERNAL_FAILED_TRANSLATING_UTF16_TO_UTF8;
@@ -964,6 +965,9 @@ parse_string :: (parser: *JSON_Parser) -> bool {
                 if !parse_hex_bytes(parser) {
                     return false;
                 }
+            case;
+                add_load_error(.INVALID_ESCAPE_CODE_IN_STRING, parser.pos, .FATAL);
+                return false;
             }
         } else if input_string[pos] == #char "\"" {
             assert(pos + passthrough_byte_count + 1 == input_string.count);

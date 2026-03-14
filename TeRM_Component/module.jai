@@ -12,9 +12,17 @@
 
 // for telling the module where your entity component storage is.
 // e.g. context.entity_component_arrays = entity_component_storage;
-#add_context entity_component_arrays: [][..]u8;
+#add_context entity_component_arrays: []Component_Array;
 #add_context entity_id_arrays:        [][..]s64;  // todo: rename
 #add_context tracked_entity_arrays:   *[..]*void; // todo: rename
+
+Component_Array :: struct {
+    array: [..]u8;
+    id:   Component_ID;
+    name: Component_Name;
+    kind: Component_Kind;
+    type_stride: s16; // todo: set this
+}
 
 // optional convenience string generator. #insert #run wherever you want your entity component storage.
 generate_entity_component_storage_declaration :: (
@@ -24,7 +32,7 @@ generate_entity_component_storage_declaration :: (
 ) -> string {
     return tprint(
 #string HERE
-%: [%][..]u8;
+%: [%]Component_Array;
 %: [%][..]s64;
 %: [..]*void;
 HERE,
@@ -34,19 +42,43 @@ HERE,
     );
 }
 
+Component_ID :: enum u16 {
+    #insert -> string {
+        builder: String_Builder;
+        for decl : importer.component_declarations {
+            print(*builder, "\t%_%;\n", decl.kind, decl.name);
+        }
+        return builder_to_string(*builder);
+    }
+}
+
 // the component enum, generated from your input in the same order
 Component_Name :: enum u16 {
     #insert -> string {
         builder: String_Builder;
-        for t : importer.component_declarations {
-            name := t.name;
-            if importer.uppercase_enum_names {
-                name = to_upper(name,,temp);
-            }
+        unique_names: [..]string;
+        for decl : importer.component_declarations {
+            array_add_if_unique(*unique_names, decl.name);
+        }
+        for name : unique_names {
             print(*builder, "\t%;\n", name);
         }
         return builder_to_string(*builder);
     }
+}
+
+Component_Kind :: enum u16 {
+     #insert -> string {
+        builder: String_Builder;
+        unique_kinds: [..]string;
+        for decl : importer.component_declarations {
+            array_add_if_unique(*unique_kinds, decl.kind);
+        }
+        for kind : unique_kinds {
+            print(*builder, "\t%;\n", kind);
+        }
+        return builder_to_string(*builder);
+    }   
 }
 
 #load "component.jai";

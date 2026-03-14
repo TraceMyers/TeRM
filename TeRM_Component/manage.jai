@@ -140,10 +140,10 @@
 // 4. (implicit) end handshake, crashing if step 3 was not completed correctly
 
 Component_Management_Handshake :: struct {
-    component_allocation_counts:        [#run enum_highest_value(Component_Name)+1]s32;
+    component_allocation_counts:        [#run enum_highest_value(Component_ID)+1]s32;
     entity_pointers_updated:            []bool;
     component_moved_allocation:         []bool;
-    components_with_new_allocations:    []Component_Name;
+    components_with_new_allocations:    []Component_ID;
     component_allocation_min_addresses: []int;
     component_allocation_max_addresses: []int;
     stage := enum {
@@ -210,7 +210,7 @@ begin_modifications :: (using handshake: *Component_Management_Handshake) {
         if context.tracked_entity_arrays != null {
             entity_pointers_updated = make_static_array(bool, context.tracked_entity_arrays.count,, temp);
         }
-        component_moved_allocation = make_static_array(bool, enum_highest_value(Component_Name) + 1,, temp);
+        component_moved_allocation = make_static_array(bool, enum_highest_value(Component_ID) + 1,, temp);
         component_allocation_min_addresses, component_allocation_max_addresses = prepare_rebase_entity_pointers();
         stage = .MODIFYING_COMPONENT_ALLOCATIONS;
     case .MODIFYING_COMPONENT_ALLOCATIONS;
@@ -229,10 +229,10 @@ begin_updating_pointers :: (using handshake: *Component_Management_Handshake) ->
         stage = .FINISHED;
         return false;
     case .MODIFYING_COMPONENT_ALLOCATIONS;
-        which_components_moved := make_dynamic_array(Component_Name, enum_highest_value(Component_Name) + 1,, temp);
+        which_components_moved := make_dynamic_array(Component_ID, enum_highest_value(Component_ID) + 1,, temp);
         for component_moved : component_moved_allocations {
             if component_moved {
-                array_add(*which_components_moved, cast(Component_Name) it_index);
+                array_add(*which_components_moved, cast(Component_ID) it_index);
             }
         }
         if which_components_moved.count == 0 {
@@ -252,7 +252,7 @@ begin_updating_pointers :: (using handshake: *Component_Management_Handshake) ->
 
 Component_Management_Description :: struct {
     count: int;
-    components: []Component_Name;
+    components: []Component_ID;
 }
 
 allocate_components :: (handshake: *Component_Management_Handshake, descriptions: ..Component_Management_Description) -> bool {
@@ -418,14 +418,14 @@ free_components :: (handshake: *Component_Management_Handshake, destroyed_entiti
 }
 
 Shrink_Component_Array_Rule :: struct {
-    component_id: Component_Name;
+    component_id: Component_ID;
     shrink_if_using_less_than_proportion := 0.7;
     unless_less_than_min_count: s32 = 64;
     free_if_count_reaches_zero := false;
 }
 
 shrink_component_arrays :: (specified_rules: []Shrink_Component_Array_Rule = .[]) {
-    rules: [#run enum_highest_value(Component_Name)+1]Shrink_Component_Array_Rule;
+    rules: [#run enum_highest_value(Component_ID)+1]Shrink_Component_Array_Rule;
 
     for rule : specified_rules {
         rules[rule.component_id] = it;
@@ -455,8 +455,10 @@ prepare_rebase_entity_pointers :: () -> []int, []int {
     allocation_max_addresses.data  += array_len;
     allocation_max_addresses.count -= array_len;
 
-    for array : context.entity_component_arrays {
+    for context.entity_component_arrays {
+        array := it.array;
         allocation_min_addresses[it_index] = cast(int) array.data;
+        // todo: this isn't right. this will get the byte address
         allocation_max_addresses[it_index] = cast(int) (array.data + (array.count - 1));
     }
     return allocation_min_addresses, allocation_max_addresses;

@@ -15,8 +15,8 @@
 //     );
 
 //     if any_allocations {
-//         hand_out_components(*handshake, new_cameras,    cameras);
-//         hand_out_components(*handshake, new_characters, characters);
+//         hand_out_components(*handshake, new_cameras);
+//         hand_out_components(*handshake, new_characters);
 
 //         update_pointers_to_components(*handshake, cameras);
 //         update_pointers_to_components(*handshake, characters);
@@ -28,8 +28,8 @@
 //     handshake: Component_Management_Handshake;
 //     begin(*handshake);
 
-//     free_components(*handshake, destroyed_cameras,    cameras);
-//     free_components(*handshake, destroyed_characters, characters);
+//     free_components(*handshake, destroyed_cameras);
+//     free_components(*handshake, destroyed_characters);
 
 //     shrink_component_arrays();
 
@@ -48,97 +48,6 @@
 // the boilerplate would be pretty easy to codegen away if you want,
 // but I think there's little enough that it shouldn't be necessary.
 
-// older docs:
-
-// this module expects you to store entities of a type contiguously, rather 
-// than indirectly. 
-//
-// e.g.
-//
-// Entity_Person [   |   |   |   |   |   |   | P ]
-//                                             ^-- a new Entity_Person was added to the end of this array
-//
-//                                     .--------- pass an array with a pointer to that entity P
-//                                     |          as well as the base array of entities containing P
-//                                     |           |
-//                                     v           v
-//                allocate_components([*P], entity_persons);
-
-// the decisions on constraints and interface were intended to strike a balance
-// between safety, ease of use, speed, code size, and complexity. i guess 
-// modules/libs are always doing this dance, but the point is that i put a lot 
-// of thought into what would make this kind of module *actually* good. 
-
-// and by good, i mean that it realizes the goal of setting your program up
-// for success in doing cache efficient bulk processing, provides convenience 
-// features that are often missing from things in the ECS vein, and only requires 
-// you to write memory & reference management code where doing so dramatically 
-// reduces the possibility for bugs to arise, while keeping complexity down.
-
-// if you want to have something more automatically managed, you could certainly
-// build such a thing on top of this module. actually, if you build it inside your 
-// program rather than inside a module, you aren't constrained by the API boundary, 
-// and making something more automatic would be pretty straightforward, given the 
-// work already done here.
-
-// ------------------------------------------------------------------------------------------
-
-// here is an example usage / explanation of the component management interface:
-
-// [init/tracking]
-
-// // for all arrays of entities which use pointers to components (rather than indices),
-// // make them tracked so that the program will crash if they aren't updated after changes
-// // to component data.
-//
-// // if you don't use this feature because you want to do things another way, that's up to you.
-// // everything will still work as long as you make sure pointers get rebased.
-//
-// track_array_of_entities_with_component_pointers(*characters);
-// track_array_of_entities_with_component_pointers(*weapons);
-// ...
-// 
-// // later, if you want to remove an array from tracking:
-//
-// untrack_array_of_entities_with_component_pointers(*characters);
-
-// [runtime]
-//
-// {
-//      auto_release_temp(); // if you want. handshake makes temp allocations
-//      handshake: Component_Management_Handshake;
-//      begin(*handshake);
-//
-//      // for each set of newly created entities, allocate and initialize their components.
-//      allocate_components(*handshake, just_spawned_characters, characters); 
-//      allocate_components(*handshake, just_spawned_weapons,    weapons);
-//      allocate_components(*handshake, just_spawned_buildings,  buildings);
-//      ...
-//
-//      // for each set of destroyed entities, deallocate thir components and clear their component infos
-//      free_components(*handshake, just_destroyed_characters, characters);
-//      ...
-//
-//      // for ALL arrays of entities that use pointers (rather than indices) for components,
-//      // make sure their pointers are updated, since component allocations may have moved.
-//      // if you have no entities with component pointers, you don't need to do this step.
-//      update_entity_component_pointers(*handshake, *characters);
-//      update_entity_component_pointers(*handshake, *weapons);
-//      ...
-//
-//      <--- at this point, the program will crash if you tracked any arrays,
-//           but did not update them with update_entity_component_pointers().
-// }
-//
-// if you want to sidestep the safety mechanism of begin(), you don't have to call it.
-//
-// you don't need to do allocate and free at the same time. you can split the work
-// up however you like, but the basic structure is:
-// 1. begin handshake
-// 2. update component allocations
-// 3. update pointers to components, only for entities that use this feature
-// 4. (implicit) end handshake, crashing if step 3 was not completed correctly
-
 Component_Management_Handshake :: struct {
     component_allocation_counts:        [#run enum_highest_value(Component_ID)+1]s32;
     entity_pointers_updated:            []bool;
@@ -152,6 +61,11 @@ Component_Management_Handshake :: struct {
         UPDATING_POINTERS_TO_COMPONENTS;
         FINISHED;
     }.UNINITIALIZED;
+}
+
+Component_Management_Description :: struct {
+    count: int;
+    components: []Component_ID;
 }
 
 begin :: (using handshake: *Component_Management_Handshake) #expand {
@@ -250,10 +164,6 @@ begin_updating_pointers :: (using handshake: *Component_Management_Handshake) ->
     return true;
 }
 
-Component_Management_Description :: struct {
-    count: int;
-    components: []Component_ID;
-}
 
 allocate_components :: (handshake: *Component_Management_Handshake, descriptions: ..Component_Management_Description) -> bool {
     allocating_any_components: bool;
@@ -291,7 +201,7 @@ allocate_components :: (handshake: *Component_Management_Handshake, descriptions
 }
 
 
-hand_out_components :: (handshake: *Component_Management_Handshake, new_entities: []*$I/interface Component_Info, array_entities_belong_to: []I) {
+hand_out_components :: (handshake: *Component_Management_Handshake, new_entities: []*$I/interface Component_Info) {
     if new_entities.count == 0 {
         return;
     }
@@ -316,8 +226,6 @@ hand_out_components :: (handshake: *Component_Management_Handshake, new_entities
 
             assert(component_id_is_valid(xx,trunc assigned_component_index));
 
-            entity_index := ent - array_entities_belong_to.data;
-            assert(entity_index >= 0 && entity_index < array_entities_belong_to.count); 
 
             // for each component, store a back-reference to the entity that owns it.
             // should have only a small cache perf hit except when the array
@@ -338,7 +246,7 @@ hand_out_components :: (handshake: *Component_Management_Handshake, new_entities
 
 
 // these entities will have their components deallocated and their Component_Info struct will be cleared.
-free_components :: (handshake: *Component_Management_Handshake, destroyed_entities: []*$I/interface Component_Info, array_entities_belong_to: []I) {
+free_components :: (handshake: *Component_Management_Handshake, destroyed_entities: []*$I/interface Component_Info) {
     if destroyed_entities.count == 0 {
         return;
     }
@@ -347,9 +255,6 @@ free_components :: (handshake: *Component_Management_Handshake, destroyed_entiti
 
     #insert #run for_each_component_type(I.components, #code {
         for ent : destroyed_entities {
-            entity_index := ent - array_entities_belong_to.data;
-            assert(entity_index >= 0 && entity_index < array_entities_belong_to.count); 
-
             assigned_component_index: u16;
 
             if ent.description_flags & .HAS_POINTERS_TO_COMPONENTS {

@@ -183,6 +183,27 @@ HERE,
     return output;
 }
 
+for_every_component_type :: (body: Code) -> string {
+    builder: String_Builder;
+    body_str := code_string(body);
+    for 0..enum_highest_value(Component_Name) {
+        print(*builder, 
+#string HERE
+    {
+        component_index :: %;
+        component_id    :: Component_Name.%;
+        component_type  :: #run importer.component_declarations[component_id].type;
+        component_array := cast(*[..]component_type) *context.entity_component_arrays[component_id];
+        %
+    }
+HERE,
+            it, cast(Component_Name) it, body_str
+        );
+    }
+    output := builder_to_string(*builder);
+    return output;
+}
+
 // -----------------------------------------------------------------------------------
 
 #scope_module

@@ -1,3 +1,55 @@
+// the documentation in this file is mostly written as an exploration of
+// what I want the interface to be. it's very much in flux and everything
+// is being edited pretty extensively.
+
+// the newest component allocation management picture looks like this:
+
+// after entities spawning...
+// {
+//     handshake: Component_Management_Handshake;
+//     begin(*handshake);
+
+//     any_allocations := allocate_components(*handshake,
+//         {new_cameras.count,    Camera.components   },
+//         {new_characters.count, Character.components}
+//     );
+
+//     if any_allocations {
+//         hand_out_components(*handshake, new_cameras,    cameras);
+//         hand_out_components(*handshake, new_characters, characters);
+
+//         update_pointers_to_components(*handshake, cameras);
+//         update_pointers_to_components(*handshake, characters);
+//     }
+// }
+
+// before destroying entities...
+// {
+//     handshake: Component_Management_Handshake;
+//     begin(*handshake);
+
+//     free_components(*handshake, destroyed_cameras,    cameras);
+//     free_components(*handshake, destroyed_characters, characters);
+
+//     shrink_component_arrays();
+
+//     update_pointers_to_components(*handshake, cameras);
+//     update_pointers_to_components(*handshake, characters);
+// }
+
+// the idea is that it's probably convenient to just call the same
+// code every frame, and have arrays like new_whatever lying around
+// empty most of the time, filled whever somebody is spawned.
+// same goes for destroyed_whatever. 
+
+// update_pointers_to_components() is only called for arrays of entities
+// who are (optionally) using component pointers instead of indexes.
+
+// the boilerplate would be pretty easy to codegen away if you want,
+// but I think there's little enough that it shouldn't be necessary.
+
+// older docs:
+
 // this module expects you to store entities of a type contiguously, rather 
 // than indirectly. 
 //
@@ -88,6 +140,7 @@
 // 4. (implicit) end handshake, crashing if step 3 was not completed correctly
 
 Component_Management_Handshake :: struct {
+    component_allocation_counts:        [#run enum_highest_value(Component_Name)+1]s32;
     entity_pointers_updated:            []bool;
     component_moved_allocation:         []bool;
     components_with_new_allocations:    []Component_Name;
@@ -197,7 +250,48 @@ begin_updating_pointers :: (using handshake: *Component_Management_Handshake) ->
     return true;
 }
 
-allocate_components :: (handshake: *Component_Management_Handshake, new_entities: []*$I/interface Component_Info, array_entities_belong_to: []I) {
+Component_Management_Description :: struct {
+    count: int;
+    components: []Component_Name;
+}
+
+allocate_components :: (handshake: *Component_Management_Handshake, descriptions: ..Component_Management_Description) -> bool {
+    allocating_any_components: bool;
+
+    // todo: this should be a different stage than begin or the next should be different
+    begin_modifications(handshake);
+
+    for description : descriptions {
+        if description.count == 0 {
+            continue;
+        }
+        for component : description.components {
+            handshake.component_allocation_counts[component] += xx description.count;
+            allocating_any_components = true;
+        }
+    }
+
+    if !allocating_any_components {
+        return false;
+    }
+
+    #insert #run for_every_component_type(#code {
+        alloc_count := handshake.component_allocation_counts[component_id];
+        if alloc_count != 0 {
+            new_size := component_array.count + alloc_count;
+            array_resize(component_array, new_size);
+            array_resize(*context.entity_id_arrays[component_id], new_size);
+            if component_array.data != xx handshake.component_allocation_min_addresses[component_id] {
+                handshake.component_moved_allocation[component_id] = true;
+            }
+        }
+    });
+
+    return true;
+}
+
+
+hand_out_components :: (handshake: *Component_Management_Handshake, new_entities: []*$I/interface Component_Info, array_entities_belong_to: []I) {
     if new_entities.count == 0 {
         return;
     }
@@ -212,22 +306,14 @@ allocate_components :: (handshake: *Component_Management_Handshake, new_entities
     // unrolled loop over all components of this entity type.
     // not unrolled for speed or anything, just for convenience of codewriting.
     #insert #run for_each_component_type(I.components, #code {
-
-        new_component_array_size := component_array.count + new_entities.count;
-
-        array_resize(component_array, new_component_array_size);
-        array_resize(*context.entity_id_arrays[component_id], new_component_array_size);
-
-        if component_array.data != xx handshake.component_allocation_min_addresses[component_id] {
-            handshake.component_moved_allocation[component_id] = true;
-        }
-
-        add_component_count := new_entities.count;
-
         for 0..new_entities.count-1 {
             ent := new_entities[it];
-            assigned_component_index := component_array.count - add_component_count;
-            add_component_count -= 1;
+
+            components_remaining := *handshake.component_allocation_counts[component_id];
+            assigned_component_index := component_array.count - components_remaining.*;
+            components_remaining.* -= 1;
+            assert(components_remaining.* >= 0);
+
             assert(component_id_is_valid(xx,trunc assigned_component_index));
 
             entity_index := ent - array_entities_belong_to.data;
@@ -249,6 +335,7 @@ allocate_components :: (handshake: *Component_Management_Handshake, new_entities
         }
     });
 }
+
 
 // these entities will have their components deallocated and their Component_Info struct will be cleared.
 free_components :: (handshake: *Component_Management_Handshake, destroyed_entities: []*$I/interface Component_Info, array_entities_belong_to: []I) {
@@ -323,14 +410,39 @@ free_components :: (handshake: *Component_Management_Handshake, destroyed_entiti
                 }
             }
         }
-
-        // todo make minimum_count a parameter per array
-        array_shrink_if_small_enough(component_array, minimum_count = 256);
     });
 
     for ent : destroyed_entities {
         ent.component_sentinel = {};
     }
+}
+
+Shrink_Component_Array_Rule :: struct {
+    component_id: Component_Name;
+    shrink_if_using_less_than_proportion := 0.7;
+    unless_less_than_min_count: s32 = 64;
+    free_if_count_reaches_zero := false;
+}
+
+shrink_component_arrays :: (specified_rules: []Shrink_Component_Array_Rule = .[]) {
+    rules: [#run enum_highest_value(Component_Name)+1]Shrink_Component_Array_Rule;
+
+    for rule : specified_rules {
+        rules[rule.component_id] = it;
+    }
+
+    #insert #run for_all_component_types(#code {
+        rule := *rules[component_id];
+        if component_array.count <= rule.unless_less_than_min_count {
+            if component_array.allocated != 0 
+            && component_array.count == 0 
+            && rule.free_if_count_reaches_zero {
+                array_reset(component_array);
+            }
+        } else {
+            array_shrink_if_small_enough(*component_array, rule.shrink_if_using_less_than_proportion, 0);
+        }
+    });
 }
 
 prepare_rebase_entity_pointers :: () -> []int, []int {
@@ -350,7 +462,7 @@ prepare_rebase_entity_pointers :: () -> []int, []int {
     return allocation_min_addresses, allocation_max_addresses;
 }
 
-update_entity_component_pointers :: (handshake: *Component_Management_Handshake, entity_array: $I/interface Component_Info) {
+update_pointers_to_components :: (handshake: *Component_Management_Handshake, entity_array: []$I/interface Component_Info) {
     if !begin_updating_pointers(handshake) {
         return;
     }
@@ -359,18 +471,6 @@ update_entity_component_pointers :: (handshake: *Component_Management_Handshake,
     }
 
     #insert #run for_each_component_type(I.components, #code {
-        entity_type_has_component: bool;
-        for handshake.components_with_new_allocations {
-            if component_id == it {
-                entity_type_has_component = true;
-                break;
-            }
-        }
-
-        if !entity_type_has_component {
-            continue;
-        }
-
         prev_min_address := prev_min_addresses[component_id];
         prev_max_address := prev_max_addresses[component_id];
         new_min_address  := cast(int) component_array.data;

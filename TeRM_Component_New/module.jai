@@ -12,11 +12,20 @@
 
 #add_context user_component_storage: *Component_Storage;
 
+#load "component.jai";
 #load "collection.jai";
 
-component_id_to_type :: ($id: Component_ID) -> Type {
+component_id_to_type :: inline ($id: Component_ID) -> Type {
     component_name :: #run component_definitions[id].name;
     return component_types[component_name];
+}
+
+component_id_to_name :: inline (id: Component_ID) -> Component_Name {
+    return component_definitions[id].name;
+}
+
+component_id_to_kind :: inline (id: Component_ID) -> Component_Kind {
+    return component_definitions[id].kind;
 }
 
 component_name_and_kind_to_id :: (name: Component_Name, kind: Component_Kind) -> Component_ID {
@@ -26,6 +35,38 @@ component_name_and_kind_to_id :: (name: Component_Name, kind: Component_Kind) ->
         }
     }
     return 0xffff; 
+}
+
+get_component_ids :: (kind: Component_Kind) -> []Component_ID {
+    ids := make_dynamic_array(Component_ID, enum_highest_value(Component_ID)+1);
+    for array : context.user_component_storage.arrays { 
+        if array.kind == kind {
+            array_add(*ids, array.id);
+        }
+        break;
+    }
+    return ids;
+}
+
+get_component_ids_at_compile_time :: (kind: Component_Kind) -> []Component_ID {
+    ids := make_dynamic_array(Component_ID, enum_highest_value(Component_ID)+1);
+    for def : component_definitions {
+        if def.kind == kind {
+            array_add(*ids, xx it_index);
+        }
+    }
+    return ids;
+}
+
+get_component_ids :: (name: Component_Name) -> []Component_ID {
+    ids := make_dynamic_array(Component_ID, enum_highest_value(Component_ID)+1);
+    for array : context.user_component_storage.arrays { 
+        if array.name == name {
+            array_add(*ids, array.id);
+        }
+        break;
+    }
+    return ids;
 }
 
 Component_Storage :: struct {
@@ -93,10 +134,10 @@ Component_ID :: enum u16 {
 #import "Basic";
 #import "Math";
 
-
-// todo: don't need these
+// todo: don't need these..?
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Array";
+#import "TeRM/TeRM_FlagArray";
 
 #scope_module
 

@@ -194,9 +194,9 @@ get_component :: (sent: *Component_Sentinel, $id: Component_ID) -> *$T
 // this isn't a macro because macro backtick declarations are all put into the outer scope,
 // which piles them all into the same scope, which causes a redefine error per 
 // declaration x number of components. loops don't have this problem, but this isn't a loop.
-for_each_component_type :: ($components: []Component_ID, body: Code) -> string {
+for_each_component_type :: ($components: []Component_ID, $body: Code) -> string {
     builder: String_Builder;
-    body_str := code_string(body);
+    body_str := #run code_string(body);
     for components {
         print(*builder, 
 #string HERE
@@ -215,9 +215,9 @@ HERE,
     return output;
 }
 
-for_every_component_type :: (body: Code) -> string {
+for_every_component_type :: ($body: Code) -> string {
     builder: String_Builder;
-    body_str := code_string(body);
+    body_str := #run code_string(body);
     for 0..enum_highest_value(Component_ID) {
         print(*builder, 
 #string HERE

@@ -18,6 +18,14 @@
 #add_context entity_id_arrays:        [][..]s64;  // todo: rename
 #add_context tracked_entity_arrays:   *[..]*void; // todo: rename
 
+#insert -> string {
+    builder: String_Builder;
+    for 0..enum_highest_value(Component_ID) {
+        print(*builder, "component_array_prototype_%: Component_Array(.%);\n", it, cast(Component_ID) it);
+    }
+    return builder_to_string(*builder);
+}
+
 Component_Array_Base :: struct {
     id:   Component_ID;
     name: Component_Name;
@@ -38,6 +46,15 @@ Component_Array :: struct($in_id: Component_ID) {
         kind = #insert -> string { return tprint(".%;", importer.component_declarations[in_id].kind); },
         type_stride = #run size_of(type_of(array[0]))
     };
+}
+
+
+// todo: one big init step
+initialize_entity_component_arrays :: () {
+    for *array : context.entity_component_arrays {
+        array.id = cast(Component_ID) it_index;
+
+    }
 }
 
 declare_component_arrays_by_id :: ($ids: ..Component_ID) #expand {
@@ -62,23 +79,21 @@ collect :: (names: []Component_Name, must_be_kind: []Component_Kind = .[], must_
         for kind : must_be_kind {
             kind_is_active[kind] = true;
         }
-    } else {
-        if must_not_be_kind.count > 0 {
-            for *active, active_kind_index : must_be_active {
-                found_in_list: bool;
-                for kind : must_not_be_kind {
-                    if xx kind == active_kind_index {
-                        found_in_list = true;
-                        break;
-                    }
-                }
-                if !found_in_list {
-                    active.* = true;
+    } else if must_not_be_kind.count > 0 {
+        for kind_enum : 0..enum_highest_value(Component_Kind) {
+            found_in_list: bool;
+            for kind : must_not_be_kind {
+                if kind == cast(Component_Kind) kind_enum {
+                    found_in_list = true;
+                    break;
                 }
             }
-        } else for *active, active_kind_index : must_be_active {
-            active.* = true;
+            if !found_in_list {
+                kind_is_active[kind_enum] = true;
+            }
         }
+    } else for *active : kind_is_active {
+        active.* = true;
     }
 
     kinds_that_have_all_names := make_dynamic_array(Component_Kind, kind_count,, temp);
@@ -88,11 +103,11 @@ collect :: (names: []Component_Name, must_be_kind: []Component_Kind = .[], must_
             continue;
         }
         id_array_size := *per_name_id_arrays[array.kind];
-        id_array_data := *per_name_id_arrays[kind_count + array.kind * names.count];
+        id_array_data := *per_name_id_arrays[kind_count + cast(int) array.kind * names.count];
         if id_array_size.* >= names.count {
             continue;
         }
-        for name, name_index : must_have_names {
+        for name, name_index : names {
             if array.name == name {
                 // putting the component ids in the same order as the names
                 // because each set of component arrays is iterated over in parallel,
@@ -112,9 +127,10 @@ collect :: (names: []Component_Name, must_be_kind: []Component_Kind = .[], must_
 
                 id_location  := id_array_data + name_index;
                 id_location.* = xx array.id;
+                log("found id: %", array.id);
                 id_array_size.* += 1;
                 if id_array_size.* == names.count {
-                    array_add(*kinds_that_have_all_names, kind);
+                    array_add(*kinds_that_have_all_names, array.kind);
                 }
                 break;
             }
@@ -128,15 +144,15 @@ collect :: (names: []Component_Name, must_be_kind: []Component_Kind = .[], must_
     allocation_size_for_pointers_and_counts := kinds_that_have_all_names.count * size_of([]*Component_Array_Untyped);
     allocation_size_for_array_datas         := kinds_that_have_all_names.count * names.count * size_of(*Component_Array_Untyped);
 
-    collection: [][]Component_Array_Untyped;
+    collection: [][]*Component_Array_Untyped;
     collection.data  = xx alloc(allocation_size_for_pointers_and_counts + allocation_size_for_array_datas);
     collection.count = kinds_that_have_all_names.count;
 
     for kind, set_of_arrays : kinds_that_have_all_names {
-        collection[set_of_arrays].data = collection.data + set_of_arrays * size_of([]*Component_Array_Untyped);
+        collection[set_of_arrays].data = xx ((cast(*u8) collection.data) + collection.count * size_of([]*Component_Array_Untyped) + set_of_arrays * size_of(*Component_Array_Untyped));
         collection[set_of_arrays].count = names.count;
         for *array : collection[set_of_arrays] {
-            component_id := per_name_id_arrays[kind_count + kind * names.count + it_index];
+            component_id := (*per_name_id_arrays[kind_count + cast(int) kind * names.count] + it_index).*;
             array.* = *context.entity_component_arrays[component_id];
         }
     }

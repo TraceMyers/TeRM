@@ -117,7 +117,6 @@ generate_parallel_enum_and_array :: ($create_infos: ..Enumarray_Create_Info, enu
     print_to_builder(*builder, "];");
     
     out_str := builder_to_string(*builder);
-    log(out_str);
     return out_str;
 }
 

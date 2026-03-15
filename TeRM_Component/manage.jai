@@ -333,10 +333,10 @@ shrink_component_arrays :: (specified_rules: []Shrink_Component_Array_Rule = .[]
     rules: [#run enum_highest_value(Component_ID)+1]Shrink_Component_Array_Rule;
 
     for rule : specified_rules {
-        rules[rule.component_id] = it;
+        rules[rule.component_id] = rule;
     }
 
-    #insert #run for_all_component_types(#code {
+    #insert #run for_every_component_type(#code {
         rule := *rules[component_id];
         if component_array.count <= rule.unless_less_than_min_count {
             if component_array.allocated != 0 
@@ -345,7 +345,7 @@ shrink_component_arrays :: (specified_rules: []Shrink_Component_Array_Rule = .[]
                 array_reset(component_array);
             }
         } else {
-            array_shrink_if_small_enough(*component_array, rule.shrink_if_using_less_than_proportion, 0);
+            array_shrink_if_small_enough(component_array, rule.shrink_if_using_less_than_proportion, 0);
         }
     });
 }

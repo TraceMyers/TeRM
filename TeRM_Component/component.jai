@@ -120,21 +120,53 @@ get_component_array :: ($id: Component_ID) -> *[..]$T
     return cast(*[..]T) *context.entity_component_arrays[id].array;
 }
 
+
+// get_arrays_of_a_kind :: (
+
 // returns array of indices to entity arrays
-get_entities_that_have_component :: (id: Component_ID) -> []s32 {
-    arrays: [..]s32;
-    arrays.allocator = temp;
-    array_reserve(*arrays, min(context.entity_array_references.count, 256));
+// get_entities_that_have_component :: (id: Component_ID) -> []s32 {
+//     arrays: [..]s32;
+//     arrays.allocator = temp;
+//     array_reserve(*arrays, min(context.entity_array_references.count, 256));
 
-    for ref, ref_index : context.entity_array_references.* {
-        if is_set(*ref.component_flags, id) {
-            array_add(*arrays, ref_index);
-            break;
-        }
-    }
+//     for ref, ref_index : context.entity_array_references.* {
+//         if is_set(*ref.component_flags, id) {
+//             array_add(*arrays, ref_index);
+//             break;
+//         }
+//     }
 
-    return arrays;
-}
+//     return arrays;
+// }
+
+Component_Array_Package_Base :: struct {}
+
+// user really wants:
+
+// positions: Vector3 (from camera, character, etc..)
+// velocities: Vector3 (from camera, character, etc..)
+
+// to achieve this, will need a bridge array type that is basically just a thing
+// that has a special for_expansion that goes to the next set of arrays when one
+// is ending.
+
+// also, the for expansion should define which array you're in (say, by component_id)
+// so that you can always, within your procedure using this data, get the entity of
+// the current iteration.
+
+// todo: from id's version. this one has no guarantees about arrays being aligned, so
+// no bridge array
+// get_component_arrays :: ($ids: []Component_ID) -> Component_Array_Package(ids) {
+//     pkg: Component_Array_Package(ids); 
+//     for id, id_index : ids {
+//         pkg.all_arrays[id_index].array.data  = xx context.entity_component_arrays[id].array.data;
+//         pkg.all_arrays[id_index].array.count =    context.entity_component_arrays[id].array.count;
+//     }
+//     return pkg;
+// }
+
+// todo: all 'names' from 'kinds' who have all of those 'names'
+// this one returns a bridge array
 
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------------------- :codegen

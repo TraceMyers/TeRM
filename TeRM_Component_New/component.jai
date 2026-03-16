@@ -1,26 +1,26 @@
 // a non-polymorphic header to grab onto when acting type-agnostically
 Component_Sentinel_Header :: struct {
     // for inspection of what components an entity has
-    has_components: Flag_Array(Component_ID);
+    kind: Component_Kind;
     // for whatever
     component_flags: Component_Sentinel_Flags;
 }
 
 Component_Sentinel :: struct(
-    $kind: Component_Kind, 
+    $in_kind: Component_Kind, 
     $component_references_are_pointers := false, 
     $set_these_pointers_to_using: ..Component_Name 
 ) {
-    COMPONENTS :: #run get_component_ids(kind);
+    COMPONENTS   :: #run get_component_ids(in_kind);
 
-    using header := Component_Sentinel_Header.{
-        has_components  = #run make_flag_array(..COMPONENTS),
+    using component_sentinel_header := Component_Sentinel_Header.{
+        kind            = in_kind,
         component_flags = 0
     };
 
     #if component_references_are_pointers {
 
-        header.component_flags = .HAS_POINTERS_TO_COMPONENTS;
+        component_sentinel_header.component_flags = .HAS_POINTERS_TO_COMPONENTS;
 
         #insert -> string {
             builder: String_Builder;
@@ -70,12 +70,12 @@ Component_Sentinel_Flags :: enum_flags u8 {
 // 'index' is not the component enum, but a true index. if the component info has 5 component pointers, 
 // it's like indexing into a 5-length array of those pointers. this returns a pointer TO the pointer,
 // not the pointer field itself.
-get_component_pointer_at_index :: (sent: *Component_Sentinel, index: int) -> **void {
+get_component_pointer_at_index :: (sent: *Component_Sentinel_Header, index: int) -> **void {
     assert((sent.component_flags & .HAS_POINTERS_TO_COMPONENTS) != 0);
     return xx (((cast(*u8) sent) + OFFSET_FROM_TOP_OF_ENTITY_TO_FIRST_POINTER) + (index * size_of(*void)));
 }
 
-get_component_id_at_index :: (sent: *Component_Sentinel, index: int) -> *u16 {
+get_component_id_at_index :: (sent: *Component_Sentinel_Header, index: int) -> *u16 {
     assert((sent.component_flags & .HAS_POINTERS_TO_COMPONENTS) == 0);
     return xx (((cast(*u8) sent) + OFFSET_FROM_TOP_OF_ENTITY_TO_FIRST_ID) + (index * size_of(u16)));
 }
@@ -88,7 +88,13 @@ invalidate_component_id :: inline (index: *u16) {
     index.* = 0xffff;
 }
 
-call_over_ids :: ($proc: Code, $component_ids: []Component_ID, data: *void) #expand {
+// pass a procedure with this signature to specialze_call_for_each_id. 'data' should be a pointer,
+// but it doesn't necessarily need to be a void pointer as in the signature here.
+specialize_call_for_each_id_proc_type :: #type ($id: Component_ID, it_index: int, data: *void);
+
+// for each compile-time known id in the list, specialize (= instantiate a non-polymorphic definition with 
+// specific param types) and call the procedure 'proc'. the procedure should have the above signature.
+specialize_call_for_each_id :: ($proc: Code, $component_ids: []Component_ID, data: *void) #expand {
     #insert -> string {
         builder: String_Builder;
         proc_name :: #run code_string(proc);
@@ -104,7 +110,7 @@ call_over_ids :: ($proc: Code, $component_ids: []Component_ID, data: *void) #exp
 // used for indexing to an component info's pointers
 OFFSET_FROM_TOP_OF_ENTITY_TO_FIRST_POINTER :: #run -> int {
     ends_with :: (#import "String").ends_with;
-    cinfo : Component_Sentinel(kind = cast(Component_Kind) 0, true);
+    cinfo : Component_Sentinel(in_kind = cast(Component_Kind) 0, true);
     tinfo := cast(*Type_Info_Struct) type_of(cinfo);
     for member : tinfo.members {
         if ends_with(member.name, "_pointer") {
@@ -116,7 +122,7 @@ OFFSET_FROM_TOP_OF_ENTITY_TO_FIRST_POINTER :: #run -> int {
 
 OFFSET_FROM_TOP_OF_ENTITY_TO_FIRST_ID :: #run -> int {
     ends_with :: (#import "String").ends_with;
-    cinfo : Component_Sentinel(kind = cast(Component_Kind) 0, false);
+    cinfo : Component_Sentinel(in_kind = cast(Component_Kind) 0, false);
     tinfo := cast(*Type_Info_Struct) type_of(cinfo);
     for member : tinfo.members {
         if ends_with(member.name, "_id") {

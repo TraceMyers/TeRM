@@ -12,13 +12,13 @@
 
 //      - the data layout is very directly defined by the user, but isn't cumbersome.
 //      - arrays stay parallel without you having to think about it, and without management overhead.
-//      - filtering components and database-like functionality doesn't require making any new types.
-//      - filtering components and database-like functionality takes very little code, like this:
+//      - using database-like functionality doesn't require making any new types.
+//      - using database-like functionality takes very little code, like this:
 //
 //         collection := filter_components(.[.POSITION, .VELOCITY]);
 //         for row : collection {
 //        
-//              // convenience macro, defines position_components, velocity_components, and CIDs.
+//              // convenience macro, defines position_components, velocity_components, and Entity_IDs.
 //              declare_typed_row(row, .[.POSITION, .VELOCITY]); 
 //        
 //              // iterate over position and velocity arrays in parallel
@@ -28,7 +28,7 @@
 
 //                  // you can use this to reference the entity, if needed. the procedure is 
 //                  // defined in your program, as part of the interface with the module.
-//                  entity := my_get_entity_from_cid(CIDs[it]);
+//                  entity := my_get_entity_from_cid(entity_ids[it]);
 //                  ...
 //              }
 //          }
@@ -42,20 +42,38 @@
         Component_Definition_Type   :: void;
         Component_Name_Type         :: void;
         Component_Kind_Type         :: void;
+        Entity_ID_Type              :: void;
         component_type_array        :: void;
         component_definitions       :: void;
-        component_sentinel_to_cid   :: void;
-        cid_to_component_sentinel   :: void;
+        entity_to_entity_id         :: void;
+        entity_id_to_sentinel       :: void;
     }
 }
-
-CID :: s64;
 
 #add_context user_component_storage: *Component_Storage;
 
 #load "component.jai";
 #load "collection.jai";
 #load "manage.jai";
+
+initialize_component_module :: (storage: *Component_Storage) {
+    context.user_component_storage = storage;
+    #insert -> string {
+        builder: String_Builder;
+        for 0..enum_highest_value(Component_ID) {
+            print(*builder, 
+#string HERE
+    {
+        array := cast,force(*Component_Array(Component_ID.%)) *context.user_component_storage.arrays[%];
+        array.type_initializer = xx initializer_of(array.component_type);
+    }
+HERE,
+                cast(Component_ID) it, it
+            );
+        }
+        return builder_to_string(*builder);
+    }
+}
 
 component_id_to_type :: inline (id: Component_ID) -> Type {
     component_name := component_definitions[id].name;
@@ -111,11 +129,13 @@ Component_Storage :: struct {
     character_velocity_components: Component_Array(.CHARACTER_VELOCITY);
     monster_position_components:   Component_Array(.MONSTER_POSITION);
 
-    #overlay(character_position_components) arrays: [3]Component_Array_Untyped; */
+    #overlay(character_position_components) arrays: [3]Component_Array_Base; */
 
     #insert -> string {
         builder: String_Builder;
         first_array_name: string;
+
+        // generate all of the typed component arrays
         for def, di : component_definitions {
             array_name: string;
             if def.array_name_override.count != 0 {
@@ -130,36 +150,41 @@ Component_Storage :: struct {
             }
             print(*builder, "%: Component_Array(xx %);\n", array_name, di);
         }
-        print(*builder, "#overlay(%) arrays: [%]Component_Array_Untyped;", first_array_name, component_definitions.count);
+
+        // while the user program's kind <-> entity mapping doesn't need to be one-to-one
+        // the naming scheme assumes that is true, because it makes the code more readable.
+        // in practice, the user may put multiple component sentinels, each with different kinds,
+        // on one struct, and call that struct an Entity. and, that's fine, but in the language
+        // of this module, an entity is an object of a certain kind, which has certain components.
+        print(*builder, "entity_ids: [%][..]Entity_ID;\n", enum_highest_value(Component_Kind) + 1);
+
+        // generate the array of untyped component arrays, for using the component arrays
+        // in type agnostic situations.
+        print(*builder, "#overlay(%) arrays: [%]Component_Array_Base;", first_array_name, component_definitions.count);
+
         return builder_to_string(*builder);
     }
 }
 
 Component_Array_Base :: struct {
+    untyped_array: [..]u8;
     id:   Component_ID;
     name: Component_Name;
     kind: Component_Kind;
     type_size: s16;
-    type_has_initializer: bool;
-}
-
-Component_Array_Untyped :: struct {
-    array: [..]u8;
-    ids:   [..]s64;
-    using #as base: Component_Array_Base;
+    type_initializer: (*void) -> () #no_context;
 }
 
 Component_Array :: struct($in_id: Component_ID) {
     component_type :: #run component_id_to_type(in_id);
-    array: [..]#run component_type;
-    ids:   [..]s64;
+    component_initializer :: initializer_of(component_type);
     using #as base := Component_Array_Base.{
         id   = in_id,
         name = #run component_definitions[in_id].name,
         kind = #run component_definitions[in_id].kind,
-        type_size = #run size_of(component_type),
-        type_has_initializer = #run initializer_of(component_type) != null
+        type_size = #run size_of(component_type)
     };
+    #overlay(base.untyped_array) array: [..]#run component_type;
 }
 
 Component_ID :: enum u16 {
@@ -186,74 +211,10 @@ Component_ID :: enum u16 {
 
 #scope_module
 
-Component_Kind        :: user_types.Component_Kind_Type;
-Component_Name        :: user_types.Component_Name_Type;
-component_definitions :: user_types.component_definitions;
-component_types       :: user_types.component_type_array;
-component_sentinel_to_cid   :: user_types.component_sentinel_to_cid;
-cid_to_component_sentinel   :: user_types.cid_to_component_sentinel;
-
-    // this scope is a reference for how to pass your types into the import
-
-    // the boat by which you ship your types into the module
-    // Type_Provider_Default :: struct {
-    //     Component_Definition_Type   :: Component_Definition_Default;
-    //     Component_Name_Type         :: Component_Name_Default;
-    //     Component_Kind_Type         :: Component_Kind_Default;
-    //     Component_Name_To_Type      :: Component_Name_To_Type_Default;
-    //     component_definitions       :: COMPONENT_DEFINITIONS_DEFAULT;
-    // }
-
-    // // each entry here represents a unique component, and an of that component's type.
-    // COMPONENT_DEFINITIONS_DEFAULT :: Component_Definition_Default.[
-    //     {kind=.CAMERA,           name=.TRANSFORM},
-    //     {kind=.CAMERA,           name=.MOVE},
-    //     {kind=.CHARACTER,        name=.TRANSFORM},
-    //     {kind=.CHARACTER,        name=.MOVE},
-    //     {kind=.STATIC_GEOMETRY,  name=.TRANSFORM}
-    // ];
-
-    // // a component is described by its kind, name, id and type. 'kind' and 'name' are supplied here. 
-    // // 'name' is bound to 'type' via the tagged union Component_Name_To_Type, and an 'id' is derived 
-    // // from the combination of kind + name.
-    // Component_Definition_Default :: struct {
-    //     kind: Component_Kind_Default;
-    //     name: Component_Name_Default;
-    //     // if you want to override the Component_ID name. otherwise, it will be
-    //     // the kind + name joined together with an underscore.
-    //     id_name_override := "";
-    //     // if you want to override the name of the component array, this is it
-    //     array_name_override := "";
-    // }
-
-    // // what kind of thing uses the component. a very reasonable (and maybe the most managable) version
-    // // of this is to define one kind per entity type.
-    // Component_Kind_Default :: enum u16 {
-    //     CAMERA;
-    //     CHARACTER;
-    //     STATIC_GEOMETRY;
-    // }
-
-    // // one entry per component type
-    // Component_Name_Default :: enum u16 {
-    //     TRANSFORM;
-    //     MOVE;
-    // }
-
-    // // map component name enum to its respective type
-    // Component_Name_To_Type_Default :: union type: Component_Name_Default {
-    //     .TRANSFORM,, transform := Example_Transform_Component;
-    //     .MOVE     ,, move      := Example_Move_Component;
-    // }
-
-    // Example_Transform_Component :: struct {
-    //     position: Vector3;
-    //     orientation: Quaternion;
-    // }
-
-    // Example_Move_Component :: struct {
-    //     velocity:     Vector3;
-    //     ground_accel: float;
-    //     air_accel:    float;
-    //     flags:        enum_flags {};
-    // }
+Component_Kind            :: user_types.Component_Kind_Type;
+Component_Name            :: user_types.Component_Name_Type;
+Entity_ID                 :: user_types.Entity_ID_Type;
+component_definitions     :: user_types.component_definitions;
+component_types           :: user_types.component_type_array;
+entity_to_entity_id       :: user_types.entity_to_entity_id;
+entity_id_to_sentinel     :: user_types.entity_id_to_sentinel;

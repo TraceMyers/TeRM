@@ -1,122 +1,105 @@
 
-Component_Management_Handshake :: struct {
-    component_allocation_counts: [component_definitions.count]s32;
-}
-
-Component_Allocation_Description :: struct {
+Component_Allocation_Request :: struct {
+    kind:       Component_Kind;
     components: []Component_ID;
-    count: s32;
-    has_pointers: bool;
+    header:     *Component_Sentinel_Header; 
+    entity_id:  Entity_ID;
 }
 
-make_allocation_description :: ($user_type: Type, count: int) -> Component_Allocation_Description {
-    return {
-        user_type.COMPONENTS, 
-        xx count, 
-        user_type.component_references_are_pointers,
-    };
-}
-
-allocate_components :: (handshake: *Component_Management_Handshake, descriptions: ..Component_Allocation_Description) -> bool {
-    
-    allocating_any_components: bool;
-
-    for description : descriptions {
-        if description.count == 0 {
-            continue;
-        }
-        for component : description.components {
-            handshake.component_allocation_counts[component] += xx description.count;
-            allocating_any_components = true;
-        }
+prepare_component_allocations :: (requests: *[..]Component_Allocation_Request, new_entities: []*$I/interface Component_Sentinel) {
+    array_reserve(requests, requests.count + new_entities.count);
+    for ent : new_entities {
+        kind   := I.in_kind;
+        id     := entity_to_entity_id(ent);
+        header := *ent.component_sentinel_header;
+        array_add(requests, {kind, I.COMPONENTS, header, id});
     }
+}
 
-    if !allocating_any_components {
+free_components :: (request: *[..]Component_Allocation_Request) -> bool {
+    if requests.count == 0 {
+        return false;
+    }
+}
+
+allocate_components :: (requests: *[..]Component_Allocation_Request) -> bool {
+    if requests.count == 0 {
         return false;
     }
 
-    for alloc_count, aci : handshake.component_allocation_counts {
-        component_id := cast(*Component_ID) aci;
-        if alloc_count != 0 {
-            component_array := *context.user_component_storage.arrays[aci];
-            current_max     := component_array.array.allocated;
-            new_count       := component_array.array.count + alloc_count;
+    Component_Allocation :: struct {
+        request_index: s32;
+        component_index: s32;
+    }
+
+    component_allocations: [component_definitions.count][..]Component_Allocation;
+
+    for request, ri : requests.* {
+        for component, ci : request.components {
+            allocations := *component_allocations[component];
+            if allocations.count == 0 {
+                allocations.allocator = temp;
+                array_reserve(allocations, requests.count);
+            }
+            array_add(allocations, {xx ri, xx ci});
+        }
+        // id array is parallel to all of the component arrays of a kind.
+        // adding this now because it's convenient to do so. components will be handed out in
+        // such an order as to make the component allocations parallel to this id.
+        array_add(*context.user_component_storage.entity_ids[request.kind], request.entity_id);
+    }
+
+    for allocation_set, asi : component_allocations {
+        if allocation_set.count != 0 {
+            component_id := cast(*Component_ID) asi;
+            component_array := *context.user_component_storage.arrays[asi];
+            current_max     := component_array.untyped_array.allocated;
+            new_count       := component_array.untyped_array.count + allocation_set.count;
+            elem_size       := component_array.type_size;
+
             if new_count > current_max {
                 reserve_count := new_count * 2;
-                elem_size := component_array.type_size;
-                array_reserve(cast(*Resizable_Array) *component_array.array, reserve_count, elem_size);
+                array_reserve(cast(*Resizable_Array) *component_array.untyped_array, reserve_count, elem_size);
 
                 // if the component type has no initializer, zero the memory now. else,
                 // when the components are handed out, their initializers will get called.
-                if !component_array.type_has_initializer {
+                if component_array.type_initializer == null {
                     using component_array;
-                    begin_zero := array.data + array.count * type_size;
-                    end_zero   := array.data + new_count   * type_size;
-                    zero_size := end_zero - begin_zero;
+                    begin_zero := untyped_array.data + untyped_array.count * type_size;
+                    end_zero   := untyped_array.data + new_count   * type_size;
+                    zero_size  := end_zero - begin_zero;
                     memset(begin_zero, 0, zero_size);
                 }
             }
-            component_array.array.count = new_count;
-            array_resize(*component_array.ids, new_count);
+
+            // todo: fix pointers by storing an array of ids to entities with pointers,
+            // handling that here.
+
+            component_array.untyped_array.count = new_count;
+            allocation_index := component_array.untyped_array.count - allocation_set.count;
+
+            for allocation : allocation_set {
+                assert(component_id_is_valid(xx allocation_index));
+                request := requests.*[allocation.request_index];
+                sentinel_header := request.header;
+                component_memory := component_array.untyped_array.data + (allocation_index * component_array.type_size);
+
+                if sentinel_header.component_flags & .HAS_POINTERS_TO_COMPONENTS {
+                    pointer := get_component_pointer_at_index(sentinel_header, allocation.component_index);
+                    pointer.* = component_memory;
+                } else {
+                    id := get_component_id_at_index(sentinel_header, allocation.component_index);
+                    id.* = xx allocation_index;
+                }
+
+                if component_array.type_initializer != null {
+                    component_array.type_initializer(component_memory);
+                }
+
+                allocation_index += 1;
+            }
         }
     }
 
     return true;
-}
-
-hand_out_components :: (handshake: *Component_Management_Handshake, new_entities: []*$I/interface Component_Sentinel) {
-    Data_Package :: struct($T: Type) {
-        handshake: *Component_Management_Handshake;
-        new_entities: []*T;
-        entity_ids: []CID;
-    }
-
-    hand_out_components_of_id :: ($component_id: Component_ID, component_index: int, data_pkg: *Data_Package(I)) {
-        component_array := cast(*Component_Array(component_id)) *context.user_component_storage.arrays[component_id];
-        component_type :: component_array.component_type;
-
-        for ent : data_pkg.new_entities {
-            components_remaining := *data_pkg.handshake.component_allocation_counts[component_id];
-            assigned_component_index := component_array.array.count - components_remaining.*;
-            components_remaining.* -= 1;
-            assert(components_remaining.* >= 0);
-
-            assert(component_id_is_valid(xx,trunc assigned_component_index));
-
-            // for each component, store a back-reference to the entity that owns it.
-            // should have only a small cache perf hit except when the array
-            // itself reallocates, because then the whole thing needs to be copied.
-            // otherwise, you get only one cache line pull from it, per component free.
-            component_array.ids[assigned_component_index] = data_pkg.entity_ids[it_index];
-
-            if ent.component_flags & .HAS_POINTERS_TO_COMPONENTS {
-                pointer := get_component_pointer_at_index(ent, component_index);
-                pointer.* = *component_array.array[assigned_component_index];
-            } else {
-                id := get_component_id_at_index(ent, component_index);
-                id.* = xx assigned_component_index;
-            }
-
-            // memory was already zeroed if there is no initializer.
-            // there is an initializer only if a struct sets any values explicitly in its definition.
-            ini :: #run initializer_of(component_type);
-            #if ini {
-                inline ini(*component_array.array[assigned_component_index]);
-            }
-        }
-    }
-
-    // --------
-
-    if new_entities.count == 0 {
-        return;
-    }
-
-    entity_ids := make_static_array(CID, new_entities.count,, temp);
-    for *id : entity_ids {
-        id.* = component_sentinel_to_cid(new_entities[it_index]);
-    }
-
-    data_pkg := Data_Package(I).{handshake, new_entities, entity_ids};
-    call_over_ids(hand_out_components_of_id, I.COMPONENTS, *data_pkg);
 }

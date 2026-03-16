@@ -1,7 +1,7 @@
 
 collect :: collect_components_by_name;
 
-collect_components_by_id :: (ids: []Component_ID) -> []*Component_Array_Untyped {
+collect_components_by_id :: (ids: []Component_ID) -> []*Component_Array_Base {
     long_collection := alloc_component_collection(1, ids.count)[0];
     for *array : long_collection {
         array.* = *context.user_component_storage.arrays[ids[it_index]];
@@ -9,7 +9,7 @@ collect_components_by_id :: (ids: []Component_ID) -> []*Component_Array_Untyped 
     return long_collection;
 }
 
-collect_components_by_kind :: (kinds: []Component_Kind) -> []*Component_Array_Untyped {
+collect_components_by_kind :: (kinds: []Component_Kind) -> []*Component_Array_Base {
     ids := make_dynamic_array(Component_ID, enum_highest_value(Component_ID)+1,, temp);
     for array : context.user_component_storage.arrays { 
         for kind : kinds {
@@ -22,7 +22,7 @@ collect_components_by_kind :: (kinds: []Component_Kind) -> []*Component_Array_Un
     return collect_components_by_id(ids);
 }
 
-collect_components_by_name :: (names: []Component_Name) -> []*Component_Array_Untyped {
+collect_components_by_name :: (names: []Component_Name) -> []*Component_Array_Base {
     ids := make_dynamic_array(Component_ID, enum_highest_value(Component_ID)+1,, temp);
     for array : context.user_component_storage.arrays { 
         for name : names {
@@ -72,7 +72,7 @@ collect_components_by_name :: (names: []Component_Name) -> []*Component_Array_Un
 // note that this procedure has a little bit of overhead to it, as it's n * m in the number
 // of components * number of names. but, it returns pointers to arrays, so you could just
 // call once per collection you need, per duration of the data.
-filter_components :: (names: []Component_Name, must_be_kind: []Component_Kind = .[], must_not_be_kind: []Component_Kind = .[]) -> [][]*Component_Array_Untyped {
+filter_components :: (names: []Component_Name, must_be_kind: []Component_Kind = .[], must_not_be_kind: []Component_Kind = .[]) -> [][]*Component_Array_Base {
     kind_count     := enum_highest_value(Component_Kind) + 1;
     kind_is_active := make_static_array(bool, kind_count,, temp);
     per_name_id_arrays := make_static_array(s32,  kind_count + kind_count * names.count,, temp);
@@ -154,16 +154,16 @@ filter_components :: (names: []Component_Name, must_be_kind: []Component_Kind = 
     return collection;
 }
 
-alloc_component_collection :: (name_count: int, rows_per_name: int) -> [][]*Component_Array_Untyped {
-    allocation_size_for_pointers_and_counts := name_count * size_of([]*Component_Array_Untyped);
-    allocation_size_for_array_datas         := name_count * rows_per_name * size_of(*Component_Array_Untyped);
+alloc_component_collection :: (name_count: int, rows_per_name: int) -> [][]*Component_Array_Base {
+    allocation_size_for_pointers_and_counts := name_count * size_of([]*Component_Array_Base);
+    allocation_size_for_array_datas         := name_count * rows_per_name * size_of(*Component_Array_Base);
 
-    collection: [][]*Component_Array_Untyped;
+    collection: [][]*Component_Array_Base;
     collection.data  = xx alloc(allocation_size_for_pointers_and_counts + allocation_size_for_array_datas);
     collection.count = name_count;
 
     for name : 0..name_count-1 {
-        data_base := cast(*Component_Array_Untyped) (cast(*u8) collection.data) + collection.count * size_of([]*Component_Array_Untyped);
+        data_base := cast(*Component_Array_Base) (cast(*u8) collection.data) + collection.count * size_of([]*Component_Array_Base);
         collection[name].data = xx (data_base + rows_per_name * name);
         collection[name].count = rows_per_name;
     }
@@ -181,13 +181,13 @@ alloc_component_collection :: (name_count: int, rows_per_name: int) -> [][]*Comp
 //          ...
 //      }
 // }
-declare_typed_row :: (untyped_row: []*Component_Array_Untyped, $names: []Component_Name, $suffix := "_components", $all_arrays_in_row_must_have_same_count := true) #expand {
+declare_typed_row :: (untyped_row: []*Component_Array_Base, $names: []Component_Name, $suffix := "_components", $all_arrays_in_row_must_have_same_count := true) #expand {
     assert(untyped_row.count == names.count);
 
     assert(untyped_row.count == names.count);
     #if all_arrays_in_row_must_have_same_count {
         if untyped_row.count > 1 then for 1..untyped_row.count-1 {
-            assert(untyped_row[it].array.count == untyped_row[0].array.count);
+            assert(untyped_row[it].untyped_array.count == untyped_row[0].untyped_array.count);
         }
     }
 
@@ -196,7 +196,7 @@ declare_typed_row :: (untyped_row: []*Component_Array_Untyped, $names: []Compone
         for name, ni : names {
             name_lower := to_lower(tprint("%", name));
             print(*builder, "assert(untyped_row[%].name == .%);\n", ni, name);
-            print(*builder, "`%% := cast,force([]#run component_types[Component_Name.%]) untyped_row[%].array;\n", name_lower, suffix, name, ni);
+            print(*builder, "`%% := cast,force([]#run component_types[Component_Name.%]) untyped_row[%].untyped_array;\n", name_lower, suffix, name, ni);
         }
         output := builder_to_string(*builder);
         return output;

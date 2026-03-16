@@ -11,7 +11,7 @@ Component_Sentinel :: struct(
     $component_references_are_pointers := false, 
     $set_these_pointers_to_using: ..Component_Name 
 ) {
-    COMPONENTS :: #run get_component_ids_at_compile_time(kind);
+    COMPONENTS :: #run get_component_ids(kind);
 
     using header := Component_Sentinel_Header.{
         has_components  = #run make_flag_array(..COMPONENTS),
@@ -86,6 +86,17 @@ component_id_is_valid :: inline (index: u16) -> bool {
 
 invalidate_component_id :: inline (index: *u16) {
     index.* = 0xffff;
+}
+
+call_over_ids :: ($proc: Code, $component_ids: []Component_ID, data: *void) #expand {
+    #insert -> string {
+        builder: String_Builder;
+        proc_name :: #run code_string(proc);
+        for id : component_ids {
+            print(*builder, "`%(.%, %, xx data);\n", proc_name, id, it_index);
+        }
+        return builder_to_string(*builder);
+    }
 }
 
 #scope_module

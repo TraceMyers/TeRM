@@ -199,7 +199,6 @@ declare_typed_row :: (untyped_row: []*Component_Array_Untyped, $names: []Compone
             print(*builder, "`%% := cast,force([]#run component_types[Component_Name.%]) untyped_row[%].array;\n", name_lower, suffix, name, ni);
         }
         output := builder_to_string(*builder);
-        log(output);
         return output;
     };
 }

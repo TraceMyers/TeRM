@@ -13,14 +13,14 @@ Component_Sentinel_Header :: struct {
 
 Component_Sentinel :: struct(
     $in_kind: Component_Kind, 
-    $component_references_are_pointers := false, 
+    $declare_pointers_to_components := false, 
     $set_these_pointers_to_using: ..Component_Name 
 ) {
     COMPONENTS :: #run get_component_ids(in_kind);
 
     using component_sentinel_header := Component_Sentinel_Header.{ kind = in_kind };
 
-    #if component_references_are_pointers {
+    #if declare_pointers_to_components {
 
         component_sentinel_header.component_flags = .HAS_POINTERS_TO_COMPONENTS;
 
@@ -87,12 +87,26 @@ specialize_call_for_each_id_proc_type :: #type ($id: Component_ID, it_index: int
 
 // for each compile-time known id in the list, specialize (= instantiate a non-polymorphic definition with 
 // specific param types) and call the procedure 'proc'. the procedure should have the above signature.
-specialize_call_for_each_id :: ($proc: Code, $component_ids: []Component_ID, data: *void) #expand {
+specialize_call_for_each_id :: ($proc: Code, $component_ids: []Component_ID, data: *void = null) #expand {
     #insert -> string {
         builder: String_Builder;
         proc_name :: #run code_string(proc);
         for id : component_ids {
             print(*builder, "`%(.%, %, xx data);\n", proc_name, id, it_index);
+        }
+        return builder_to_string(*builder);
+    }
+}
+
+// for all component ids, specialize (= instantiate a non-polymorphic definition with 
+// specific param types) and call the procedure 'proc'. see above for more info.
+specialize_call_for_all_ids :: ($proc: Code, data: *void = null) #expand {
+    #insert -> string {
+        builder: String_Builder;
+        proc_name :: #run code_string(proc);
+        for 0..enum_highest_value(Component_ID) {
+            id := cast(Component_ID) it;
+            print(*builder, "`%(.%, %, xx data);\n", proc_name, id, it);
         }
         return builder_to_string(*builder);
     }

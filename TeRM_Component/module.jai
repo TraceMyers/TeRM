@@ -124,6 +124,11 @@ Component_Storage :: struct {
         // of this module, an entity is an object of a certain kind, which has certain components.
         print(*builder, "entity_ids: [%][..]Entity_ID;\n", enum_highest_value(Component_Kind) + 1);
 
+        // per kind, store an array of all entities that have pointers on them. if all entities in the kind
+        // have pointers, the entity_id[kind] array is used instead, and ids_of_entities_with_pointers[kind]
+        // will go unused.
+        print(*builder, "ids_of_entities_with_pointers: [%][..]Entity_ID;\n", enum_highest_value(Component_Kind) + 1);
+
         // generate the array of untyped component arrays, for using the component arrays
         // in type agnostic situations.
         print(*builder, "#overlay(%) arrays: [%]Component_Array_Base;", first_array_name, component_definitions.count);
@@ -175,9 +180,35 @@ Component_ID :: enum u16 {
 #import "TeRM/TeRM_FlagArray";
 #import "TeRM/TeRM_Metaprogram";
 
+COMPONENT_IDS_PER_KIND : [COMPONENT_KIND_COUNT][]Component_ID : #insert -> string {
+    builder: String_Builder;
+    print(*builder, ".[\n");
+    for 0..COMPONENT_KIND_COUNT-1 {
+        ids := get_component_ids(cast(Component_Kind) it);
+        print(*builder, ".[");
+        for ids {
+            print(*builder, ".%,\n", it);
+        }
+        print(*builder, "],\n");
+    }
+    print(*builder, "];\n");
+    return builder_to_string(*builder);
+};
+
 #scope_module
 
 #assert((cast(*Type_Info) user_types.Component_Index_Type).type == .INTEGER);
+
+// Store_IDs_To_Entities_With_Pointers :: enum u8 {
+// }
+
+COMPONENT_KIND_COUNT :: #run #run enum_highest_value(user_types.Component_Kind_Type) + 1;
+
+store_ids_to_entities_with_pointers: [COMPONENT_KIND_COUNT] enum u8 {
+    DO_NOT_STORE;
+    USE_ENTITY_IDS_ARRAY;
+    USE_IDS_OF_ENTITIES_WITH_POINTERS_ARRAY;
+};
 
 Component_Kind            :: user_types.Component_Kind_Type;
 Component_Name            :: user_types.Component_Name_Type;

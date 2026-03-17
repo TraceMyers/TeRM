@@ -73,20 +73,32 @@ copy_range_inside_array :: (array: *[]$T, dst: s64, src: s64, count: s64) {
     }
 }
 
-array_shrink :: (array: *[..]$T) {
-    if array.allocated > array.count {
-        new_allocation: *T;
-        if array.count > 0 {
-            new_allocation = alloc(array.count * size_of(T),, array.allocator);
-            memcpy(new_allocation, array.data, array.count * size_of(T));
+array_shrink :: (array: *[..]$T, remove_free_proportion := 0.75) {
+    assert(remove_free_proportion >= 0 && remove_free_proportion <= 1);
+
+    maybe_new_allocation: *T;
+    keep_allocated := array.allocated;
+
+    if array.count > 0 {
+        keep_extra := cast(int) (cast(float) (array.allocated - array.count) * (1-remove_free_proportion));
+        keep_allocated = array.count + keep_extra;
+
+        if keep_allocated == array.allocated {
+            maybe_new_allocation = array.data;
+        } else {
+            if keep_allocated > 0 {
+                maybe_new_allocation = alloc(keep_allocated * size_of(T),, array.allocator);
+                memcpy(maybe_new_allocation, array.data, keep_allocated * size_of(T));
+            }
             array_free(array.*,,array.allocator);
         }
-        array.data = new_allocation;
-        array.allocated = array.count;
     }
+
+    array.data = maybe_new_allocation;
+    array.allocated = keep_allocated;
 }
 
-array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion := 0.75, minimum_count := 8) -> bool {
+array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion := 0.5, remove_free_proportion := 0.75, minimum_count := 8) -> bool {
     if array.count < minimum_count && array.count != 0 {
         return false;
     }
@@ -96,7 +108,7 @@ array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion
         return false;
     }
     if array.count.(float) / array.allocated.(float) <= realloc_if_using_leq_proportion {
-        array_shrink(array);
+        array_shrink(array, remove_free_proportion);
         return true;
     }
     return false;

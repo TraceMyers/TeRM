@@ -27,34 +27,31 @@ allocate_components :: (requests: *[..]Component_Memory_Modification) -> bool {
 
     component_allocations: [component_definitions.count]s32;
 
-    // for each entity requesting a set of components, set its component index and take counts
-    // of how many components need to be allocated
+    // for each entity requesting a set of components, take counts of how many components need to be allocated
     for request, ri : requests.* {
-
-        entity_ids_for_kind := *context.user_component_storage.entity_ids[request.kind];
-
-        request.header.component_index = xx entity_ids_for_kind.count;
-        array_add(entity_ids_for_kind, request.entity_id);
-
         for component, ci : request.components {
             allocation_count := *component_allocations[component];
             component_array  := *context.user_component_storage.arrays[component];
-            assert(request.header.component_index == component_array.untyped_array.count + allocation_count.*);
             allocation_count.* += 1;
         }
     }
+
+    fix_pointers_for_kind: [COMPONENT_KIND_COUNT]bool;
 
     // increase component counts and reallocate if necessary
     for allocation_count, aci : component_allocations {
         if allocation_count == 0 then continue;
 
         component_array := *context.user_component_storage.arrays[aci];
-        component_id    := cast(*Component_ID) aci;
+        component_id    := cast(Component_ID) aci;
         current_max     := component_array.untyped_array.allocated;
         new_count       := component_array.untyped_array.count + allocation_count;
         elem_size       := component_array.type_size;
 
         if new_count > current_max {
+            component_kind := component_id_to_kind(component_id);
+            fix_pointers_for_kind[component_kind] = true;
+
             reserve_count := new_count * 2;
             array_reserve(cast(*Resizable_Array) *component_array.untyped_array, reserve_count, elem_size);
 
@@ -76,19 +73,47 @@ allocate_components :: (requests: *[..]Component_Memory_Modification) -> bool {
         component_array.untyped_array.count = new_count;
     }
 
-    // set all the pointers, for entities that have pointers to their components
+    // if there were reallocations, existing pointers need to be fixed
+    fix_entity_pointers_to_components_for_these_kinds(fix_pointers_for_kind);
+
+    // hand out component indexes and pointers to entities
     for request, ri : requests.* {
-        if (request.header.component_flags & .HAS_POINTERS_TO_COMPONENTS) {
-            for component, ci : request.components {
-                component_array := *context.user_component_storage.arrays[component];
-                elem_size       := component_array.type_size;
-                pointer         := get_component_pointer_at_index(request.header, ci);
-                pointer.*        = component_array.untyped_array.data + (cast(int) request.header.component_index * elem_size);
+
+        entity_ids_for_kind := *context.user_component_storage.entity_ids[request.kind];
+
+        // manage the array of id's referring to entities with pointers, because they need to be updated anytime
+        // allocations change.
+        if request.header.component_flags & .HAS_POINTERS_TO_COMPONENTS {
+            if store_ids_to_entities_with_pointers[request.kind] == {
+            case .DO_NOT_STORE;
+                // haven't come across any pointer entities in this kind yet
+                store_ids_to_entities_with_pointers[request.kind] = .USE_ENTITY_IDS_ARRAY;
+            case .USE_ENTITY_IDS_ARRAY;
+                // under the impression that all entities of this kind have pointers
+            case .USE_IDS_OF_ENTITIES_WITH_POINTERS_ARRAY;
+                // already mixed. add to the special array.
+                entity_ids_with_pointers := *context.user_component_storage.ids_of_entities_with_pointers[request.kind];
+                array_add(entity_ids_with_pointers, request.entity_id);
+            }
+        } else if store_ids_to_entities_with_pointers[request.kind] == .USE_ENTITY_IDS_ARRAY {
+            entity_ids_with_pointers := *context.user_component_storage.ids_of_entities_with_pointers[request.kind];
+            assert(entity_ids_with_pointers.count == 0);
+            // under the impression that all entities of this kind have pointers. need to fix.
+            store_ids_to_entities_with_pointers[request.kind] = .USE_IDS_OF_ENTITIES_WITH_POINTERS_ARRAY;
+            // copy all current ids to special ids array
+            if entity_ids_for_kind.count > 0 {
+                array_resize(entity_ids_with_pointers, entity_ids_for_kind.count);
+                memcpy(entity_ids_with_pointers.data, entity_ids_for_kind.data, entity_ids_for_kind.count * size_of(Entity_ID));
             }
         }
-    }
 
-    // todo: fix pointers
+        request.header.component_index = xx entity_ids_for_kind.count;
+        array_add(entity_ids_for_kind, request.entity_id);
+
+        if (request.header.component_flags & .HAS_POINTERS_TO_COMPONENTS) {
+            fix_entity_pointers_to_components(request.header, request.components);
+        }
+    }
 
     return true;
 }
@@ -156,11 +181,64 @@ free_components :: (requests: *[..]Component_Memory_Modification) -> bool {
                 pointer.* = component_memory;
             }
         }
-    }   
+    }
 
-    // todo: shrink component array allocations as called for
-    // todo: fix pointers
-    
+    // unrolled iterate over all component arrays and shrink them if they're below some usage proportion
+    // doing this with typed arrays rather than untyped because their 'count' and 'allocated' fields
+    // are just more easily managed with the existing array_shrink... by knowing their type.
+
+    shrink_component_array_of_id :: ($id: Component_ID, unused: int, fix_pointers: *[COMPONENT_KIND_COUNT]bool) {
+        array := cast,force(*Component_Array(id)) *context.user_component_storage.arrays[id];
+        if array_shrink_if_small_enough(*array.array, 0.6, 0.5) {
+            kind := component_definitions[id].kind;
+            fix_pointers.*[kind] = true;
+        }
+    }
+
+    // if the arrays shrank for a kind, that index will be set to true
+    fix_pointers_for_kind: [COMPONENT_KIND_COUNT]bool;
+    specialize_call_for_all_ids(shrink_component_array_of_id, *fix_pointers_for_kind);
+
+    // for all arrays that shrank, fix the pointers entities have to their components
+    fix_entity_pointers_to_components_for_these_kinds(fix_pointers_for_kind);
+
     return true;
+}
+
+fix_entity_pointers_to_components_for_these_kinds :: (set_pointers_for_kind: []bool) {
+    assert(set_pointers_for_kind.count == COMPONENT_KIND_COUNT);
+
+    // todo: fix pointers
+    for should_set_pointers, ki : set_pointers_for_kind {
+        if !should_set_pointers then continue;
+
+        kind := cast(Component_Kind) ki;
+        ids: []Entity_ID;
+
+        if store_ids_to_entities_with_pointers[kind] == {
+        case .DO_NOT_STORE;
+            // no pointer guys
+            continue;
+        case .USE_ENTITY_IDS_ARRAY;
+            ids = context.user_component_storage.entity_ids[kind];
+        case .USE_IDS_OF_ENTITIES_WITH_POINTERS_ARRAY;
+            ids = context.user_component_storage.ids_of_entities_with_pointers[kind];
+        }
+
+        for entity_id : ids {
+            sent := entity_id_to_sentinel(entity_id);
+            components := COMPONENT_IDS_PER_KIND[kind];
+            fix_entity_pointers_to_components(sent, components);
+        }
+    }
+}
+
+fix_entity_pointers_to_components :: inline (header: *Component_Sentinel_Header, components: []Component_ID) {
+    for component, ci : components {
+        component_array := *context.user_component_storage.arrays[component];
+        elem_size       := component_array.type_size;
+        pointer         := get_component_pointer_at_index(header, ci);
+        pointer.*        = component_array.untyped_array.data + (cast(int) header.component_index * elem_size);
+    }
 }
 

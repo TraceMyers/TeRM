@@ -1,18 +1,4 @@
-// maybe nobody will read this, but just in case...
-// this module is replacing the old version. the replacement is happening for a few reasons:
-
-// in the old version, type-resolving dependencies ping-ponged across the program <-> module boundary 
-// a lot, causing silly long resolution chains that the compiler (sort of) mistook for cycles.
-
-// there was too much metaprogramming. there is still quite a bit, but it was much worse. this version
-// is easier to read (and will be better when documentation is added back and reorganized).
-
-// the interface needed work. what came before 'collection.jai' wasn't very good. this interface is
-// exactly what I was aiming for: 
-
-//      - the data layout is very directly defined by the user, but isn't cumbersome (after setup, anyway)
-//      - arrays stay parallel without you having to think about it, and without management overhead.
-//      - using database-like functionality takes very little code
+// todo: write docs
 
 #module_parameters(
     user_types : $I/interface Type_Provider_Default = Type_Provider_Default

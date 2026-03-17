@@ -22,7 +22,7 @@ allocate_components :: (requests: *[..]Component_Memory_Modification) -> bool {
 
     Component_Allocation :: struct {
         request_index: s32;
-        component_index_on_entity: s32;
+        component_index_on_entity: Component_Index;
     }
 
     component_allocations: [component_definitions.count]s32;
@@ -103,7 +103,7 @@ free_components :: (requests: *[..]Component_Memory_Modification) -> bool {
         defer ids.count -= 1;
 
         index_of_removal := request.header.component_index;
-        request.header.component_index = 0xffff;
+        request.header.component_index = INVALID_COMPONENT_INDEX;
 
         removing_end_component := index_of_removal == ids.count - 1;
         header_owning_end_component: *Component_Sentinel_Header;

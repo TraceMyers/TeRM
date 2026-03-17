@@ -1,8 +1,13 @@
+
+INVALID_COMPONENT_INDEX : Component_Index : #run cast,trunc(Component_Index) 0xffff_ffff_ffff_ffff;
+
 // a non-polymorphic header to grab onto when acting type-agnostically
+// the ordering (index, kind, flags) gives 8 bytes when component index type is 4 bytes and kind is 2.
+// in general probably should keep component index first, kind second, flags 3rd, since that is likely
+// a decreasing-to-equal order in size most of the time.
 Component_Sentinel_Header :: struct {
-    // for inspection of what components an entity has
+    component_index := INVALID_COMPONENT_INDEX;
     kind: Component_Kind;
-    component_index: u16 = 0xffff;
     component_flags: Component_Sentinel_Flags;
 }
 
@@ -57,6 +62,15 @@ get_component :: inline (entity: *$I/interface Component_Sentinel_Header, $name:
     component_id    :: #run component_name_and_kind_to_id(name, I.in_kind);
     component_array := cast(*Component_Array(component_id)) *context.user_component_storage.arrays[component_id];
     return *component_array.array[entity.component_index];
+}
+
+
+is_valid_component_index :: inline (i: Component_Index) -> bool {
+    #if (cast(*Type_Info_Integer) Component_Index).signed {
+        return i >= 0;
+    } else {
+        return i != INVALID_COMPONENT_INDEX;
+    }
 }
 
 // 'index' is not a component enum, but a true index into the logical array of components on this 

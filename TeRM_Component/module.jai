@@ -8,6 +8,7 @@
         Component_Name_Type         :: void;
         Component_Kind_Type         :: void;
         Entity_ID_Type              :: void;
+        Component_Index_Type        :: void;
         component_type_array        :: void;
         component_definitions       :: void;
         entity_to_entity_id         :: void;
@@ -176,9 +177,12 @@ Component_ID :: enum u16 {
 
 #scope_module
 
+#assert((cast(*Type_Info) user_types.Component_Index_Type).type == .INTEGER);
+
 Component_Kind            :: user_types.Component_Kind_Type;
 Component_Name            :: user_types.Component_Name_Type;
 Entity_ID                 :: user_types.Entity_ID_Type;
+Component_Index           :: user_types.Component_Index_Type;
 component_definitions     :: user_types.component_definitions;
 component_types           :: user_types.component_type_array;
 entity_to_entity_id       :: user_types.entity_to_entity_id;

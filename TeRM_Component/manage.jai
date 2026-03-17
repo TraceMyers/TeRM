@@ -263,7 +263,6 @@ free_components :: (handshake: *Component_Management_Handshake, destroyed_entiti
                 pointer.* = null;
             } else {
                 id := get_component_id_at_index(ent, component_index);
-                // log("EARLIER, in proc address of %: %", component_id, cast(int) id);
                 assigned_component_index = id.*;
                 id.* = 0xffff;
             }
@@ -283,18 +282,6 @@ free_components :: (handshake: *Component_Management_Handshake, destroyed_entiti
                 context.entity_id_arrays[component_id][assigned_component_index] = id_of_entity_that_owns_component_at_the_end;
                 context.entity_id_arrays[component_id].count -= 1;
 
-                //                            .------------------ 1. this component was just removed because 
-                //                            |                      the entity that owned it was destroyed
-                //                            v
-                // some component array [   | x |   |   | o ] 
-                //                            ^           |^        
-                //                            |           || 
-                //      2. the end component  .-----------.|
-                //      is copied into the old             | 3. this entity owns this component, 
-                //      component's place                  |    which just moved. so, we need to
-                //                                         |    re-point it to the new location
-                //                                         |
-                // some entity array [   |   |   |   |   | e |   ]
                 
                 owning_sentinel := importer.cmp_get_sentinel(id_of_entity_that_owns_component_at_the_end);
 

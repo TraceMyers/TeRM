@@ -49,6 +49,16 @@ Component_Sentinel_Flags :: enum_flags u8 {
     HAS_POINTERS_TO_COMPONENTS;
 }
 
+get_component :: inline (entity: *$I/interface Component_Sentinel_Header, $name: Component_Name) -> *$T 
+#modify {
+    T = component_types[name];
+    return true;
+} {
+    component_id    :: #run component_name_and_kind_to_id(name, I.in_kind);
+    component_array := cast(*Component_Array(component_id)) *context.user_component_storage.arrays[component_id];
+    return *component_array.array[entity.component_index];
+}
+
 // 'index' is not the component enum, but a true index. if the component info has 5 component pointers, 
 // it's like indexing into a 5-length array of those pointers. this returns a pointer TO the pointer,
 // not the pointer field itself.

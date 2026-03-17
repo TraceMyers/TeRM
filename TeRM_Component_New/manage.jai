@@ -148,7 +148,7 @@ free_components :: (requests: *[..]Component_Memory_Modification) -> bool {
                 component_memory = component_array.untyped_array.data + (cast(int) index_of_removal * elem_size);
             }
 
-            end_component_memory := component_array.untyped_array.data + ((array_count - 1) * elem-size);
+            end_component_memory := component_array.untyped_array.data + ((array_count - 1) * elem_size);
             memcpy(component_memory, end_component_memory, elem_size);
 
             if !removing_end_component && header_owning_end_component.component_flags & .HAS_POINTERS_TO_COMPONENTS {

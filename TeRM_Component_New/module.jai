@@ -89,9 +89,9 @@ component_id_to_kind :: inline (id: Component_ID) -> Component_Kind {
 }
 
 component_name_and_kind_to_id :: (name: Component_Name, kind: Component_Kind) -> Component_ID {
-    for context.user_component_storage.arrays {
-        if it.name == name && it.kind == kind {
-            return it.id;
+    for def, di : component_definitions {
+        if def.name == name && def.kind == kind {
+            return cast(Component_ID) di;
         }
     }
     return 0xffff; 

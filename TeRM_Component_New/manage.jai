@@ -164,5 +164,3 @@ free_components :: (requests: *[..]Component_Memory_Modification) -> bool {
     return true;
 }
 
-#scope_file
-

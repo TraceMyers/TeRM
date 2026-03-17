@@ -192,7 +192,7 @@ main :: () {
     // entities with pointers to their components can access and use them as if they
     // were declared directly on the entity. they are automatically dereferenced, so you
     // don't have to .* to use them.
-    // ('define_pointers' is a compile time parameter on Component_Sentinel)
+    // ('declare_pointers' (or something like that) is a compile time parameter on Component_Sentinel)
     log("character move: %", char.transform);
     log("character move: %", char.move);
 

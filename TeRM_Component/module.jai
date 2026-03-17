@@ -10,28 +10,9 @@
 // the interface needed work. what came before 'collection.jai' wasn't very good. this interface is
 // exactly what I was aiming for: 
 
-//      - the data layout is very directly defined by the user, but isn't cumbersome.
+//      - the data layout is very directly defined by the user, but isn't cumbersome (after setup, anyway)
 //      - arrays stay parallel without you having to think about it, and without management overhead.
-//      - using database-like functionality doesn't require making any new types.
-//      - using database-like functionality takes very little code, like this:
-//
-//         collection := filter_components(.[.POSITION, .VELOCITY]);
-//         for row : collection {
-//        
-//              // convenience macro, defines position_components, velocity_components, and Entity_IDs.
-//              declare_typed_row(row, .[.POSITION, .VELOCITY]); 
-//        
-//              // iterate over position and velocity arrays in parallel
-//              for 0..position_components.count-1 {
-//                  entity_position := *position_components[it];
-//                  entity_velocity := *velocity_components[it];
-
-//                  // you can use this to reference the entity, if needed. the procedure is 
-//                  // defined in your program, as part of the interface with the module.
-//                  entity := my_get_entity_from_cid(entity_ids[it]);
-//                  ...
-//              }
-//          }
+//      - using database-like functionality takes very little code
 
 #module_parameters(
     user_types : $I/interface Type_Provider_Default = Type_Provider_Default

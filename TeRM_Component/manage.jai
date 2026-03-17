@@ -181,6 +181,17 @@ free_components :: (requests: *[..]Component_Memory_Modification) -> bool {
                 pointer.* = component_memory;
             }
         }
+
+        if request.header.component_flags & .HAS_POINTERS_TO_COMPONENTS 
+        && store_ids_to_entities_with_pointers[request.kind] == .USE_IDS_OF_ENTITIES_WITH_POINTERS_ARRAY {
+            entity_ids_with_pointers := *context.user_component_storage.ids_of_entities_with_pointers[request.kind];
+            for id, i : entity_ids_with_pointers.* {
+                if inline user_types.entity_ids_equal(id, request.entity_id) {
+                    array_unordered_remove_by_index(entity_ids_with_pointers, i);
+                    break;
+                }
+            }
+        }
     }
 
     // unrolled iterate over all component arrays and shrink them if they're below some usage proportion

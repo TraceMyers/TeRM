@@ -1,6 +1,4 @@
 
-collect :: collect_components_by_name;
-
 collect_components_by_id :: (ids: []Component_ID) -> []*Component_Array_Base {
     long_collection := alloc_component_collection(1, ids.count)[0];
     for *array : long_collection {
@@ -33,6 +31,11 @@ collect_components_by_name :: (names: []Component_Name) -> []*Component_Array_Ba
         }
     }
     return collect_components_by_id(ids);
+}
+
+Component_Row :: struct {
+    kind: Component_Kind;
+    arrays: []*Component_Array_Base;
 }
 
 // this is typically considered the main feature of an ecs. I tried to make give it as little 
@@ -69,9 +72,8 @@ collect_components_by_name :: (names: []Component_Name) -> []*Component_Array_Ba
 //      }
 // }
 //
-// note that this procedure has a little bit of overhead to it, as it's n * m in the number
-// of components * number of names. but, it returns pointers to arrays, so you could just
-// call once per collection you need, per duration of the data.
+// note that this procedure has a little bit of overhead to it. but, it returns pointers to arrays that ostensibly are 
+// staying in the same location for their lifetime, so you could just call once per collection you need.
 filter_components :: (names: []Component_Name, must_be_kind: []Component_Kind = .[], must_not_be_kind: []Component_Kind = .[]) -> [][]*Component_Array_Base {
     kind_count     := enum_highest_value(Component_Kind) + 1;
     kind_is_active := make_static_array(bool, kind_count,, temp);
@@ -154,6 +156,33 @@ filter_components :: (names: []Component_Name, must_be_kind: []Component_Kind = 
     return collection;
 }
 
+// compile time convenience caster for a row in a collection, e.g.:
+// collection := filter_components(.[.TRANSFORM, .MOVE]);
+// for row : collection {
+//      declare_typed_row(row, .[.TRANSFORM, .MOVE]);
+//      for 0..transform_components.count-1 {
+//          entity_transform := *transform_components[it];
+//          entity_move      := *move_components[it];
+//          ...
+//      }
+// }
+declare_typed_row :: (untyped_row: []*Component_Array_Base, $names: []Component_Name, $suffix := "_components") #expand {
+    assert(untyped_row.count == names.count);
+    `ids := 
+    #insert -> string {
+        builder: String_Builder;
+        for name, ni : names {
+            name_lower := to_lower(tprint("%", name));
+            print(*builder, "assert(untyped_row[%].name == .%);\n", ni, name);
+            print(*builder, "`%% := cast,force([]#run component_types[Component_Name.%]) untyped_row[%].untyped_array;\n", name_lower, suffix, name, ni);
+        }
+        output := builder_to_string(*builder);
+        return output;
+    };
+}
+
+#scope_file
+
 alloc_component_collection :: (name_count: int, rows_per_name: int) -> [][]*Component_Array_Base {
     allocation_size_for_pointers_and_counts := name_count * size_of([]*Component_Array_Base);
     allocation_size_for_array_datas         := name_count * rows_per_name * size_of(*Component_Array_Base);
@@ -170,36 +199,3 @@ alloc_component_collection :: (name_count: int, rows_per_name: int) -> [][]*Comp
 
     return collection;
 }
-
-// compile time convenience caster for a row in a collection, e.g.:
-// collection := filter_components(.[.TRANSFORM, .MOVE]);
-// for row : collection {
-//      declare_typed_row(row, .[.TRANSFORM, .MOVE]);
-//      for 0..transform_components.count-1 {
-//          entity_transform := *transform_components[it];
-//          entity_move      := *move_components[it];
-//          ...
-//      }
-// }
-declare_typed_row :: (untyped_row: []*Component_Array_Base, $names: []Component_Name, $suffix := "_components", $all_arrays_in_row_must_have_same_count := true) #expand {
-    assert(untyped_row.count == names.count);
-
-    assert(untyped_row.count == names.count);
-    #if all_arrays_in_row_must_have_same_count {
-        if untyped_row.count > 1 then for 1..untyped_row.count-1 {
-            assert(untyped_row[it].untyped_array.count == untyped_row[0].untyped_array.count);
-        }
-    }
-
-    #insert -> string {
-        builder: String_Builder;
-        for name, ni : names {
-            name_lower := to_lower(tprint("%", name));
-            print(*builder, "assert(untyped_row[%].name == .%);\n", ni, name);
-            print(*builder, "`%% := cast,force([]#run component_types[Component_Name.%]) untyped_row[%].untyped_array;\n", name_lower, suffix, name, ni);
-        }
-        output := builder_to_string(*builder);
-        return output;
-    };
-}
-

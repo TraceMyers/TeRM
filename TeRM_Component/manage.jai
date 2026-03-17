@@ -1,383 +1,166 @@
-// the documentation in this file is mostly written as an exploration of
-// what I want the interface to be. it's very much in flux and everything
-// is being edited pretty extensively.
-
-// the newest component allocation management picture looks like this:
-
-// after entities spawning...
-// {
-//     handshake: Component_Management_Handshake;
-//     begin(*handshake);
-
-//     any_allocations := allocate_components(*handshake,
-//         {new_cameras.count,    Camera.components   },
-//         {new_characters.count, Character.components}
-//     );
-
-//     if any_allocations {
-//         hand_out_components(*handshake, new_cameras);
-//         hand_out_components(*handshake, new_characters);
-
-//         update_pointers_to_components(*handshake, cameras);
-//         update_pointers_to_components(*handshake, characters);
-//     }
-// }
-
-// before destroying entities...
-// {
-//     handshake: Component_Management_Handshake;
-//     begin(*handshake);
-
-//     free_components(*handshake, destroyed_cameras);
-//     free_components(*handshake, destroyed_characters);
-
-//     shrink_component_arrays();
-
-//     update_pointers_to_components(*handshake, cameras);
-//     update_pointers_to_components(*handshake, characters);
-// }
-
-// the idea is that it's probably convenient to just call the same
-// code every frame, and have arrays like new_whatever lying around
-// empty most of the time, filled whever somebody is spawned.
-// same goes for destroyed_whatever. 
-
-// update_pointers_to_components() is only called for arrays of entities
-// who are (optionally) using component pointers instead of indexes.
-
-// the boilerplate would be pretty easy to codegen away if you want,
-// but I think there's little enough that it shouldn't be necessary.
-
-Component_Management_Handshake :: struct {
-    component_allocation_counts:        [#run enum_highest_value(Component_ID)+1]s32;
-    entity_pointers_updated:            []bool;
-    component_moved_allocation:         []bool;
-    components_with_new_allocations:    []Component_ID;
-    component_allocation_min_addresses: []int;
-    component_allocation_max_addresses: []int;
-    stage := enum {
-        UNINITIALIZED;
-        MODIFYING_COMPONENT_ALLOCATIONS;
-        UPDATING_POINTERS_TO_COMPONENTS;
-        FINISHED;
-    }.UNINITIALIZED;
-}
-
-Component_Management_Description :: struct {
-    count: int;
+Component_Memory_Modification :: struct {
+    kind:       Component_Kind;
     components: []Component_ID;
+    header:     *Component_Sentinel_Header; 
+    entity_id:  Entity_ID;
 }
 
-begin :: (using handshake: *Component_Management_Handshake) #expand {
-    // you can do multiple (begin -> update -> end) cycles in a row with the same 
-    // handshake if you want. i can't think of a reason why, but it's easy to support.
-    if handshake.stage == .FINISHED {
-        handshake.* = {};
-    } else {
-        assert(handshake.stage == .UNINITIALIZED);
-    }
-
-    `defer {
-        fail_update_pointers_message := "cannot end a component management handshake without updating pointers of entities whose arrays are tracked by the component system";
-        if stage == {
-        case .UNINITIALIZED;
-            assert(entity_pointers_updated.count == 0 && component_moved_allocation.count == 0);
-            stage = .FINISHED;
-        case .MODIFYING_COMPONENT_ALLOCATIONS;
-            if entity_pointers_updated.count != 0 {
-                assert(false, fail_update_pointers_message);
-            }
-            stage = .FINISHED;
-        case .UPDATING_POINTERS_TO_COMPONENTS;
-            for pointer_set_updated : entity_pointers_updated {
-                assert(pointer_set_updated, fail_update_pointers_message);
-            }
-            stage = .FINISHED;
-        }
-        // to keep bugs from developing due to changes in the switch statement.
-        assert(stage == .FINISHED);
+prepare_component_memory_modification :: (requests: *[..]Component_Memory_Modification, new_entities: []*$I/interface Component_Sentinel) {
+    array_reserve(requests, requests.count + new_entities.count);
+    for ent : new_entities {
+        kind   := I.in_kind;
+        id     := entity_to_entity_id(ent);
+        header := *ent.component_sentinel_header;
+        array_add(requests, {kind, I.COMPONENTS, header, id});
     }
 }
 
-// if you have an array of entities whose component info has pointers to components,
-// rather than indices to components, call this like so:
-// track_array_of_entities_with_component_pointers(*characters);
-// ... assuming the 'characters' array itself doesn't move (its allocation can move)
-// this adds validation to the handshake process, making sure entities in
-// this array have their component pointers updated when component allocations move.
-track_array_of_entities_with_component_pointers :: (pointer_to_array: *void) {
-    // if this crashes, you didn't set the pointer.
-    // e.g. context.tracked_entity_arrays = *tracked_entity_storage;
-    array_add_if_unique(context.tracked_entity_arrays, pointer_to_array);
-}
-
-// remove an array from the handshake vaidation process described above.
-untrack_array_of_entities_with_component_pointers :: (pointer_to_array: *void) {
-    // if this crashes, you didn't set the pointer.
-    // e.g. context.tracked_entity_arrays = *tracked_entity_storage;
-    array_remove(context.tracked_entity_arrays, pointer_to_array);
-}
-
-begin_modifications :: (using handshake: *Component_Management_Handshake) {
-    if #complete stage == {
-    case .UNINITIALIZED;
-        if context.tracked_entity_arrays != null {
-            entity_pointers_updated = make_static_array(bool, context.tracked_entity_arrays.count,, temp);
-        }
-        component_moved_allocation = make_static_array(bool, enum_highest_value(Component_ID) + 1,, temp);
-        component_allocation_min_addresses, component_allocation_max_addresses = prepare_rebase_entity_pointers();
-        stage = .MODIFYING_COMPONENT_ALLOCATIONS;
-    case .MODIFYING_COMPONENT_ALLOCATIONS;
-        // do nothing, already initialized
-    case .UPDATING_POINTERS_TO_COMPONENTS; 
-        #through;
-    case .FINISHED;
-        assert(false, "after you begin updating pointers to components, going back to modifying component allocations is unsafe");
-    }
-}
-
-begin_updating_pointers :: (using handshake: *Component_Management_Handshake) -> bool {
-    if #complete stage == {
-    case .UNINITIALIZED;
-        // if you made no modifications, you can skip updating pointers
-        stage = .FINISHED;
-        return false;
-    case .MODIFYING_COMPONENT_ALLOCATIONS;
-        which_components_moved := make_dynamic_array(Component_ID, enum_highest_value(Component_ID) + 1,, temp);
-        for component_moved : component_moved_allocations {
-            if component_moved {
-                array_add(*which_components_moved, cast(Component_ID) it_index);
-            }
-        }
-        if which_components_moved.count == 0 {
-            stage = .FINISHED;
-            return false;
-        } else {
-            components_with_new_allocations = which_components_moved;
-            stage = .UPDATING_POINTERS_TO_COMPONENTS;
-        }
-    case .UPDATING_POINTERS_TO_COMPONENTS;
-        // do nothing
-    case .FINISHED;
-        return false;
-    }
-    return true;
-}
-
-
-allocate_components :: (handshake: *Component_Management_Handshake, descriptions: ..Component_Management_Description) -> bool {
-    allocating_any_components: bool;
-
-    // todo: this should be a different stage than begin or the next should be different
-    begin_modifications(handshake);
-
-    for description : descriptions {
-        if description.count == 0 {
-            continue;
-        }
-        for component : description.components {
-            handshake.component_allocation_counts[component] += xx description.count;
-            allocating_any_components = true;
-        }
-    }
-
-    if !allocating_any_components {
+allocate_components :: (requests: *[..]Component_Memory_Modification) -> bool {
+    if requests.count == 0 {
         return false;
     }
 
-    #insert #run for_every_component_type(#code {
-        alloc_count := handshake.component_allocation_counts[component_id];
-        if alloc_count != 0 {
-            new_size := component_array.count + alloc_count;
-            array_resize(component_array, new_size);
-            array_resize(*context.entity_id_arrays[component_id], new_size);
-            if component_array.data != xx handshake.component_allocation_min_addresses[component_id] {
-                handshake.component_moved_allocation[component_id] = true;
+    Component_Allocation :: struct {
+        request_index: s32;
+        component_index_on_entity: s32;
+    }
+
+    component_allocations: [component_definitions.count]s32;
+
+    // for each entity requesting a set of components, set its component index and take counts
+    // of how many components need to be allocated
+    for request, ri : requests.* {
+
+        entity_ids_for_kind := *context.user_component_storage.entity_ids[request.kind];
+
+        request.header.component_index = xx entity_ids_for_kind.count;
+        array_add(entity_ids_for_kind, request.entity_id);
+
+        for component, ci : request.components {
+            allocation_count := *component_allocations[component];
+            component_array  := *context.user_component_storage.arrays[component];
+            assert(request.header.component_index == component_array.untyped_array.count + allocation_count.*);
+            allocation_count.* += 1;
+        }
+    }
+
+    // increase component counts and reallocate if necessary
+    for allocation_count, aci : component_allocations {
+        if allocation_count == 0 then continue;
+
+        component_array := *context.user_component_storage.arrays[aci];
+        component_id    := cast(*Component_ID) aci;
+        current_max     := component_array.untyped_array.allocated;
+        new_count       := component_array.untyped_array.count + allocation_count;
+        elem_size       := component_array.type_size;
+
+        if new_count > current_max {
+            reserve_count := new_count * 2;
+            array_reserve(cast(*Resizable_Array) *component_array.untyped_array, reserve_count, elem_size);
+
+            // if the component type has no initializer, zero the memory
+            if component_array.type_initializer == null {
+                using component_array;
+                begin_zero := untyped_array.data + untyped_array.count * type_size;
+                end_zero   := untyped_array.data + new_count   * type_size;
+                zero_size  := end_zero - begin_zero;
+                memset(begin_zero, 0, zero_size);
+            // else iterate and initialize. the initializer can't be inlined because it was
+            // gotten at runtime, but we have the benefit of being able to use it type agnostically.
+            } else for component_index : component_array.untyped_array.count..new_count {
+                component_memory := component_array.untyped_array.data + (component_index * elem_size);
+                component_array.type_initializer(component_memory);
             }
         }
-    });
+
+        component_array.untyped_array.count = new_count;
+    }
+
+    // set all the pointers, for entities that have pointers to their components
+    for request, ri : requests.* {
+        if (request.header.component_flags & .HAS_POINTERS_TO_COMPONENTS) {
+            for component, ci : request.components {
+                component_array := *context.user_component_storage.arrays[component];
+                elem_size       := component_array.type_size;
+                pointer         := get_component_pointer_at_index(request.header, ci);
+                pointer.*        = component_array.untyped_array.data + (cast(int) request.header.component_index * elem_size);
+            }
+        }
+    }
+
+    // todo: fix pointers
 
     return true;
 }
 
-
-hand_out_components :: (handshake: *Component_Management_Handshake, new_entities: []*$I/interface Component_Info) {
-    if new_entities.count == 0 {
-        return;
+free_components :: (requests: *[..]Component_Memory_Modification) -> bool {
+    if requests.count == 0 {
+        return false;
     }
+    
+    for request, ri : requests.* {
+        ids := *context.user_component_storage.entity_ids[request.kind];       
+        defer ids.count -= 1;
 
-    begin_modifications(handshake);
+        index_of_removal := request.header.component_index;
+        request.header.component_index = 0xffff;
 
-    entity_ids := make_static_array(int, new_entities.count,, temp);
-    for *entity_ids {
-        it.* = importer.cmp_get_id(new_entities[it_index]);
-    }
+        removing_end_component := index_of_removal == ids.count - 1;
+        header_owning_end_component: *Component_Sentinel_Header;
 
-    // unrolled loop over all components of this entity type.
-    // not unrolled for speed or anything, just for convenience of codewriting.
-    #insert #run for_each_component_type(I.components, #code {
-        for 0..new_entities.count-1 {
-            ent := new_entities[it];
+        if !removing_end_component {
+            id_of_entity_owning_end_component          := ids.*[ids.count-1];
+            ids.*[index_of_removal]                     = id_of_entity_owning_end_component;
 
-            components_remaining := *handshake.component_allocation_counts[component_id];
-            assigned_component_index := component_array.count - components_remaining.*;
-            components_remaining.* -= 1;
-            assert(components_remaining.* >= 0);
-
-            assert(component_id_is_valid(xx,trunc assigned_component_index));
-
-
-            // for each component, store a back-reference to the entity that owns it.
-            // should have only a small cache perf hit except when the array
-            // itself reallocates, because then the whole thing needs to be copied.
-            // otherwise, you get only one cache line pull from it, per component free.
-            context.entity_id_arrays[component_id][assigned_component_index] = entity_ids[it];
-
-            if ent.description_flags & .HAS_POINTERS_TO_COMPONENTS {
-                pointer := get_component_pointer_at_index(ent, component_index);
-                pointer.* = *component_array[assigned_component_index];
-            } else {
-                id := get_component_id_at_index(ent, component_index);
-                id.* = xx assigned_component_index;
-            }
+            header_owning_end_component                 = entity_id_to_sentinel(id_of_entity_owning_end_component);
+            header_owning_end_component.component_index = index_of_removal;
         }
-    });
-}
 
+        //                            .------------------ 1. this component was just removed because 
+        //                            |                      the entity that owned it was destroyed
+        //                            v
+        // some component array [   | x |   |   | o ] 
+        //                            ^           |^        
+        //                            |           || 
+        //      2. the end component  .-----------.|
+        //      is copied into the old             | 3. this entity owns this component, 
+        //      component's place                  |    which just moved. so, we need to
+        //                                         |    re-point it to the new location
+        //                                         |    over all components shared by this kind
+        // some entity array [   |   |   |   |   | e |   ]
 
-// these entities will have their components deallocated and their Component_Info struct will be cleared.
-free_components :: (handshake: *Component_Management_Handshake, destroyed_entities: []*$I/interface Component_Info) {
-    if destroyed_entities.count == 0 {
-        return;
-    }
+        for component, ci : request.components {
+            component_array  := *context.user_component_storage.arrays[component];
+            elem_size        := component_array.type_size;
+            array_count      := component_array.untyped_array.count;
+            assert(ids.count == array_count);
 
-    begin_modifications(handshake);
+            defer component_array.untyped_array.count -= 1;
 
-    #insert #run for_each_component_type(I.components, #code {
-        for ent : destroyed_entities {
-            assigned_component_index: u16;
+            component_memory: *u8;
 
-            if ent.description_flags & .HAS_POINTERS_TO_COMPONENTS {
-                pointer := get_component_pointer_at_index(ent, component_index);
-                assigned_component_index = xx (cast(*component_type) pointer - component_array.data);
+            if request.header.component_flags & .HAS_POINTERS_TO_COMPONENTS {
+                pointer := get_component_pointer_at_index(request.header, ci);
+                component_memory = pointer.*;
+                assert(component_memory == component_array.untyped_array.data + (cast(int) index_of_removal * elem_size));
                 pointer.* = null;
             } else {
-                id := get_component_id_at_index(ent, component_index);
-                assigned_component_index = id.*;
-                id.* = 0xffff;
+                component_memory = component_array.untyped_array.data + (cast(int) index_of_removal * elem_size);
             }
 
-            assert(component_array.count > 0);
-            if assigned_component_index == component_array.count - 1 {
-                component_array.count -= 1;
-                context.entity_id_arrays.count -= 1;
-            } else {
-                id_of_entity_that_owns_component_at_the_end := context.entity_id_arrays[component_id][component_array.count-1];
+            end_component_memory := component_array.untyped_array.data + ((array_count - 1) * elem_size);
+            memcpy(component_memory, end_component_memory, elem_size);
 
-                // remove-swap with last element in components array
-                component_array.*[assigned_component_index] = component_array.*[component_array.count-1];
-                component_array.count -= 1;
-
-                // move the entity last component's entity pointer back to the location of the new component
-                context.entity_id_arrays[component_id][assigned_component_index] = id_of_entity_that_owns_component_at_the_end;
-                context.entity_id_arrays[component_id].count -= 1;
-
-                
-                owning_sentinel := importer.cmp_get_sentinel(id_of_entity_that_owns_component_at_the_end);
-
-                for :per_component owning_sentinel {
-                    if it != component_id {
-                        continue;
-                    }
-
-                    if owning_sentinel.description_flags & .HAS_POINTERS_TO_COMPONENTS {
-                        pointer := get_component_pointer_at_index(owning_sentinel, component_index);
-                        pointer.* = *(component_array.*)[assigned_component_index];
-                    } else {
-                        id := get_component_id_at_index(owning_sentinel, component_index);
-                        id.* = xx assigned_component_index;
-                    }
-
-                    break;
-                }
+            if !removing_end_component && header_owning_end_component.component_flags & .HAS_POINTERS_TO_COMPONENTS {
+                pointer  := get_component_pointer_at_index(header_owning_end_component, ci);
+                pointer.* = component_memory;
             }
         }
-    });
+    }   
 
-    for ent : destroyed_entities {
-        ent.component_sentinel = {};
-    }
+    // todo: shrink component array allocations as called for
+    // todo: fix pointers
+    
+    return true;
 }
 
-Shrink_Component_Array_Rule :: struct {
-    component_id: Component_ID;
-    shrink_if_using_less_than_proportion := 0.7;
-    unless_less_than_min_count: s32 = 64;
-    free_if_count_reaches_zero := false;
-}
-
-shrink_component_arrays :: (specified_rules: []Shrink_Component_Array_Rule = .[]) {
-    rules: [#run enum_highest_value(Component_ID)+1]Shrink_Component_Array_Rule;
-
-    for rule : specified_rules {
-        rules[rule.component_id] = rule;
-    }
-
-    #insert #run for_every_component_type(#code {
-        rule := *rules[component_id];
-        if component_array.count <= rule.unless_less_than_min_count {
-            if component_array.allocated != 0 
-            && component_array.count == 0 
-            && rule.free_if_count_reaches_zero {
-                array_reset(component_array);
-            }
-        } else {
-            array_shrink_if_small_enough(component_array, rule.shrink_if_using_less_than_proportion, 0);
-        }
-    });
-}
-
-prepare_rebase_entity_pointers :: () -> []int, []int {
-    // making two arrays from one allocation because they're parallel. base address and max address, so we
-    // can later validate that entities were inside one of those ranges when the array allocation moved.
-    array_len := context.entity_component_arrays.count;
-    allocation_min_addresses := make_static_array(int, array_len * 2,, temp);
-    allocation_max_addresses := allocation_min_addresses;
-    allocation_min_addresses.count -= array_len;
-    allocation_max_addresses.data  += array_len;
-    allocation_max_addresses.count -= array_len;
-
-    for context.entity_component_arrays {
-        array := it.array;
-        allocation_min_addresses[it_index] = cast(int) array.data;
-        // todo: this isn't right. this will get the byte address
-        allocation_max_addresses[it_index] = cast(int) (array.data + (array.count - 1));
-    }
-    return allocation_min_addresses, allocation_max_addresses;
-}
-
-update_pointers_to_components :: (handshake: *Component_Management_Handshake, entity_array: []$I/interface Component_Info) {
-    if !begin_updating_pointers(handshake) {
-        return;
-    }
-    if !I.declare_component_pointers {
-        return;
-    }
-
-    #insert #run for_each_component_type(I.components, #code {
-        prev_min_address := prev_min_addresses[component_id];
-        prev_max_address := prev_max_addresses[component_id];
-        new_min_address  := cast(int) component_array.data;
-        new_max_address  := cast(int) (component_array.data + (component_array.count - 1));
-
-        for *ent : entity_array {
-            pointer := cast(*component_type) get_component_pointer_at_index(ent, component_index);
-            address_of_pointer := cast(int) pointer.*;
-
-            assert((prev_min_address <= address_of_pointer && address_of_pointer <= prev_max_address) || (new_min_address <= address_of_pointer && address_of_pointer <= new_max_address), "the % component array must have reallocated without an entity updating its pointer, or an entity must have moved without the component system being informed. options are: 1. let the TeRM component system manage the component arrays (and inform the system when entities are moved around in the entity arrays), 2. don't make use of the component pointers option, or 3. you need to rebase the entity component pointers when you make changes to the component arrays.", component_id);
-
-            offset_to_component := address_of_pointer - prev_min_address;
-            pointer.* = xx (cast(*u8) component_array.data + offset_to_component);
-        }
-    });
-}

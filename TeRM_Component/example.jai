@@ -13,6 +13,7 @@ Entity_Move :: struct {
 }
 
 // need an id type to uniquely identify an entity in order to communicate with the module
+// it can be whatever you want. I might do something like this.
 
 Entity_Ref :: struct {
     id: u32;    

@@ -29,9 +29,9 @@ _fmt_verbose :: (x: $T, draw_type_name := true) -> FormatStruct #expand #modify 
 
 _fmt_verbose :: (x: $T) -> FormatArray #expand #modify{ return T.(*Type_Info).type == .ARRAY; } {
     return FormatArray.{
-        value = x,
-        separator = "\n",
-        stop_printing_after_this_many_elements=1000
+        value                                  = x,
+        separator                              = "\n",
+        stop_printing_after_this_many_elements = 1000
     };
 }
 

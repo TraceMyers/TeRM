@@ -59,9 +59,9 @@ get_component :: inline (entity: *$I/interface Component_Sentinel_Header, $name:
     return *component_array.array[entity.component_index];
 }
 
-// 'index' is not the component enum, but a true index. if the component info has 5 component pointers, 
-// it's like indexing into a 5-length array of those pointers. this returns a pointer TO the pointer,
-// not the pointer field itself.
+// 'index' is not a component enum, but a true index into the logical array of components on this 
+// header's sentinel. if the sentinel has 5 component pointers, it's like indexing into a 5-length array 
+// of those pointers. this returns a pointer TO the pointer, not the pointer field itself.
 get_component_pointer_at_index :: (sent: *Component_Sentinel_Header, index: int) -> **void {
     assert((sent.component_flags & .HAS_POINTERS_TO_COMPONENTS) != 0);
     return xx (((cast(*u8) sent) + OFFSET_FROM_TOP_OF_ENTITY_TO_FIRST_POINTER) + (index * size_of(*void)));

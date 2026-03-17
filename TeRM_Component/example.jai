@@ -22,6 +22,8 @@ Entity_Ref :: struct {
     #overlay(index_bytes[3]) type: Entity_Type;
 }
 
+ids_equal :: (a: Entity_Ref, b: Entity_Ref) -> bool { return a.id == b.id; }
+
 // the module needs an enum for identifying groups of components called 'kinds'. in the simplest case,
 // this can just be an enum shadowing your entity types.
 
@@ -83,8 +85,10 @@ get_sentinel :: (ref: Entity_Ref) -> *Component_Sentinel_Header {
         Component_Definition_Type :: Component_Definition;
         Component_Name_Type       :: Component_Name;
         Component_Kind_Type       :: Entity_Type;
+        Component_Index_Type      :: s32;
         Entity_ID_Type            :: Entity_Ref;
         component_type_array      :: COMPONENT_TYPES;
+        entity_ids_equal          :: ids_equal;
         // here are the definitions. every unique combination of kind + name/type creates a new component.
         component_definitions     :: Component_Definition.[
             {kind=.CAMERA,           name=.TRANSFORM},
@@ -192,7 +196,7 @@ main :: () {
     // entities with pointers to their components can access and use them as if they
     // were declared directly on the entity. they are automatically dereferenced, so you
     // don't have to .* to use them.
-    // ('declare_pointers' (or something like that) is a compile time parameter on Component_Sentinel)
+    // ('declare_pointers_to_components' is a compile time parameter on Component_Sentinel)
     log("character move: %", char.transform);
     log("character move: %", char.move);
 

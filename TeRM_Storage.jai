@@ -152,11 +152,14 @@ Pool :: struct($Item_Type: Type) {
     allow_shrink_default := true;
 }
 
-pool_init :: (pool: *Pool, cap: s64) {
+pool_init :: (pool: *Pool, cap: s64, lock_allocation := false) {
     pool.* = {};
     pool.items.allocator = context.allocator;
     pool.in_use.allocator = context.allocator;
     pool_set_capacity(pool, cap);
+    if lock_allocation {
+        pool_lock_allocation(pool);
+    }
 }
 
 pool_set_capacity :: (using pool: *Pool($T), cap: s64) {
@@ -776,6 +779,8 @@ BIT_ARRAY_SLOT_BIT_COUNT :: BIT_ARRAY_SLOT_SIZE * 8;
 #if IMPORT_VULKAN {
     #import "TeRM/TeRM_Render/vulkan-jai";
 }
+
+#import "TeRM/TeRM_Allocation";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

@@ -253,3 +253,5 @@ fix_entity_pointers_to_components :: inline (header: *Component_Sentinel_Header,
     }
 }
 
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

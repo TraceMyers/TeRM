@@ -165,15 +165,15 @@ to_vector3 :: (cardinal: Direction_3D) -> Vector3 {
 to_vector3 :: (cardinal: Direction_3D, orientation: Quaternion) -> Vector3 {
     if #complete cardinal == {
     case .UP;
-        return get_up_direction(*orientation);
+        return  get_up_direction(*orientation);
     case .DOWN;
         return -get_up_direction(*orientation);
     case .LEFT;
         return -get_right_direction(*orientation);
     case .RIGHT;
-        return get_right_direction(*orientation);
+        return  get_right_direction(*orientation);
     case .FORE;
-        return get_fore_direction(*orientation);
+        return  get_fore_direction(*orientation);
     case .BACK;
         return -get_fore_direction(*orientation);
     }

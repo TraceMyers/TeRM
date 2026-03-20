@@ -291,3 +291,6 @@ get_entity :: (ref: Entity_Ref, $T: Type) -> *T {
 #import "TeRM/TeRM_Metaprogram";
 #import "TeRM/TeRM_LogHelpers";
 #import "TeRM/TeRM_Array";
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

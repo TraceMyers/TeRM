@@ -1,5 +1,3 @@
-// do not use this. it's mid-development
-
 // glTF 2.0 spec (includes GLB):
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html
 
@@ -190,7 +188,7 @@ GLTF_Parser :: struct {
     json_chunk: GLTF_Chunk;
     binary_chunk: GLTF_Chunk;
     
-    field_visited: GLTF_Field_Flags;
+    fields_visited: GLTF_Field_Flags;
     any_load_failures: bool;
     asset_version_validated: bool;
 
@@ -476,7 +474,7 @@ HERE,
         // {2} set all the top level array pointers
         fix_pointers_in_struct(*pointer_manipulations, cast(*Type_Info_Struct) Asset_3D, "asset", 1, depth_spaces_buffer.data, depth_spaces_buffer.count, true);
 
-        // {3} fix pointers within the top level arrays
+        // {3} fix the rest of the pointers
         fix_pointers_in_struct(*pointer_manipulations, cast(*Type_Info_Struct) Asset_3D, "asset", 1, depth_spaces_buffer.data, depth_spaces_buffer.count, false);
 
         output := builder_to_string(*pointer_manipulations);
@@ -600,11 +598,11 @@ process_field :: ($name: string, parser: *GLTF_Parser, element: JSON_Element_Con
         UPPER_NAME :: #run to_upper(name);
         return tprint(
 #string HERE
-    if parser.field_visited & .% {
+    if parser.fields_visited & .% {
         add_process_load_error(.DUPLICATE_%_FIELD, get_file_position(element.key), .FATAL);
         return;
     }
-    parser.field_visited |= .%;   
+    parser.fields_visited |= .%;   
     process_%_field(parser, element);
 HERE,
             UPPER_NAME, UPPER_NAME, UPPER_NAME, name
@@ -1242,7 +1240,7 @@ gltf_alloc_array :: ($T: Type, count: int) -> []T {
         // if the type has an initializer, initialize, otherwise it already has zeroed memory.
         // confirmed that types without '=' expressions in their definitions don't have initializers
         #if ini {
-            it.* = {};
+            ini(it);
         }
 
         // insert special initialization for internal versions of structs, such as Material_Internal
@@ -1432,7 +1430,6 @@ Image_Internal :: struct {
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Metaprogram";
-#import "TeRM/TeRM_Asset3D";
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_LogHelpers";
 #import "TeRM/TeRM_Color";

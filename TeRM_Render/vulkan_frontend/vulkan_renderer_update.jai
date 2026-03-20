@@ -39,38 +39,41 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     // clear render target, among other things
     begin_rendering(cmd, render_target_view);
 
-    scratch_vertices_copy := array_copy(scratch_vertices,,temp);
+    vkCmdBindDescriptorSets(
+        cmd, .GRAPHICS, billboard_pipeline_layout, 0, 1, *textures_descriptor_set, 0, null
+    );
+    vkCmdBindDescriptorSets(
+        cmd, .GRAPHICS, billboard_pipeline_layout, 1, 1, *per_frame_uniform_descriptor_set, 0, null
+    );
+    vkCmdBindDescriptorSets(
+        cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *billboard_instance_buffer_descriptor_set, 0, null
+    );
+    vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
 
-    if scratch_update_position {
-        ray_origin, ray_direction, success := get_camera_ray_passing_through_mouse_pointer_position(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, window);
-        scratch_position = ray_origin + ray_direction * 3;
-        scratch_update_position = false;
-    }
+    per_frame_uniform: Per_Frame_Uniform_Buffer;
 
-    for *scratch_vertices_copy {
-        it.position = transform_to_clip_coordinates(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, scratch_position + it.position.xyz * 100);
-        // if it.position.z > 0 && it.position.z < 1 && it.position.x > -0.75 && it.position.x < 0.75 && it.position.y > -0.75 && it.position.y < 0.75 && debug_switch {
-        //     it.position = transform_to_clip_coordinates(camera, camera_position, camera_orientation, {xx render_target_width, xx render_target_height}, scratch_position + scratch_vertices[it_index].position);
-        // }
-    }
+    projection_matrix := make_camera_projection_matrix(camera_info, viewport);
+    per_frame_uniform.view            = make_camera_view_matrix(camera_position, camera_orientation);
+    per_frame_uniform.view_projection = projection_matrix * per_frame_uniform.view;
+    per_frame_uniform.camera_position = camera_position;
+    per_frame_uniform.camera_forward  = get_fore_direction(*camera_orientation);
+    per_frame_uniform.camera_up       = get_up_direction(*camera_orientation);
+    per_frame_uniform.camera_right    = get_right_direction(*camera_orientation);
+    per_frame_uniform.time            = 0;
+    per_frame_uniform.delta_time      = 1.0 / 120.0;
 
-    triangle_view: [][3]Simple_Vertex;
-    triangle_view.data = xx scratch_vertices_copy.data;
-    triangle_view.count = scratch_vertices_copy.count / 3;
+    copy_to_gpu_buffer(*per_frame_uniform, *per_frame_uniform_buffer);
 
-    quick_sort(triangle_view, (a: [3]Simple_Vertex) -> float { 
-        return (a[0].position.z + a[1].position.z + a[2].position.z) / 3; 
-    });
-    copy_to_gpu_buffer(scratch_vertices_copy.data, *simple_vertex_buffer);
-
-    vkCmdBindPipeline(cmd, .GRAPHICS, device_space_mesh_textured_pipeline);
-    vkCmdBindDescriptorSets(cmd, .GRAPHICS, device_space_mesh_textured_pipeline_layout, 0, 1, *scratch_texture_sampler_descriptor_set, 0, null);
-    offset: u64;
-    vkCmdBindVertexBuffers(cmd, 0, 1, *simple_vertex_buffer.obj, *offset);
-    vkCmdDraw(cmd, xx (simple_vertex_buffer.size / size_of(Simple_Vertex)), 1, 0, 0);
+    // copy data to instance buffer
+    
+    offset : u64 = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, *billboard_vertex_buffer.obj, *offset);
+    vkCmdDraw(cmd, xx billboard_vertices.count, 1, 0, 0); 
 
     vkCmdEndRendering(cmd);
 
+    // vkCmdDescriptorSets is for some reason designed s.t. you give it a pipeline layout it
+    // must be compatible with.
     transition_image(cmd, render_target, .COLOR_ATTACHMENT_OPTIMAL, .PRESENT_SRC_KHR);
 
     if !validate(vkEndCommandBuffer(cmd), "failed to end the main command buffer") then return false;

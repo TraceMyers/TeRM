@@ -16,7 +16,7 @@ Component_Sentinel :: struct(
     $declare_pointers_to_components := false, 
     $set_these_pointers_to_using: ..Component_Name 
 ) {
-    COMPONENTS :: #run get_component_ids(in_kind);
+    COMPONENTS :: #run,stallable get_component_ids(in_kind);
 
     using component_sentinel_header := Component_Sentinel_Header.{ kind = in_kind };
 
@@ -116,13 +116,23 @@ specialize_call_for_all_ids :: ($proc: Code, data: *void = null) #expand {
 
 // used for indexing to an component info's pointers
 OFFSET_FROM_TOP_OF_ENTITY_TO_FIRST_POINTER :: #run -> int {
-    ends_with :: (#import "String").ends_with;
-    cinfo : Component_Sentinel(in_kind = cast(Component_Kind) 0, true);
-    tinfo := cast(*Type_Info_Struct) type_of(cinfo);
-    for member : tinfo.members {
-        if ends_with(member.name, "_pointer") {
-            return member.offset_in_bytes;
-        }
+    header_size := size_of(Component_Sentinel_Header);
+    remainder := header_size % 8;
+    if remainder == 0 {
+        return header_size;
+    } else {
+        return header_size + (8 - remainder);
     }
-    return 0;
+    // ends_with :: (#import "String").ends_with;
+    // cinfo : Component_Sentinel(in_kind = cast(Component_Kind) 0, true);
+    // tinfo := cast(*Type_Info_Struct) type_of(cinfo);
+    // for member : tinfo.members {
+    //     if ends_with(member.name, "_pointer") {
+    //         return member.offset_in_bytes;
+    //     }
+    // }
+    // return 0;
 }
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

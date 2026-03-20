@@ -45,11 +45,13 @@ render_log :: (fmt: string, args: ..Any, add_newline := true, caller_loc := #cal
     }
 }
 
-run_init_proc :: (proc: () -> bool, caller_loc := #caller_location) {
+run_init_proc :: (proc: Code, caller_loc := #caller_location) #expand {
+    proc_name :: #run code_string(proc);
+    render_log("calling %", proc_name);
     if !context.renderer.init_success {
         return;
     }
-    context.renderer.init_success = proc();
+    #insert #run tprint("context.renderer.init_success = `%();", proc_name);
     if !context.renderer.init_success {
         render_log("init failure. exiting.", caller_loc=caller_loc);
     }

@@ -1,24 +1,3 @@
-INALID_ASSET3D_INDEX_S16 : s16 : -1;
-
-free_cpu_side_buffers :: (using asset: *Asset_3D) {
-    free(cpu_buffers_allocation.data);
-    cpu_buffers_allocation = {};
-    for mesh_buffers {
-        it.cpu_allocation = {};
-    }
-}
-
-// todo: if assets refer to other assets, this could punch a hole where other stuff points.
-// best approach to have assets refer to assets is to divide an asset into parts, one of which 
-// includes the data you want to be referenced by other assets. either have this special split-off 
-// asset be managed specially with references to its referencers, or just make it permantently allocated.
-free :: (using asset: *Asset_3D) {
-    free(cpu_keep_allocation.data);
-    free(cpu_buffers_allocation.data);
-    asset.* = {};
-}
-
-
 Asset_3D :: struct {
     file_path      : string;
     scene_roots    : []Scene_Root;
@@ -289,9 +268,28 @@ Mesh_Data_Type :: enum u8 {
 //     CUBICSPLINE;
 // }
 
-#scope_file
+free_cpu_side_buffers :: (using asset: *Asset_3D) {
+    free(cpu_buffers_allocation.data);
+    cpu_buffers_allocation = {};
+    for mesh_buffers {
+        it.cpu_allocation = {};
+    }
+}
+
+// todo: if assets refer to other assets, this could punch a hole where other stuff points.
+// best approach to have assets refer to assets is to divide an asset into parts, one of which 
+// includes the data you want to be referenced by other assets. either have this special split-off 
+// asset be managed specially with references to its referencers, or just make it permantently allocated.
+free :: (using asset: *Asset_3D) {
+    free(cpu_keep_allocation.data);
+    free(cpu_buffers_allocation.data);
+    asset.* = {};
+}
+
+INALID_ASSET3D_INDEX_S16 : s16 : -1;
 
 #import "TeRM/TeRM_Camera";
 #import "TeRM/TeRM_Color";
 #import "TeRM/TeRM_Metaprogram";
+
 #import "Math";

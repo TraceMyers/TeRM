@@ -199,9 +199,6 @@ COMPONENT_IDS_PER_KIND : [COMPONENT_KIND_COUNT][]Component_ID : #insert -> strin
 
 #assert((cast(*Type_Info) user_types.Component_Index_Type).type == .INTEGER);
 
-// Store_IDs_To_Entities_With_Pointers :: enum u8 {
-// }
-
 COMPONENT_KIND_COUNT :: #run #run enum_highest_value(user_types.Component_Kind_Type) + 1;
 
 store_ids_to_entities_with_pointers: [COMPONENT_KIND_COUNT] enum u8 {
@@ -218,3 +215,6 @@ component_definitions     :: user_types.component_definitions;
 component_types           :: user_types.component_type_array;
 entity_to_entity_id       :: user_types.entity_to_entity_id;
 entity_id_to_sentinel     :: user_types.entity_id_to_sentinel;
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

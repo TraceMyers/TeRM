@@ -14,9 +14,10 @@
 create_vk_instance :: () -> bool {
     using context.renderer;
     auto_release_temp();
-
-    if !validate(instance_extensions_are_supported(required_instance_extensions), "required instance extensions unsupported") then return false;
     
+    // todo: this call takes a while... why?
+    // if !validate(instance_extensions_are_supported(required_instance_extensions), "required instance extensions unsupported") then return false;
+
     if !validate(instance_layers_are_supported(required_layers), "required instance layers unsupported") then return false;
 
     app_info := VkApplicationInfo .{
@@ -28,7 +29,7 @@ create_vk_instance :: () -> bool {
     };
     create_info := VkInstanceCreateInfo.{
         pApplicationInfo = *app_info,
-        enabledLayerCount = xx required_layers.count,
+     enabledLayerCount = xx required_layers.count,
         ppEnabledLayerNames = required_layers.data,
         enabledExtensionCount = xx required_instance_extensions.count,
         ppEnabledExtensionNames = required_instance_extensions.data
@@ -169,6 +170,10 @@ set_physical_device_properties :: (physical: *Physical_Device) {
     properties.vendor_id = temp_properties.vendorID;
     properties.device_id = temp_properties.deviceID;
     properties.device_type = temp_properties.deviceType;
+    properties.texel_buffer_alignment = temp_properties.minTexelBufferOffsetAlignment;
+    properties.uniform_buffer_alignment = temp_properties.minUniformBufferOffsetAlignment;
+    properties.storage_buffer_alignment = temp_properties.minStorageBufferOffsetAlignment;
+    properties.image_alignment = temp_properties.bufferImageGranularity;
     memcpy(properties.device_name_buffer.data, temp_properties.deviceName.data, min(properties.device_name_buffer.count, temp_properties.deviceName.count));
     properties.device_name = to_string_safe(properties.device_name_buffer.data, properties.device_name_buffer.count);
 }
@@ -187,7 +192,7 @@ score_physical_device :: (device: VkPhysicalDevice) -> score: s32 {
         return 0;
     }
     if dummy_device.queue_family_indices.graphics_index == -1 
-    || dummy_device.queue_family_indices.present_index == -1 {
+    || dummy_device.queue_family_indices.present_index  == -1 {
         return 0;
     }
     if !device_extensions_are_supported(device, required_device_extensions) {
@@ -208,6 +213,7 @@ score_physical_device :: (device: VkPhysicalDevice) -> score: s32 {
         then score += 50;
     return score;
 }
+
 
 determine_physical_device_queue_family_capabilities :: (physical: *Physical_Device) -> bool {
     physical.queue_family_indices = .{};
@@ -294,9 +300,16 @@ create_logical_device :: () -> bool {
         wideLines = VK_TRUE,
     };
 
+    descriptor_indexing_enable := VkPhysicalDeviceDescriptorIndexingFeatures.{
+        descriptorBindingPartiallyBound = VK_TRUE,
+        runtimeDescriptorArray = VK_TRUE,
+        shaderSampledIMaeArrayNonUniformIndexing = VK_TRUE
+    };
+
     // smooths over a bunch of unnecessary boilerplate in creating graphics pipeline-related stuff
     dynamic_rendering_enable := VkPhysicalDeviceDynamicRenderingFeatures.{
         dynamicRendering = VK_TRUE,
+        pNext = *descriptor_indexing_enable
     };
 
     // enables syncing a fence on present
@@ -416,10 +429,40 @@ create_default_descriptors :: () -> bool {
 }
 
 create_default_pipelines :: () -> bool {
-    if !create_device_space_mesh_pipeline() then return false;
-    if !create_device_space_mesh_textured_pipeline() then return false;
+    using context.renderer;
+
+    // making pipeline layouts
+    create_default_pipeline_layouts();
+
+    build_info: Graphics_Pipeline_Build_Info;
+    build_info.pipeline_layout = billboard_pipeline_layout;
+    make_default_vertex_fragment_pipeline_build_info(
+        *build_info, "billboard", "billboard", Billboard_Vertex
+    ); 
+    billboard_pipeline = build_pipeline(*build_info);
+    
     render_log("created default pipelines");
     return true;
+}
+
+create_default_pipeline_layouts :: () -> bool {
+    using context.renderer;
+
+    {
+        descriptor_set_layouts := VkDescriptorSetLayout.[
+            textures_descriptor_set_layout,
+            per_frame_uniform_descriptor_set_layout,
+            billboard_descriptor_set_layout
+        ];
+        create_pipeline_layout = VkPipelineLayoutCreateInfo.{
+            setLayoutCount = 3,
+            pSetLayouts = *layouts[0],
+        };
+
+        if !validate(vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *billboard_pipeline_layout), "failed to create device space mesh pipeline layout") {
+            return false;
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------
@@ -429,38 +472,145 @@ create_descriptors :: () -> bool {
     using context.renderer;
 
     ratios := Descriptor_Pool_Ratio.[
-        {.STORAGE_IMAGE, 0.2}, 
-        {.COMBINED_IMAGE_SAMPLER, 0.5}, 
-        {.UNIFORM_BUFFER, 0.3}
+        {.STORAGE_IMAGE, 0.25}, 
+        {.COMBINED_IMAGE_SAMPLER, 0.25}, 
+        {.UNIFORM_BUFFER, 0.25},
+        {.STORAGE_BUFFER, 0.25}
     ];
     create_descriptor_pool(*descriptor_pool, 100, ratios);
 
+    // todo: use bindings for frames in flight
+
+    // Set 0 — per-frame data (camera, time, lights) — shared across all pipelines
+    // Set 1 — per-pass data (shadow map, render targets)
+    // Set 2 — per-material data (textures, material params)
+    // Set 3 — per-object data (model matrix, object ID)
+
+    // Sets = granularity of when things change
+    // Bindings = individual resources within that granularity
+
     {
-        bindings := VkDescriptorSetLayoutBinding.[
-            {binding=0, descriptorCount=1, descriptorType=.COMBINED_IMAGE_SAMPLER}
+        // descriptor set of all images
+        textures_binding := VkDescriptorSetLayoutBinding.[{
+            binding         = 0, 
+            descriptorCount = max_texture_count, 
+            descriptorType  = .COMBINED_IMAGE_SAMPLER, 
+            stageFlags      = .VERTEX_BIT | .VRAGMENT_BIT
+        }];
+
+        // Mark it as partially bound and variable count
+        binding_flags := VkDescriptorBindingFlags.{ PARTIALLY_BOUND_BIT | VARIABLE_DESCRIPTOR_COUNT_BIT };
+        flags_info := VkDescriptorSetLayoutBindingFlagsCreateInfo.{
+            bindingCount  = 1,
+            pBindingFlags = *binding_flags
+        };
+
+        textures_descriptor_set_layout = build_descriptor_set_layout(textures_binding, p_next = *flags_info);
+
+        variable_count_info := VkDescriptorSetVariableDescriptorCountAllocateInfo.{
+            descriptorSetCount = 1,
+            pDescriptorCounts  = *max_textures_count
+        };
+
+        textures_descriptor_set = allocate_descriptor_set(descriptor_pool, textures_descriptor_set_layout, *variable_count_info);
+
+        add_gpu_image_for_sampling(corrugated_cardboard_path, image_sampler_nearest);  // 0
+    }
+    {
+        // descriptor set for the per-frame uniform buffer
+        per_frame_uniform_binding := VkDescriptorSetLayoutBinding.[
+            {binding=0, descriptorCount=1, descriptorType=.UNIFORM_BUFFER, stageFlags=.ALL}
         ];
-
-        // i'm guessing this could be more generally usable than for one texture...
-        scratch_texture_sampler_descriptor_set_layout = build_descriptor_set_layout(bindings, .FRAGMENT_BIT);
-        scratch_texture_sampler_descriptor_set = allocate_descriptor_set(descriptor_pool, scratch_texture_sampler_descriptor_set_layout);
-
-        image_info := VkDescriptorImageInfo.{
-            sampler = scratch_sampler,
-            imageLayout = .SHADER_READ_ONLY_OPTIMAL,
-            imageView = scratch_texture.image_view
-        };
-
-        update := VkWriteDescriptorSet.{
-            dstSet = scratch_texture_sampler_descriptor_set,
-            descriptorCount = 1,
-            descriptorType = .COMBINED_IMAGE_SAMPLER,
-            pImageInfo = *image_info
-        };
-
-        vkUpdateDescriptorSets(logical.obj, 1, *update, 0, null);
+        per_frame_uniform_descriptor_set_layout = build_descriptor_set_layout(per_frame_uniform_binding);
+        per_frame_uniform_descriptor_set = allocate_descriptor_set(descriptor_pool, per_frame_uniform_descriptor_set_layout);
+    }
+    {
+        // any ssbo can use this layout
+        storage_buffer_binding := VkDescriptorSetLayoutBinding.[
+            {binding=0, descriptorcount=1, descriptorType=.STORAGE_BUFFER, stageFlags=.VERTEX_BIT | .FRAGMENT_BIT}
+        ];
+        storage_buffer_descriptor_set_layout = build_descriptor_set_layout(storage_buffer_binding);
+    }
+    {
+        billboard_instance_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
     }
 
+// ***
+
+// struct BillboardInstance {
+//     vec3 position;
+//     vec2 size;
+//     uint texture_index;    // indexes into set 0
+//     vec4 color;
+//     // whatever else
+// };
+
+// layout(set = 2, binding = 0) buffer BillboardInstances {
+//     BillboardInstance instances[];
+// };
+
+// void main() {
+//     BillboardInstance inst = instances[gl_InstanceIndex];
+//     vec4 tex = texture(textures[nonuniformEXT(inst.texture_index)], uv);
+//     // ...
+// }
+
     return true;
+}
+
+// -----------------------------------------------------------------------------------
+// ----------------------------------------------------------------------- :allocators
+
+initialize_allocators :: () -> bool {
+    using context.renderer;
+
+    // Create throwaway resources to probe compatibility
+
+    dummy_buffer_create_info := VkBufferCreateInfo.{
+        size = 4096,
+        usage = .VERTEX_BUFFER_BIT
+              | .INDEX_BUFFER_BIT
+              | .UNIFORM_BUFFER_BIT
+              | .STORAGE_BUFFER_BIT
+              | .TRANSFER_SRC_BIT
+              | .TRANSFER_DST_BIT,
+        sharingMode = .EXCLUSIVE
+    };
+    dummy_buffer: VkBuffer;
+
+    dummy_image_create_info := VkImageCreateInfo.{
+        imageType = ._2D,
+        format = .R8G8B8A8_UNORM,
+        extent = {1024, 1024, 1},
+        mipLevels = 1,
+        arrayLayers = 1,
+        samples = ._1_BIT, // MSAA
+        tiling = .OPTIMAL,
+        usage =  .TRANSFER_DST_BIT | .SAMPLED_BIT,
+        sharingMode = .EXCLUSIVE
+    };
+    dummy_image: VkImage;
+
+    dummy_buffer_requirements: VkMemoryRequirements;
+    dummy_image_requirements: VkMemoryRequirements;
+
+    vkCreateBuffer(logical.obj, *dummy_buffer_create_info, null, *dummy_buffer);
+    vkGetBufferMemoryRequirements(dummy_buffer, *dummy_buffer_requirements);
+    vkDestroyBuffer(logical.obj, dummy_buffer, null);
+
+    vkCreateImage(dummy_image_create_info, *dummy_image);   // OPTIMAL tiling, typical format
+    vkGetImageMemoryRequirements(dummy_image, *dummy_image_requirements);
+    vkDestroyImage(logical.obj, dummy_image, null);
+
+    memory_properties: VkPhysicalDeviceMemoryProperties;
+    vkGetPhysicalDeviceMemoryProperties(physical.obj, *memory_properties);
+
+    device_local_buffer_index := find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
+    host_coherent_buffer_index := find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
+    device_local_image_index := find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
+    host_coherent_image_index := find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
+
+    // todo: allocate memory in each category for allocators.
 }
 
 // -----------------------------------------------------------------------------------
@@ -474,19 +624,14 @@ create_scratch_data :: () -> bool {
     );
     copy_to_gpu_buffer(scratch_vertices.data, *simple_vertex_buffer);
 
-    if scratch_texture_path != "" {
-        scratch_texture = create_gpu_texture_for_sampling(scratch_texture_path);
-    }
+    billboard_vertex_buffer = create_gpu_buffer_for_array(
+        billboard_vertices, .VERTEX_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT
+    );
+    copy_to_gpu_buffer(billboard_vertices.data, *billboard_vertex_buffer);
+
+    per_frame_uniform_buffer = create_gpu_buffer(size_of(Per_Frame_Uniform_Buffer), .UNIFORM_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT);
 
     {
-        // create_info := VkSamplerCreateInfo.{
-        //     minFilter = .LINEAR,
-        //     magFilter = .LINEAR,
-        //     mipmapMode = .NEAREST,
-        //     addressModeU = .REPEAT,
-        //     addressModeV = .REPEAT,
-        //     addressModeW = .REPEAT,
-        // };
         create_info := VkSamplerCreateInfo.{
             minFilter = .NEAREST,
             magFilter = .NEAREST,
@@ -495,7 +640,27 @@ create_scratch_data :: () -> bool {
             addressModeV = .REPEAT,
             addressModeW = .REPEAT,
         };
-        validate(vkCreateSampler(logical.obj, *create_info, null, *scratch_sampler), "failed to create the scratch sampler");
+        validate(vkCreateSampler(logical.obj, *create_info, null, *image_sampler_nearest), "failed to create the all nearest sampler");
+
+        create_info = VkSamplerCreateInfo.{
+            minFilter = .LINEAR,
+            magFilter = .LINEAR,
+            mipmapMode = .NEAREST,
+            addressModeU = .REPEAT,
+            addressModeV = .REPEAT,
+            addressModeW = .REPEAT,
+        };
+        validate(vkCreateSampler(logical.obj, *create_info, null, *image_sampler_bilinear), "failed to create the all nearest sampler");
+
+        create_info = VkSamplerCreateInfo.{
+            minFilter = .LINEAR,
+            magFilter = .LINEAR,
+            mipmapMode = .LINEAR,
+            addressModeU = .REPEAT,
+            addressModeV = .REPEAT,
+            addressModeW = .REPEAT,
+        };
+        validate(vkCreateSampler(logical.obj, *create_info, null, *image_sampler_trilinear), "failed to create the all nearest sampler");
     }
 
     return true;

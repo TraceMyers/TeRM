@@ -9,18 +9,18 @@ RW_Lock_Mode :: enum {
     WRITE;
 }
 
-// assumes you don't ever have > 127 threads contesting the same lock.
-// if that's a bad assumption, this is not the right lock for you
+// assumes you never have > 255 threads contesting the same lock.
+// if that's a bad assumption, this is not the right lock for you.
 // just a note: for most computers, 100+ threads all working at once
 // on spin-locked data is not going to be good for perf. it is better
 // to make your jobs bigger, have as many active threads as you have 
 // cores (-1), and in general just reduce contestation on data.
 RW_Lock :: struct {
     counter: s32 = 0;
-    writers_waiting: s8 = 0;
+    writers_waiting: u8 = 0;
     // if consecutive reads goes above this threshold and there are writers waiting,
     // readers will wait until a single writer gets through
-    suppress_reads_threshold: s8 = 30;
+    suppress_reads_threshold: u8 = 30;
     consecutive_reads_while_writers_waiting: s16 = 0;
 }
 

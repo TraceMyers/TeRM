@@ -1,6 +1,9 @@
 // todo: when more APIs are added, can figure out the generic versions rather than the 
 // vk versions of these things. some of that is already started (e.g. Physical_Device_Properties);
 
+// probably should be using arena buffers a lot. dramatically simplifies allocation for per-frame 
+// and especially variably sized stuff.
+
 MIN_DEPTH :: 0.0;
 MAX_DEPTH :: 1.0;
 VK_API_VERSION_1_3 :: #run VK_MAKE_VERSION(1, 3, 0);
@@ -9,7 +12,11 @@ TERM_RENDERER_VERSION :: #run VK_MAKE_VERSION(
 );
 DEPTH_FORMAT :: VkFormat.D24_UNORM_S8_UINT;
 INVALID_MEMORY_TYPE_INDEX : u32 : 0xffff_ffff;
-
+// Query these at startup from VkPhysicalDeviceLimits
+// limits.minUniformBufferOffsetAlignment   // often 64 or 256
+// limits.minStorageBufferOffsetAlignment   // often 16-64
+// limits.minTexelBufferOffsetAlignment     // often 16
+// limits.bufferImageGranularity            // often 1024-65536
 Renderer :: struct {
     API :: "vulkan";
     API_VERSION :: VK_API_VERSION_1_3;
@@ -35,11 +42,11 @@ Renderer :: struct {
         transfer_command_buffer: VkCommandBuffer;
         transfer_fence: VkFence;
 
-        device_space_mesh_pipeline: VkPipeline;
-        device_space_mesh_pipeline_layout: VkPipelineLayout;
+        // device_space_mesh_pipeline: VkPipeline;
+        // device_space_mesh_pipeline_layout: VkPipelineLayout;
 
-        device_space_mesh_textured_pipeline: VkPipeline;
-        device_space_mesh_textured_pipeline_layout: VkPipelineLayout;
+        // device_space_mesh_textured_pipeline: VkPipeline;
+        // device_space_mesh_textured_pipeline_layout: VkPipelineLayout;
 
         graphics_queue: VkQueue; // per thread?
         transfer_queue: VkQueue; // per thread?
@@ -48,22 +55,72 @@ Renderer :: struct {
 
         rendered_frame_count: s32;
 
-        depth_buffer: Texture;
+        depth_buffer: GPU_Image;
 
         init_success: bool;
 
-        camera: Camera_Info;
+        camera_info: Camera_Info;
         camera_position: Vector3;
         camera_orientation: Quaternion;
         
         // scratch space (or more scratchy than the rest)
-        scratch_sampler: VkSampler;
-        scratch_texture_path: string;
-        scratch_texture: Texture;
-        scratch_texture_sampler_descriptor_set_layout: VkDescriptorSetLayout;
-        scratch_texture_sampler_descriptor_set: VkDescriptorSet;
+        corrugated_cardboard_path: string;
+        corrugated_cardboard_image: *GPU_Image;
+
+        per_frame_uniform_buffer: VkBuffer;
+        per_frame_uniform_descriptor_set_layout: VkDescriptorSetLayout;
+        per_frame_uniform_descriptor_set: VkDescriptorSet;
+
+        // allocator stuff
+
+        max_texture_count: int;
+
+        image_pool: Pool(GPU_Image);
+
+        // gpu_heaps: Pool(GPU_Heap);
+        // host_visible_buffer_linear_allocator: GPU_Linear_Allocator;
+        // device_local_buffer_linear_allocator: GPU_Linear_Allocator;
+        // host_visible_image_linear_allocator:  GPU_Linear_Allocator;
+        // device_local_image_linear_allocator:  GPU_Linear_Allocator;
+
+
+        // descriptor_set_layouts: []VkDescriptorSetLayout;
+        // descriptor_sets: []VkDescriptorSet;
+
+        // scratch_texture_sampler_descriptor_set_layout: VkDescriptorSetLayout;
+        // scratch_texture_sampler_descriptor_set: VkDescriptorSet;
+
+        image_sampler_nearest: VkSampler;
+        image_sampler_bilinear: VkSampler;
+        image_sampler_trilinear: VkSampler;
+
+        // - host visible persisent lifetime
+        // - host visible indeterminate lifetime
+        // - host visible frame lifetime
+        // eventually probably use staging rather than host visible for persistent and indeterminate,
+        // but that's more complicated
+
+        textures_descriptor_set_layout: VkDescriptorSetLayout;
+        textures_descriptor_set: VkDescriptorSet;
+
+
+
+        storage_buffer_descriptor_set_layout: VkDescriptorSetLayout;
+        billboard_instance_buffer_descriptor_set: VkDescriptorSet;
+
+        billboard_pipeline_layout: VkPipelineLayout;
 
         debug_switch: bool;
+
+        billboard_vertex_buffer: GPU_Buffer;
+        billboard_vertices := Billboard_Vertex.[
+            {position={-0.5, -0.5}, uv={0, 0}},
+            {position={ 0.5, -0.5}, uv={1, 0}},
+            {position={ 0.5,  0.5}, uv={1, 1}},
+            {position={-0.5, -0.5}, uv={0, 0}},
+            {position={ 0.5,  0.5}, uv={1, 1}},
+            {position={-0.5,  0.5}, uv={0, 1}},
+        ];
 
         scratch_position: Vector3;
         scratch_update_position: bool;
@@ -106,6 +163,7 @@ Renderer :: struct {
 
 Render_Init_Options :: struct {
     populate_shader_data_in_working_directory := true;
+    max_texture_count := 4096
 }
 
 Queue_Family_Capability_Flags :: enum_flags {
@@ -160,12 +218,52 @@ Graphics_API_Version :: struct {
     patch: u32;
 }
 
-GPU_Buffer :: struct {
-    obj: VkBuffer;
+GPU_Heap_Type :: enum u8 {
+    DEVICE_LOCAL;
+    HOST_VISIBLE_AND_COHERENT;
+}
+
+GPU_Heap :: struct {
     memory: VkDeviceMemory;
     size: VkDeviceSize;
+    flags: VkMemoryPropertyFlags;
+    valid: bool;
+}
+
+GPU_Allocation_Type :: enum u8 {
+    BUFFER;
+    IMAGE;
+}
+
+GPU_Allocator :: enum u8 {
+    LINEAR_ALLOCATOR;
+}
+
+GPU_Allocation :: struct {
+    type: GPU_Allocation_Type;
+    allocator: GPU_Allocator;
+    memory: VkDeviceMemory;
+    // source_heap: u16;
+    // source_heap_offset: s32;
+    size: VkDeviceSize;
+}
+
+GPU_Image :: struct {
+    using #as allocation: GPU_Allocation;
+    obj:                  VkImage;   
+    view:                 VkImageView;
+    extent:               VkExtent3D;
+    format:               VkFormat;
+    usage:                VkImageUsageFlags;
+    mip_count:            u8;
+    layer_count:          u8;
+    pool_index:           u16;
+}
+
+GPU_Buffer :: struct {
+    using #as allocation: GPU_Allocation;
+    obj: VkBuffer;
     usage_flags: VkBufferUsageFlags;
-    memory_flags: VkMemoryPropertyFlags;
 }
 
 Physical_Device_Properties :: struct {
@@ -176,6 +274,14 @@ Physical_Device_Properties :: struct {
     device_type: VkPhysicalDeviceType;
     device_name: string;
     device_name_buffer: [256]u8;
+    texel_buffer_alignment: VkDeviceSize;
+    uniform_buffer_alignment: VkDeviceSize;
+    storage_buffer_alignment: VkDeviceSize;
+    device_local_buffer_memory_index: u32;
+    host_visible_buffer_memory_index: u32;
+    device_local_image_memory_index: u32;
+    host_visible_image_memory_index: u32;
+    image_alignment: VkDeviceSize;
 }
 
 Swapchain_Support_Info :: struct {
@@ -195,17 +301,6 @@ Swapchain :: struct {
     image_views: []VkImageView;
 }
 
-Texture :: struct {
-    obj: VkImage;   
-    memory: VkDeviceMemory;
-    image_view: VkImageView;
-    extent: VkExtent3D;
-    format: VkFormat;
-    usage: VkImageUsageFlags;
-    mip_count: u32;
-    layer_count: u32;
-    // cpu_memory: []u8;
-}
 
 Graphics_Frame :: struct {
     command_pool: VkCommandPool;
@@ -220,16 +315,33 @@ Descriptor_Pool_Ratio :: struct {
     ratio: float32;
 }
 
-Graphics_Pipeline_Build_Info :: struct {
-    shader_stages:              []VkPipelineShaderStageCreateInfo;
-    input_assembly:             VkPipelineInputAssemblyStateCreateInfo;
-    rasterization:              VkPipelineRasterizationStateCreateInfo;
-    color_blend_attachment:     VkPipelineColorBlendAttachmentState;
-    multisampling:              VkPipelineMultisampleStateCreateInfo;
-    pipeline_layout:            VkPipelineLayout;
-    depth_stencil:              VkPipelineDepthStencilStateCreateInfo;
-    render_info:                VkPipelineRenderingCreateInfo;
-    color_attachment_format:    VkFormat;
+Billboard_Vertex :: struct {
+    position: Vector2;
+    uv: Vector2;
+}
+
+Billboard_Instance :: struct {
+    position:  Vector3; __pad0: float32;
+    scale:     Vector2; 
+    uv_offset: Vector2;
+    uv_scale:  Vector2; __pad1: Vector2;
+    tint:      Vector3; __pad2: float32;
+}
+
+Per_Frame_Uniform_Buffer :: struct {
+    view:            Matrix4;
+    view_projection: Matrix4;
+    camera_position: Vector3; __pad0: float32;
+    camera_forward:  Vector3; __pad1: float32;
+    camera_up:       Vector3; __pad2: float32;
+    camera_right:    Vector3; __pad3: float32;
+    time:            float32;
+    delta_time:      float32;
+}
+
+Sprite_Rect :: struct {
+    offset: Vector2;
+    scale: Vector2;
 }
 
 Simple_Vertex :: struct {
@@ -271,6 +383,7 @@ Simple_Vertex :: struct {
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_Render/vulkan-jai";
 #import "TeRM/TeRM_Camera";
+#import "TeRM/TeRM_Metaprogram";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

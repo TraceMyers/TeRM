@@ -2,6 +2,7 @@
 init_first_renderer :: (first_renderer: *Renderer, options: Render_Init_Options, render_width: u32, render_height: u32) -> bool {
     render_target_width = render_width;
     render_target_height = render_height;
+    first_renderer.max_texture_count = options.max_texture_count;
     success := init_renderer_shared_data(first_renderer, options);
     if !success then return false;
     return init_renderer_unique_data(first_renderer);
@@ -52,6 +53,8 @@ HERE,
     if options.populate_shader_data_in_working_directory {
         if !populate_shader_data() then return false;
     }
+
+    pool_initialize(*image_pool, max_texture_count, true);
     
     run_init_proc(create_vk_instance);
     run_init_proc(create_surface);

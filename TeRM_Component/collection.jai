@@ -80,7 +80,7 @@ filter_components :: ($names: []Component_Name, must_be_kind: []Component_Kind =
 //      }
 //
 // note that this procedure has a little bit of overhead to it. but, it returns pointers to arrays that ostensibly are 
-// staying in the same location for their lifetime, so you could just call once per collection you need./ 
+// staying in the same location for their lifetime, so you could just call once per collection you need.
 //
 // this is no_inline on purpose to keep it from being specified with the polymorphic wrapper filter_components()
 // and dumping a bunch of duplicated code into the binary for no reason.
@@ -219,3 +219,6 @@ alloc_component_collection :: (name_count: int, rows_per_name: int) -> []Untyped
 
     return collection;
 }
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

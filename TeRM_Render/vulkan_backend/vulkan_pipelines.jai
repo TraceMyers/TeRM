@@ -1,355 +1,212 @@
-create_device_space_mesh_pipeline :: () -> bool {
-    using context.renderer;
-    auto_release_temp();
+/*
 
-    vert := get_shader("device_space_mesh_vert");
-    if !validate(vert != null, "failed to get device space vert shader") then return false;
+// process of building pipelines:
 
-    frag := get_shader("device_space_mesh_frag");
-    if !validate(frag != null, "failed to get device space frag shader") then return false;
-
-    shader_stages := VkPipelineShaderStageCreateInfo.[
-     .{
-        stage = .VERTEX_BIT,
-        module = vert,
-        pName = "main"
-    }, 
-    .{
-        stage = .FRAGMENT_BIT,
-        module = frag,
-        pName = "main"
-    }];
-
-    vertex_bindings, vertex_attributes := make_vertex_descriptors(Simple_Vertex,, temp);
-
-    vertex_input_info := VkPipelineVertexInputStateCreateInfo.{
-        vertexBindingDescriptionCount = 1,
-        pVertexBindingDescriptions = *vertex_bindings,
-        vertexAttributeDescriptionCount = xx vertex_attributes.count,
-        pVertexAttributeDescriptions = vertex_attributes.data
-    };
-
-    input_assembly_info := VkPipelineInputAssemblyStateCreateInfo.{
-        topology = .TRIANGLE_LIST,
-    };
-
-    viewport := VkViewport.{
-        width = xx swapchain.extent.width,
-        height = xx swapchain.extent.height,
-        minDepth = MIN_DEPTH,
-        maxDepth = MAX_DEPTH
-    };
-
-    scissor := VkRect2D.{
-        extent = swapchain.extent
-    };
-
-    viewport_create_info := VkPipelineViewportStateCreateInfo.{
-        viewportCount = 1,
-        scissorCount = 1
-    };
-
-    rasterizer_create_info := VkPipelineRasterizationStateCreateInfo.{
-        depthClampEnable = VK_FALSE,
-        rasterizerDiscardEnable = VK_FALSE,
-        polygonMode = .FILL,
-        lineWidth = 1.0,
-        // cullMode = .FRONT_BIT,
-        // cullMode = .BACK_BIT,
-        cullMode = .NONE,
-        frontFace = .CLOCKWISE,
-        depthBiasEnable = VK_FALSE,
-        depthBiasConstantFactor = 0.0,
-        depthBiasClamp = 0.0,
-        depthBiasSlopeFactor = 0.0
-    };
-
-    multisample_create_info := VkPipelineMultisampleStateCreateInfo.{
-        sampleShadingEnable = VK_FALSE,
-        rasterizationSamples = ._1_BIT,
-        minSampleShading = 1.0,
-        pSampleMask = null,
-        alphaToCoverageEnable = VK_FALSE,
-        alphaToOneEnable = VK_FALSE
-    };
-
-    color_blend_attachment := VkPipelineColorBlendAttachmentState.{
-        colorWriteMask = .R_BIT | .G_BIT | .B_BIT | .A_BIT,
-        blendEnable = VK_TRUE,
-        srcColorBlendFactor = .SRC_ALPHA,
-        dstColorBlendFactor = .ONE_MINUS_SRC_ALPHA,
-        colorBlendOp = .ADD,
-        srcAlphaBlendFactor = .ONE,
-        dstAlphaBlendFactor = .ZERO,
-        alphaBlendOp = .ADD
-    };
-
-    color_blend_create := VkPipelineColorBlendStateCreateInfo.{
-        logicOpEnable = VK_FALSE,
-        logicOp = .COPY,
-        attachmentCount = 1,
-        pAttachments = *color_blend_attachment
-    };
-
-    dynamic_states := VkDynamicState.[
-        .VIEWPORT,
-        .SCISSOR,
-        // .LINE_WIDTH,
-        // .DEPTH_BIAS,
-        // .BLEND_CONSTANTS,
-        // .DEPTH_BOUNDS,
-        // .STENCIL_COMPARE_MASK             :: 6;
-        // .STENCIL_WRITE_MASK               :: 7;
-        // .STENCIL_REFERENCE                :: 8;
-        // .VIEWPORT_W_SCALING_NV            :: 1000087000;
-        // .DISCARD_RECTANGLE_EXT            :: 1000099000;
-        // SAMPLE_LOCATIONS_EXT             :: 1000143000;
-    ];
-
-    dynamic_state := VkPipelineDynamicStateCreateInfo.{
-        dynamicStateCount = xx dynamic_states.count,
-        pDynamicStates = dynamic_states.data
-    };
-
-    // layouts := VkDescriptorSetLayout.[
-    //     mesh_descriptor_set_layout,
-    // ];
-
-    // color_pc := VkPushConstantRange.{
-    //     stageFlags = .VERTEX_BIT,
-    //     offset = 0,
-    //     size = size_of(float32) * 16 + size_of(float32) * 4 + size_of(float) * 4
-    // };
-
-    pipeline_layout_info := VkPipelineLayoutCreateInfo.{
-        // setLayoutCount = xx layouts.count,
-        // pSetLayouts = layouts.data,
-        // pushConstantRangeCount = 1,
-        // pPushConstantRanges = *color_pc
-    };
-
-    if !validate(vkCreatePipelineLayout(logical.obj, *pipeline_layout_info, null, *device_space_mesh_pipeline_layout), "failed to create device space mesh pipeline layout") then return false;
-
-    // color_attachment_format := VkFormat.R16G16B16A16_SFLOAT;
-    color_attachment_format := VkFormat.R8G8B8A8_UNORM;
-    rendering_create_info := VkPipelineRenderingCreateInfo.{
-        colorAttachmentCount=1,
-        pColorAttachmentFormats = *color_attachment_format,
-        depthAttachmentFormat = DEPTH_FORMAT
-    };
-
-    depth_stencil_info := VkPipelineDepthStencilStateCreateInfo.{
-        depthTestEnable = VK_TRUE,
-        depthWriteEnable = VK_TRUE,
-        depthCompareOp = .GREATER, // this renderer has 1=near, 0=far
-        depthBoundsTestEnable = VK_FALSE,
-        stencilTestEnable = VK_FALSE,
-        // front:                 VkStencilOpState;
-        // back:                  VkStencilOpState;
-        // minDepthBounds:        float;
-        // maxDepthBounds:        float;
-    };
-
-    pipeline_create := VkGraphicsPipelineCreateInfo.{
-        pNext = *rendering_create_info,
-        stageCount = xx shader_stages.count,
-        pStages = shader_stages.data,
-        pVertexInputState = *vertex_input_info,
-        pInputAssemblyState = *input_assembly_info,
-        // pTessellationState:  *VkPipelineTessellationStateCreateInfo;
-        pViewportState = *viewport_create_info,
-        pRasterizationState = *rasterizer_create_info,
-        pMultisampleState = *multisample_create_info,
-        pDepthStencilState = *depth_stencil_info,
-        pColorBlendState = *color_blend_create,
-        pDynamicState = *dynamic_state,
-        layout = device_space_mesh_pipeline_layout,
-        // renderPass:          VkRenderPass;
-        // subpass:             u32;
-        // basePipelineHandle:  VkPipeline;
-        // basePipelineIndex:   s32;
-    };
-
-    if !validate(vkCreateGraphicsPipelines(logical.obj, VK_NULL_HANDLE, 1, *pipeline_create, null, *device_space_mesh_pipeline), "failed to create the device space mesh pipeline") then return false;
-
-    render_log("created the device space mesh pipeline");
-    return true;
+build_info: Graphics_Pipeline_Build_Info;
+{
+    build_info.pipeline_layout = my_pipeline_layout;
+    make_default_..._pipeline_build_info(*build_info, ...);
+    // set non-default fields in the build info
+    my_pipeline = build_pipeline(*build_info);
+}
+{
+    // don't need to reinitialize build_info, that is done in make_default..()
+    build_info.pipeline_layout = my_pipeline_layout_2;
+    make_default_..._pipeline_build_info(*build_info, ...);
+    // set non-default fields in the build info
+    my_pipeline_2 = build_pipeline(*build_info);
 }
 
-create_device_space_mesh_textured_pipeline :: () -> bool {
-    using context.renderer;
-    auto_release_temp();
+*/
 
-    vert := get_shader("device_space_mesh_textured_vert");
-    if !validate(vert != null, "failed to get device space textured vert shader") then return false;
 
-    frag := get_shader("device_space_mesh_textured_frag");
-    if !validate(frag != null, "failed to get device space textured frag shader") then return false;
+Graphics_Pipeline_Build_Info :: struct {
+    // filled out before passing in
+    name := "a graphics pipeline"; // for logging
+    color_attachment_format: VkFormat = .R8G8B8A8_UNORM; // VkFormat.R16G16B16A16_SFLOAT;
+    pipeline_layout: VkPipelineLayout;
 
-    shader_stages := VkPipelineShaderStageCreateInfo.[
-    {
+    // filled in per-type
+    type: Build_Info_Base_Type;
+
+    shader_stages: []VkPipelineShaderStageCreateInfo;
+    input_assembly: struct {
+        create: VkPipelineInputAssemblyStateCreateInfo;
+    };
+
+    using type_data: union {
+        vertex_fragment: struct {
+            create: VkPipelineVertexInputStateCreateInfo;
+            vertex_bindings: VkVertexInputBindingDescription;
+            vertex_attributes: []VkVertexInputAttributeDescription;
+        };
+    };
+
+    // filled in by default
+    using common_data: struct {
+        viewport: struct {
+            create: VkPipelineViewportStateCreateInfo;
+            viewport := VkViewport.{
+                width = xx swapchain.extent.width,
+                height = xx swapchain.extent.height,
+                minDepth = MIN_DEPTH,
+                maxDepth = MAX_DEPTH
+            };
+            scissor := VkRect2D.{
+                extent = swapchain.extent
+            };
+        };
+        rasterization: struct {
+            create := VkPipelineRasterizationStateCreateInfo.{
+                depthClampEnable = VK_FALSE,
+                rasterizerDiscardEnable = VK_FALSE,
+                polygonMode = .FILL,
+                lineWidth = 1.0,
+                cullMode = .NONE, // bad default. just for now
+                frontFace = .CLOCKWISE,
+                depthBiasEnable = VK_FALSE,
+                depthBiasConstantFactor = 0.0,
+                depthBiasClamp = 0.0,
+                depthBiasSlopeFactor = 0.0
+            };
+        };
+        multisampling: struct {
+            create := VkPipelineMultisampleStateCreateInfo.{
+                sampleShadingEnable = VK_FALSE,
+                rasterizationSamples = ._1_BIT,
+                minSampleShading = 1.0,
+                pSampleMask = null,
+                alphaToCoverageEnable = VK_FALSE,
+                alphaToOneEnable = VK_FALSE
+            };
+        };
+        color_blend: struct {
+            create: VkPipelineColorBlendAttachmentState;
+            attachment := VkPipelineColorBlendAttachmentState.{
+                colorWriteMask = .R_BIT | .G_BIT | .B_BIT | .A_BIT,
+                blendEnable = VK_TRUE,
+                srcColorBlendFactor = .SRC_ALPHA,
+                dstColorBlendFactor = .ONE_MINUS_SRC_ALPHA,
+                colorBlendOp = .ADD,
+                srcAlphaBlendFactor = .ONE,
+                dstAlphaBlendFactor = .ZERO,
+                alphaBlendOp = .ADD
+            }
+        };
+        dynamic_state: struct {
+            create := VkPipelineDynamicStateCreateInfo.{
+                dynamicStateCount = xx DEFAULT_DYNAMIC_STATES.count,
+                pDynamicStates    = DEFAULT_DYNAMIC_STATES.data
+            };
+        }
+        depth_stencil: struct {
+            create := VkPipelineDepthStencilStateCreateInfo.{
+                depthTestEnable = VK_TRUE,
+                depthWriteEnable = VK_TRUE,
+                depthCompareOp = .GREATER, // 1=near, 0=far
+                depthBoundsTestEnable = VK_FALSE,
+                stencilTestEnable = VK_FALSE,
+            };
+        }
+        render: struct {
+            create: VkPipelineRenderingCreateInfo;
+        }
+    };
+}
+
+make_default_vertex_fragment_pipeline_build_info :: (build_info: *Graphics_Pipeline_Build_Info, vertex_shader_filename: string = "", fragment_shader_filename: string = "", $Vertex_Type: Type) -> bool {
+    build_info.* = {type=.VERTEX_FRAGMENT};
+
+    vert := get_shader(vertex_shader_filename);
+    if !validate(vert != null, "failed to get vert shader %", vertex_shader_filename) then return false;
+
+    frag := get_shader(fragment_shader_filename);
+    if !validate(frag != null, "failed to get frag shader %", fragment_shader_filename) then return false;
+
+    build_info.shader_stages = make_static_array(VkPipelineShaderStageCreateInfo, 2,, temp);
+    build_info.shader_stages[0] = {
         stage = .VERTEX_BIT,
         module = vert,
         pName = "main"
-    }, 
-    {
+    };
+    build_info.shader_stages[1] = {
         stage = .FRAGMENT_BIT,
         module = frag,
         pName = "main"
-    }];
+    }
 
-    vertex_bindings, vertex_attributes := make_vertex_descriptors(Simple_Vertex,, temp);
+    {
+        using build_info.vertex_fragment;
 
-    vertex_input_info := VkPipelineVertexInputStateCreateInfo.{
-        vertexBindingDescriptionCount = 1,
-        pVertexBindingDescriptions = *vertex_bindings,
-        vertexAttributeDescriptionCount = xx vertex_attributes.count,
-        pVertexAttributeDescriptions = vertex_attributes.data
-    };
+        vertex_bindings, vertex_attributes = make_vertex_descriptors(Vertex_Type,, temp);
 
-    input_assembly_info := VkPipelineInputAssemblyStateCreateInfo.{
+        vertex_input = VkPipelineVertexInputStateCreateInfo.{
+            vertexBindingDescriptionCount = 1,
+            pVertexBindingDescriptions = *build_info.vertex_bindings,
+            vertexAttributeDescriptionCount = xx build_info.vertex_attributes.count,
+            pVertexAttributeDescriptions = build_info.vertex_attributes.data
+        };
+    }
+
+    build_info.input_assembly.create = VkPipelineInputAssemblyStateCreateInfo.{
         topology = .TRIANGLE_LIST,
     };
 
-    viewport := VkViewport.{
-        width = xx swapchain.extent.width,
-        height = xx swapchain.extent.height,
-        minDepth = MIN_DEPTH,
-        maxDepth = MAX_DEPTH
-    };
+    return rest_of_make_default_pipeline(build_info);
+}
 
-    scissor := VkRect2D.{
-        extent = swapchain.extent
-    };
-
-    viewport_create_info := VkPipelineViewportStateCreateInfo.{
+rest_of_make_default_pipeline_build_info :: (using build_info: *Graphics_Pipeline_Build_Info) -> bool {
+    viewport.create = VkPipelineViewportStateCreateInfo.{
         viewportCount = 1,
+        pViewports = *viewport.viewport,
         scissorCount = 1
+        pScissors = *viewport.scissor
     };
 
-    rasterizer_create_info := VkPipelineRasterizationStateCreateInfo.{
-        depthClampEnable = VK_FALSE,
-        rasterizerDiscardEnable = VK_FALSE,
-        polygonMode = .FILL,
-        lineWidth = 1.0,
-        // cullMode = .FRONT_BIT,
-        // cullMode = .BACK_BIT,
-        cullMode = .NONE,
-        frontFace = .CLOCKWISE,
-        depthBiasEnable = VK_FALSE,
-        depthBiasConstantFactor = 0.0,
-        depthBiasClamp = 0.0,
-        depthBiasSlopeFactor = 0.0
-    };
-
-    multisample_create_info := VkPipelineMultisampleStateCreateInfo.{
-        sampleShadingEnable = VK_FALSE,
-        rasterizationSamples = ._1_BIT,
-        minSampleShading = 1.0,
-        pSampleMask = null,
-        alphaToCoverageEnable = VK_FALSE,
-        alphaToOneEnable = VK_FALSE
-    };
-
-    color_blend_attachment := VkPipelineColorBlendAttachmentState.{
-        colorWriteMask = .R_BIT | .G_BIT | .B_BIT | .A_BIT,
-        blendEnable = VK_TRUE,
-        srcColorBlendFactor = .SRC_ALPHA,
-        dstColorBlendFactor = .ONE_MINUS_SRC_ALPHA,
-        colorBlendOp = .ADD,
-        srcAlphaBlendFactor = .ONE,
-        dstAlphaBlendFactor = .ZERO,
-        alphaBlendOp = .ADD
-    };
-
-    color_blend_create := VkPipelineColorBlendStateCreateInfo.{
+    color_blend.create = VkPipelineColorBlendStateCreateInfo.{
         logicOpEnable = VK_FALSE,
         logicOp = .COPY,
         attachmentCount = 1,
-        pAttachments = *color_blend_attachment
+        pAttachments = *color_blend.attachment
     };
 
-    dynamic_states := VkDynamicState.[
-        .VIEWPORT,
-        .SCISSOR,
-        // .LINE_WIDTH,
-        // .DEPTH_BIAS,
-        // .BLEND_CONSTANTS,
-        // .DEPTH_BOUNDS,
-        // .STENCIL_COMPARE_MASK             :: 6;
-        // .STENCIL_WRITE_MASK               :: 7;
-        // .STENCIL_REFERENCE                :: 8;
-        // .VIEWPORT_W_SCALING_NV            :: 1000087000;
-        // .DISCARD_RECTANGLE_EXT            :: 1000099000;
-        // SAMPLE_LOCATIONS_EXT             :: 1000143000;
-    ];
-
-    dynamic_state := VkPipelineDynamicStateCreateInfo.{
-        dynamicStateCount = xx dynamic_states.count,
-        pDynamicStates = dynamic_states.data
-    };
-
-    layouts := VkDescriptorSetLayout.[
-        scratch_texture_sampler_descriptor_set_layout,
-    ];
-
-    // color_pc := VkPushConstantRange.{
-    //     stageFlags = .VERTEX_BIT,
-    //     offset = 0,
-    //     size = size_of(float32) * 16 + size_of(float32) * 4 + size_of(float) * 4
-    // };
-
-    pipeline_layout_info := VkPipelineLayoutCreateInfo.{
-        setLayoutCount = xx layouts.count,
-        pSetLayouts = layouts.data,
-        // pushConstantRangeCount = 1,
-        // pPushConstantRanges = *color_pc
-    };
-
-    if !validate(vkCreatePipelineLayout(logical.obj, *pipeline_layout_info, null, *device_space_mesh_textured_pipeline_layout), "failed to create device space mesh textured pipeline layout") then return false;
-
-    // color_attachment_format := VkFormat.R16G16B16A16_SFLOAT;
-    color_attachment_format := VkFormat.R8G8B8A8_UNORM;
-    rendering_create_info := VkPipelineRenderingCreateInfo.{
+    render.create = {
         colorAttachmentCount=1,
         pColorAttachmentFormats = *color_attachment_format,
-        depthAttachmentFormat = DEPTH_FORMAT
-    };
+        depthAttachmentFormat = DEPTH_FORMAT // ?
+    }
+}
 
-    depth_stencil_info := VkPipelineDepthStencilStateCreateInfo.{
-        depthTestEnable = VK_TRUE,
-        depthWriteEnable = VK_TRUE,
-        depthCompareOp = .GREATER, // 1=near, 0=far
-        depthBoundsTestEnable = VK_FALSE,
-        stencilTestEnable = VK_FALSE,
-        // front:                 VkStencilOpState;
-        // back:                  VkStencilOpState;
-        // minDepthBounds:        float;
-        // maxDepthBounds:        float;
-    };
-
+build_pipeline :: (using build_info: *Graphics_Pipeline_Build_info) -> VkPipeline {
+    // todo: this can be adapted to do non vert-frag
     pipeline_create := VkGraphicsPipelineCreateInfo.{
-        pNext = *rendering_create_info,
-        stageCount = xx shader_stages.count,
-        pStages = shader_stages.data,
-        pVertexInputState = *vertex_input_info,
-        pInputAssemblyState = *input_assembly_info,
-        // pTessellationState:  *VkPipelineTessellationStateCreateInfo;
-        pViewportState = *viewport_create_info,
-        pRasterizationState = *rasterizer_create_info,
-        pMultisampleState = *multisample_create_info,
-        pDepthStencilState = *depth_stencil_info,
-        pColorBlendState = *color_blend_create,
-        pDynamicState = *dynamic_state,
-        layout = device_space_mesh_textured_pipeline_layout,
-        // renderPass:          VkRenderPass;
-        // subpass:             u32;
-        // basePipelineHandle:  VkPipeline;
-        // basePipelineIndex:   s32;
+        pNext               = *render,
+        stageCount          = xx shader_stages.count,
+        pStages             = shader_stages.data,
+        pVertexInputState   = *vertex_fragment.create,
+        pInputAssemblyState = *input_assembly.create,
+        pViewportState      = *viewport.create,
+        pRasterizationState = *rasterization.create,
+        pMultisampleState   = *multisampling.create,
+        pDepthStencilState  = *depth_stencil.create,
+        pColorBlendState    = *color_blend.create,
+        pDynamicState       = *dynamic_state.create,
+        layout              = pipeline_layout,
     };
 
-    if !validate(vkCreateGraphicsPipelines(logical.obj, VK_NULL_HANDLE, 1, *pipeline_create, null, *device_space_mesh_textured_pipeline), "failed to create the device space mesh textured pipeline") then return false;
+    pipeline: VkPipeline;
+    if !validate(vkCreateGraphicsPipelines(logical.obj, VK_NULL_HANDLE, 1, *pipeline_create, null, *pipeline), "failed to create graphics pipeline \"%\"", build_info.name) {
+        return null;
+    }
 
-    render_log("created the device space mesh pipeline");
-    return true;
+    render_log("created graphics pipeline \"%\"", build_info.name);
+    return pipeline;
+}
+
+#scope_file
+
+DEFAULT_DYNAMIC_STATES :: VkDynamicState.[.VIEWPORT, .SCISSOR];
+
+Build_Info_Type :: enum {
+    VERTEX_FRAGMENT;
 }

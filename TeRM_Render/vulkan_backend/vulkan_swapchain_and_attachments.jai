@@ -193,16 +193,16 @@ create_render_target :: () -> bool {
 create_depth_buffer :: () -> bool {
     using context.renderer;
 
-    if depth_buffer.image_view != null 
+    if depth_buffer.view != null 
     || depth_buffer.obj != null 
     || depth_buffer.memory != null {
         // if any of these are non-null, none of them should be null
-        assert(depth_buffer.image_view != null 
+        assert(depth_buffer.view != null 
             && depth_buffer.obj != null 
             && depth_buffer.memory != null
         );
 
-        vkDestroyImageView(logical.obj, depth_buffer.image_view, null);
+        vkDestroyImageView(logical.obj, depth_buffer.view, null);
         vkDestroyImage(logical.obj, depth_buffer.obj, null);
         vkFreeMemory(logical.obj, depth_buffer.memory, null);
     }

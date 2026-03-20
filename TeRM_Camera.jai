@@ -8,7 +8,7 @@ Camera_Projection :: enum {
 Camera_Info :: struct {
     projection := Camera_Projection.PERSPECTIVE;
     orthographic_scale := 1.0;
-    perspective_vertical_fov := 100.0; // degrees
+    perspective_vertical_fov := 80.0; // degrees
     aspect_ratio := 0.0; // 0 for default
     near_plane := 0.1;
     far_plane := 100_000.0;

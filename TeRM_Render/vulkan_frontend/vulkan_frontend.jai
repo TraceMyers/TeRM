@@ -67,7 +67,7 @@ Renderer :: struct {
         corrugated_cardboard_path: string;
         corrugated_cardboard_image: *GPU_Image;
 
-        per_frame_uniform_buffer: VkBuffer;
+        per_frame_uniform_buffer: GPU_Buffer;
         per_frame_uniform_descriptor_set_layout: VkDescriptorSetLayout;
         per_frame_uniform_descriptor_set: VkDescriptorSet;
 
@@ -75,14 +75,16 @@ Renderer :: struct {
 
         max_texture_count: int;
 
+        gpu_heap_pool: Pool(GPU_Heap);
         image_pool: Pool(GPU_Image);
 
-        // gpu_heaps: Pool(GPU_Heap);
-        // host_visible_buffer_linear_allocator: GPU_Linear_Allocator;
-        // device_local_buffer_linear_allocator: GPU_Linear_Allocator;
-        // host_visible_image_linear_allocator:  GPU_Linear_Allocator;
-        // device_local_image_linear_allocator:  GPU_Linear_Allocator;
-
+        // this set of allocators makes no sense, but it's already a lot of space at 256mb min allocation
+        // so, maybe could use a linear allocator to allocate to allocators, so they can maybe have
+        // a min size of 128mb or something like that.
+        host_visible_buffer_linear_allocator: GPU_Linear_Allocator;
+        device_local_buffer_linear_allocator: GPU_Linear_Allocator;
+        host_visible_image_linear_allocator:  GPU_Linear_Allocator;
+        device_local_image_linear_allocator:  GPU_Linear_Allocator;
 
         // descriptor_set_layouts: []VkDescriptorSetLayout;
         // descriptor_sets: []VkDescriptorSet;
@@ -103,11 +105,11 @@ Renderer :: struct {
         textures_descriptor_set_layout: VkDescriptorSetLayout;
         textures_descriptor_set: VkDescriptorSet;
 
-
-
         storage_buffer_descriptor_set_layout: VkDescriptorSetLayout;
-        billboard_instance_buffer_descriptor_set: VkDescriptorSet;
 
+        billboard_vertex_buffer: GPU_Buffer;
+        billboard_instance_buffer: GPU_Buffer;
+        billboard_instance_buffer_descriptor_set: VkDescriptorSet;
         billboard_pipeline_layout: VkPipelineLayout;
 
         debug_switch: bool;
@@ -218,21 +220,28 @@ Graphics_API_Version :: struct {
     patch: u32;
 }
 
-GPU_Heap_Type :: enum u8 {
-    DEVICE_LOCAL;
-    HOST_VISIBLE_AND_COHERENT;
+DEFAULT_ALLOCATOR_HEAP_SIZE : VkDeviceSize : 256 * 1024 * 1024;
+
+GPU_Heap_Type :: enum_flags u8 {
+    DEVICE_LOCAL_BUFFER;
+    DEVICE_LOCAL_IMAGE;
+    HOST_VISIBLE_BUFFER;
+    HOST_VISIBLE_IMAGE;
 }
 
 GPU_Heap :: struct {
     memory: VkDeviceMemory;
     size: VkDeviceSize;
-    flags: VkMemoryPropertyFlags;
-    valid: bool;
-}
 
-GPU_Allocation_Type :: enum u8 {
-    BUFFER;
-    IMAGE;
+    type: GPU_Heap_Type;
+    allocator: GPU_Allocator;
+
+    // these fields are only valid if this is a heap for allocating buffers
+    buffer: VkBuffer; 
+    buffer_usage: VkBufferUsageFlags;
+    buffer_min_alignment: u32;
+
+    is_valid: bool;
 }
 
 GPU_Allocator :: enum u8 {
@@ -240,12 +249,10 @@ GPU_Allocator :: enum u8 {
 }
 
 GPU_Allocation :: struct {
-    type: GPU_Allocation_Type;
-    allocator: GPU_Allocator;
-    memory: VkDeviceMemory;
-    // source_heap: u16;
-    // source_heap_offset: s32;
-    size: VkDeviceSize;
+    source_heap: u16;
+    allocator_heap_index: u16;
+    source_heap_offset: s32;
+    size: u32;
 }
 
 GPU_Image :: struct {
@@ -262,7 +269,6 @@ GPU_Image :: struct {
 
 GPU_Buffer :: struct {
     using #as allocation: GPU_Allocation;
-    obj: VkBuffer;
     usage_flags: VkBufferUsageFlags;
 }
 
@@ -321,11 +327,12 @@ Billboard_Vertex :: struct {
 }
 
 Billboard_Instance :: struct {
-    position:  Vector3; __pad0: float32;
-    scale:     Vector2; 
-    uv_offset: Vector2;
-    uv_scale:  Vector2; __pad1: Vector2;
-    tint:      Vector3; __pad2: float32;
+    position:      Vector3; __pad0: float32;
+    scale:         Vector2; 
+    uv_offset:     Vector2;
+    uv_scale:      Vector2; __pad1: Vector2;
+    tint:          Vector3;
+    texture_index: uint32;
 }
 
 Per_Frame_Uniform_Buffer :: struct {

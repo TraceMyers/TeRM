@@ -3,15 +3,17 @@
 layout(location=0) in vec2 in_position;
 layout(location=1) in vec2 in_uv;
 
-layout(location=0) out vec2 out_uv;
-layout(location=1) out vec3 out_tint;
+layout(location=0) out      vec2 out_uv;
+layout(location=1) out      vec3 out_tint;
+layout(location=2) out flat uint out_texture_index;
 
 struct Billboard_Instance {
     vec3 position;  float __pad0;
     vec2 scale;
     vec2 uv_offset;
     vec2 uv_scale;  vec2  __pad1;
-    vec3 tint;      float __pad2;
+    vec3 tint;
+    uint texure_index;
 };
 
 layout(set=0, binding=0) uniform Per_Frame_Uniform_Buffer {
@@ -43,6 +45,7 @@ void main() {
 
     gl_Position = frame.view_projection * vec4(world_pos, 1.0);
 
-    out_tint = inst.tint;
-    out_uv = inst.uv_offset + in_uv * inst.uv_scale;
+    out_tint          = inst.tint;
+    out_uv            = inst.uv_offset + in_uv * inst.uv_scale;
+    out_texture_index = inst.texture_index;
 }

@@ -489,17 +489,20 @@ create_descriptors :: () -> bool {
     // Sets = granularity of when things change
     // Bindings = individual resources within that granularity
 
+    // can use UNIFORM_BUFFER_DYNAMIC and STORAGE_BUFFER_DYNAMIC for buffers
+    // whose memory stays the same, but offset changes.
+
     {
         // descriptor set of all images
         textures_binding := VkDescriptorSetLayoutBinding.[{
             binding         = 0, 
             descriptorCount = max_texture_count, 
             descriptorType  = .COMBINED_IMAGE_SAMPLER, 
-            stageFlags      = .VERTEX_BIT | .VRAGMENT_BIT
+            stageFlags      = .VERTEX_BIT | .FRAGMENT_BIT
         }];
 
         // Mark it as partially bound and variable count
-        binding_flags := VkDescriptorBindingFlags.{ PARTIALLY_BOUND_BIT | VARIABLE_DESCRIPTOR_COUNT_BIT };
+        binding_flags := VkDescriptorBindingFlags.{ .PARTIALLY_BOUND_BIT | .VARIABLE_DESCRIPTOR_COUNT_BIT };
         flags_info := VkDescriptorSetLayoutBindingFlagsCreateInfo.{
             bindingCount  = 1,
             pBindingFlags = *binding_flags
@@ -521,8 +524,30 @@ create_descriptors :: () -> bool {
         per_frame_uniform_binding := VkDescriptorSetLayoutBinding.[
             {binding=0, descriptorCount=1, descriptorType=.UNIFORM_BUFFER, stageFlags=.ALL}
         ];
+
         per_frame_uniform_descriptor_set_layout = build_descriptor_set_layout(per_frame_uniform_binding);
         per_frame_uniform_descriptor_set = allocate_descriptor_set(descriptor_pool, per_frame_uniform_descriptor_set_layout);
+
+        per_frame_uniform_buffer = gpu_linear_allocate(
+            .HOST_VISIBLE_BUFFER, size_of(Per_Frame_Uniform_Buffer), .UNIFORM_BUFFER_BIT
+        );
+        buffer := gpu_heap_pools[per_frame_uniform_buffer.source_heap].buffer;
+
+        info := VkDescriptorBufferInfo.{
+            buffer = buffer,
+            offset = xx per_frame_uniform_buffer.source_heap_offset,
+            range  = sizeof(Per_Frame_Uniform_Buffer)
+        };
+
+        write := VkWriteDescriptorSet.{
+            dstSet          = per_frame_uniform_descriptor_set,
+            dstBinding      = 0,
+            descriptorCount = 1,
+            descriptorType  = .UNIFORM_BUFFER,
+            pBufferInfo     = *info
+        };
+
+        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
     }
     {
         // any ssbo can use this layout
@@ -533,6 +558,35 @@ create_descriptors :: () -> bool {
     }
     {
         billboard_instance_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
+
+        max_instance_count := 1000;
+
+        billboard_instance_buffer = gpu_linear_allocate(
+            .HOST_VISIBLE_BUFFER, max_instance_count * size_of(Billboard_Instance), .STORAGE_BUFFER_BIT
+        );
+        buffer := gpu_heap_pools[billboard_instance_buffer.source_heap].buffer;
+
+        info := VkDescriptorBufferInfo.{
+            buffer = buffer,
+            offset = xx billboardinstance_buffer.source_heap_offset,
+            range  = sizeof(Billboard_Instance) * max_instance_count
+        };
+
+        write := VkWriteDescriptorSet.{
+            dstSet          = billboard_instance_buffer_descriptor_set,
+            dstBinding      = 0,
+            descriptorCount = 1,
+            descriptorType  = .STORAGE_BUFFER,
+            pBufferInfo     = *info
+        };
+
+        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
+    }
+    {
+        billboard_vertex_buffer = gpu_linear_allocate(
+            .HOST_VISIBLE_BUFFER, billboard_vertices.count * size_of(Billboard_Vertex), .VERTEX_BUFFER_BIT
+        );
+        copy_to_gpu_buffer(*billboard_vertex_buffer, billboard_vertices.data);
     }
 
 // ***
@@ -605,10 +659,10 @@ initialize_allocators :: () -> bool {
     memory_properties: VkPhysicalDeviceMemoryProperties;
     vkGetPhysicalDeviceMemoryProperties(physical.obj, *memory_properties);
 
-    device_local_buffer_index := find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
-    host_coherent_buffer_index := find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
-    device_local_image_index := find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
-    host_coherent_image_index := find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
+    physical.properties.device_local_buffer_memory_index = find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
+    physical.properties.host_coherent_buffer_memory_index = find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
+    physical.properties.device_local_image_memory_index = find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
+    physical.properties.host_coherent_image_memory_index = find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
 
     // todo: allocate memory in each category for allocators.
 }
@@ -619,17 +673,19 @@ initialize_allocators :: () -> bool {
 create_scratch_data :: () -> bool {
     using context.renderer;
 
-    simple_vertex_buffer = create_gpu_buffer_for_array(
-        scratch_vertices, .VERTEX_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT
-    );
-    copy_to_gpu_buffer(scratch_vertices.data, *simple_vertex_buffer);
+    // simple_vertex_buffer = create_gpu_buffer_for_array(
+    //     scratch_vertices, .VERTEX_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT
+    // );
+    // simple_vertex_buffer = gpu_linear_allocate(.HOST_VISIBLE, scratch_vertices.count * size_of(scratch_vertices[0])), .VERTEX_BUFFER_BIT);
 
-    billboard_vertex_buffer = create_gpu_buffer_for_array(
-        billboard_vertices, .VERTEX_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT
-    );
-    copy_to_gpu_buffer(billboard_vertices.data, *billboard_vertex_buffer);
+    // copy_to_gpu_buffer(scratch_vertices.data, *simple_vertex_buffer);
 
-    per_frame_uniform_buffer = create_gpu_buffer(size_of(Per_Frame_Uniform_Buffer), .UNIFORM_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT);
+    // billboard_vertex_buffer = create_gpu_buffer_for_array(
+    //     billboard_vertices, .VERTEX_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT
+    // );
+    // copy_to_gpu_buffer(billboard_vertices.data, *billboard_vertex_buffer);
+
+    // per_frame_uniform_buffer = create_gpu_buffer(size_of(Per_Frame_Uniform_Buffer), .UNIFORM_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT);
 
     {
         create_info := VkSamplerCreateInfo.{

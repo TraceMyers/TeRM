@@ -39,36 +39,68 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     // clear render target, among other things
     begin_rendering(cmd, render_target_view);
 
+    // note : frames in flight blech. will get memory tearing without buffer copies.
+
+    // just linear allocating all buffers every frame for now.
+
+    {
+        per_frame_uniform: Per_Frame_Uniform_Buffer;
+
+        projection_matrix := make_camera_projection_matrix(camera_info, viewport);
+        per_frame_uniform.view            = make_camera_view_matrix(camera_position, camera_orientation);
+        per_frame_uniform.view_projection = projection_matrix * per_frame_uniform.view;
+        per_frame_uniform.camera_position = camera_position;
+        per_frame_uniform.camera_forward  = get_fore_direction(*camera_orientation);
+        per_frame_uniform.camera_up       = get_up_direction(*camera_orientation);
+        per_frame_uniform.camera_right    = get_right_direction(*camera_orientation);
+        per_frame_uniform.time            = 0;
+        per_frame_uniform.delta_time      = 1.0 / 120.0;
+
+        copy_to_gpu_buffer(*per_frame_uniform_buffer, *per_frame_uniform);
+    }
+
+    billboard_vertex_buffer := gpu_linear_allocate(.HOST_VISIBLE_BUFFER, billboard_vertices.count * size_of(Billboard_Vertex), .VERTEX_BUFFER_BIT);
+
+    copy_to_gpu_buffer(*billboard_vertex_buffer, billboard_vertices.data);
+
+    billboard_instance: Billboard_Instance;
+    billboard_instance.position      = scratch_position;
+    billboard_instance.scale         = 20.0;
+    billboard_instance.uv_offset     = {0,0};
+    billboard_instance.uv_scale      = {1,1};
+    billboard_instance.tint          = COLOR4F_WHITE.rgb;
+    billboard_instance.texture_index = 0;
+
+    copy_to_gpu_buffer(*billboard_instance_buffer, *billboard_instance, 1 * size_of(Billboard_Instance));
+
     vkCmdBindDescriptorSets(
         cmd, .GRAPHICS, billboard_pipeline_layout, 0, 1, *textures_descriptor_set, 0, null
     );
+
     vkCmdBindDescriptorSets(
         cmd, .GRAPHICS, billboard_pipeline_layout, 1, 1, *per_frame_uniform_descriptor_set, 0, null
     );
+
     vkCmdBindDescriptorSets(
         cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *billboard_instance_buffer_descriptor_set, 0, null
     );
-    vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
 
-    per_frame_uniform: Per_Frame_Uniform_Buffer;
+    // note: the organizational structure of render metadata appears to be tree-like in nature.
+    // as in: each descriptor set is a node on a tree of descriptor sets, and within that node
+    // are the datas needed to do draws at that layer of the tree.
 
-    projection_matrix := make_camera_projection_matrix(camera_info, viewport);
-    per_frame_uniform.view            = make_camera_view_matrix(camera_position, camera_orientation);
-    per_frame_uniform.view_projection = projection_matrix * per_frame_uniform.view;
-    per_frame_uniform.camera_position = camera_position;
-    per_frame_uniform.camera_forward  = get_fore_direction(*camera_orientation);
-    per_frame_uniform.camera_up       = get_up_direction(*camera_orientation);
-    per_frame_uniform.camera_right    = get_right_direction(*camera_orientation);
-    per_frame_uniform.time            = 0;
-    per_frame_uniform.delta_time      = 1.0 / 120.0;
-
-    copy_to_gpu_buffer(*per_frame_uniform, *per_frame_uniform_buffer);
-
-    // copy data to instance buffer
-    
-    offset : u64 = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, *billboard_vertex_buffer.obj, *offset);
-    vkCmdDraw(cmd, xx billboard_vertices.count, 1, 0, 0); 
+    // but, making that might be over-complicating things. a more manageable version of this procedure
+    // (for me, at least) probably just hard-codes binding and render order. that seems especially
+    // true, given a render data item is unlikely to want to move to another node once added to the
+    // list of things to be drawn.
+    {
+        vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
+        heap   := *gpu_heap_pool[billboard_vertex_buffer.source_heap];
+        buffer := heap.buffer;
+        offset := billboard_vertex_Buffer.source_heap_offset;
+        vkCmdBindVertexBuffers(cmd, 0, 1, *buffer, *offset);
+        vkCmdDraw(cmd, xx billboard_vertices.count, 1, 0, 0); 
+    }
 
     vkCmdEndRendering(cmd);
 

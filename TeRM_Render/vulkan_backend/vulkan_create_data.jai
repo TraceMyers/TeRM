@@ -278,14 +278,24 @@ create_gpu_buffer_for_array :: (data: []$T, usage_flags: VkBufferUsageFlags, mem
     return create_gpu_buffer(data.count * size_of(T), usage_flags, memory_flags);
 }
 
-copy_to_gpu_buffer :: (data: *void, buffer: *GPU_Buffer, offset : s32 = 0, size : s32 = 0) {
+copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0xffff_ffff) {
     using context.renderer;
     assert((buffer.memory_flags & .HOST_VISIBLE_BIT) != 0);
-    use_size : s32 = ifx size == 0 then cast(s32) buffer.size else size;
+
+    heap    := *gpu_heap_pool[buffer.source_heap];
+    assert(heap.is_valid);
+    vbo     := heap.buffer; 
+    offset  := buffer.source_heap_offset;
+    size    := min(buffer.size, override_size);
+
+    if size == 0 {
+        return;
+    }
+
     p: *void;
-    vkMapMemory(logical.obj, buffer.memory, xx offset, xx use_size, 0, *p);
-    memcpy(p, data, use_size);
-    vkUnmapMemory(logical.obj, buffer.memory);
+    vkMapMemory(logical.obj, heap.memory, xx offset, xx size, 0, *p);
+    memcpy(p, data, size);
+    vkUnmapMemory(logical.obj, heap.memory);
 }
 
 add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
@@ -354,7 +364,6 @@ copy_buffer_to_image :: (cmd: VkCommandBuffer, dst: *GPU_Image, src: GPU_Buffer)
     vkCmdCopyBufferToImage(cmd, src.obj, dst.obj, .TRANSFER_DST_OPTIMAL, 1, *copy_region);
 }
 
-    // staging_buffer := create_gpu_buffer(image_size, .TRANSFER_SRC_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT);
 create_gpu_buffer :: (size: int, usage_flags: VkBufferUsageFlags, memory_flags: VkMemoryPropertyFlags) -> GPU_Buffer {
     using context.renderer;
 
@@ -407,6 +416,99 @@ create_gpu_image :: (width: s32, height: s32, usage_flags: VkImageUsageFlags, me
     allocate_gpu_image(image, create_info, memory_flags);
 
     return image;
+}
+
+heap_type_and_memory_index :: inline (heap_type: GPU_Heap_Type) -> VkMemoryPropertyFlags, u32 {
+    using context.renderer;
+    if heap_type == {
+    case .DEVICE_LOCAL_BUFFER;
+        return .DEVICE_LOCAL_BIT, physical.properties.device_local_buffer_memory_index;
+    case .DEVICE_LOCAL_IMAGE;
+        return .DEVICE_LOCAL_BIT, physical.properties.device_local_image_memory_index;
+    case .HOST_VISIBLE_BUFFER;
+        return .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, physical.properties.host_visible_buffer_memory_index;
+    case .HOST_VISIBLE_IMAGE;
+        return .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, physical.properties.host_visible_image_memory_index;
+    }
+    return 0, 0xffff_ffff;
+}
+
+allocate_gpu_buffer :: (size: VkDeviceSize, type: GPU_Heap_Type, 
+
+allocate_gpu_heap :: (size: VkDeviceSize, type: GPU_Heap_Type, allocator: GPU_Allocator, buffer_usage: VkBufferUsage = 0) -> u16 {
+    using context.renderer;
+
+    _, memory_index := heap_type_flags_and_memory_index(type);
+    allocate_info := VkMemoryAllocateInfo.{
+        allocationSize = size,
+        memoryTypeIndex = memory_index
+    };
+
+    memory: VkDeviceMemory;
+
+    if !validate(vkAllocateMemory(logical.obj, *allocate_info, null, *memory), "failed to allocate a heap of type % from allocator % size %", type, allocator, size) {
+        return null;
+    }
+
+    buffer: VkBuffer;
+    buffer_min_alignment: u32;
+
+    if type == .DEVICE_LOCAL_BUFFER || type == .HOST_VISIBLE_BUFFER {
+        create_info := VkBufferCreateInfo.{
+            size        = size,
+            usage       = buffer_usage,
+            sharingMode = .EXCLUSIVE
+        };
+
+        memory_requirements: VkMemoryRequirements;
+        vkCreateBuffer(logical.obj, *create_info, null, *buffer.obj);
+        vkGetBufferMemoryRequirements(logical.obj, buffer.obj, *memory_requirements);
+        buffer_min_alignment = xx memory_requirements.alignment;
+        vkBindBufferMemory(logical.obj, buffer.obj, memory, 0);
+    }
+
+    heap_index := cast(u16) pool_acquire(*gpu_heap_pool);
+    heap := *gpu_heap_pool[heap_index]
+
+    heap.* = GPU_Heap.{
+        memory = memory,
+        size                 = size,
+        type                 = type,
+        allocator            = allocator,
+        buffer               = buffer,
+        buffer_usage         = buffer_usage,
+        buffer_min_alignment = buffer_min_alignment,
+        is_valid             = true;
+    };
+
+    return heap_index;
+}
+
+usage_alignment :: inline (usage_flags: VkBufferUsageFlags) -> int {
+    using context.renderer;
+    align: u32 = 0;
+    if (usage_flags & (.TRANSFER_SRC_BIT | .TRANSFOR_DST_BIT | .STORAGE_BUFFER_BIT)) != 0 {
+        // note: I was told by an AI that meeting the requirements for storage buffers
+        // almost certainly meets the requirements for optimal transfer.
+        align = max(align, physical.properties.storage_buffer_alignment);
+    }
+    if (usage_flags & (.UNIFORM_TEXEL_BUFFER_BIT | .STORAGE_TEXEL_BUFFER_BIT)) != 0 {
+        align = max(align, physical.properties.texel_buffer_alignment);
+    }
+    if (usage_flags & .UNIFORM_BUFFER_BIT) != 0 {
+        align = max(align, physical.properties.uniform_buffer_alignment);
+    }
+    if (usage_flags & .VERTEX_BUFFER_BIT) != 0 {
+        align = max(align, 8);
+    }
+    if (usage_flags & (.INDEX_BUFFER_BIT | .INDIRECT_BUFFER_BIT)) != 0 {
+        align = max(align, 4);
+    }
+    return align;
+}
+
+align_up :: inline (value: int, align: int) -> int {
+    return (value + align - 1) & ~(align - 1);
 }
 
 allocate_gpu_image :: (image: *GPU_Image, create_info: VkImageCreateInfo, memory_flags: VkMemoryPropertyFlags) {

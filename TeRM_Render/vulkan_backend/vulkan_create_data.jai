@@ -286,6 +286,22 @@ create_gpu_buffer_for_array :: (data: []$T, usage_flags: VkBufferUsageFlags, mem
     return create_gpu_buffer(data.count * size_of(T), usage_flags, memory_flags);
 }
 
+copy_to_gpu_buffer :: (buffer: *GPU_Buffer, array: []$T, override_count := -1) {
+    using context.renderer;
+    heap    := *gpu_heap_pool[buffer.source_heap];
+    assert(heap.type == .HOST_VISIBLE_BUFFER);
+    
+    copy_count := ifx override_count != -1 then override_count else array.count;
+    if copy_count == 0 {
+        return;
+    }
+
+    copy_size := copy_count * size_of(T);
+    assert(buffer.size >= xx copy_size);
+
+    copy_to_gpu_buffer(buffer, cast(*void) array.data, cast(u32) copy_size);
+}
+
 copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0xffff_ffff) {
     using context.renderer;
     heap    := *gpu_heap_pool[buffer.source_heap];
@@ -331,6 +347,29 @@ add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
 }
 
 create_gpu_image_for_sampling :: (path: string) -> *GPU_Image {
+
+    convert_two_to_four_channel :: (image_data: *void, width: s32, height: s32) -> *void {
+        RG_Pixel :: struct {
+            r: u8;
+            g: u8;
+        }
+        
+        rg_pixels: []RG_Pixel;
+        rg_pixels.data = image_data;
+        rg_pixels.count = width * height;
+
+        rgba_pixels := make_static_array(Color4b, rg_pixels.count,, temp);
+
+        for p : 0..rg_pixels.count-1 {
+            rgba_pixels[p].r = rg_pixels[p].r;
+            rgba_pixels[p].g = rg_pixels[p].r;
+            rgba_pixels[p].b = rg_pixels[p].r;
+            rgba_pixels[p].a = rg_pixels[p].g;
+        }
+
+        return rgba_pixels.data;
+    }
+
     using context.renderer;
     auto_release_temp();
 
@@ -339,13 +378,20 @@ create_gpu_image_for_sampling :: (path: string) -> *GPU_Image {
     image_data := stbi_load(temp_c_string(path), *width, *height, *channels_in_file, desired_channels); 
     defer stbi_image_free(image_data);
 
+    use_image_data := image_data;
+
+    // if channels_in_file == 2 {
+    //     channels_in_file = 4;
+    //     use_image_data = convert_two_to_four_channel(image_data, width, height);
+    // }
+
     assert(channels_in_file == 4 || channels_in_file == 3, "tried to load image with channel count %", channels_in_file);
     assert(width > 0 && height > 0);
 
     // create staging resources (cpu visible)
     image_size     := width * height * 4;
     staging_buffer := gpu_linear_allocate(.HOST_VISIBLE_BUFFER, image_size, .TRANSFER_SRC_BIT);
-    copy_to_gpu_buffer(*staging_buffer, image_data);
+    copy_to_gpu_buffer(*staging_buffer, use_image_data);
 
     image := gpu_linear_allocate(.DEVICE_LOCAL_IMAGE, width, height, .TRANSFER_DST_BIT | .SAMPLED_BIT);
 
@@ -366,6 +412,7 @@ create_gpu_image_for_sampling :: (path: string) -> *GPU_Image {
 
     return image;
 }
+
 
 copy_buffer_to_image :: (cmd: VkCommandBuffer, dst: *GPU_Image, src: GPU_Buffer) {
     using context.renderer;

@@ -67,6 +67,9 @@ Renderer :: struct {
         corrugated_cardboard_path: string;
         corrugated_cardboard_image: *GPU_Image;
 
+        light_glow_image_path: string;
+        light_glow_image: *GPU_Image;
+
         per_frame_uniform_buffer: GPU_Buffer;
         per_frame_uniform_descriptor_set_layout: VkDescriptorSetLayout;
         per_frame_uniform_descriptor_set: VkDescriptorSet;
@@ -112,6 +115,8 @@ Renderer :: struct {
         billboard_instance_buffer_descriptor_set: VkDescriptorSet;
         billboard_pipeline_layout: VkPipelineLayout;
         billboard_pipeline: VkPipeline;
+
+        particle_positions: []Vector3;
 
         debug_switch: bool;
 

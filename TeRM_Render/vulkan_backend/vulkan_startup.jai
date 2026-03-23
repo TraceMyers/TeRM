@@ -523,7 +523,8 @@ create_descriptors :: () -> bool {
 
         textures_descriptor_set = allocate_descriptor_set(descriptor_pool, textures_descriptor_set_layout, *variable_count_info);
 
-        add_gpu_image_for_sampling(corrugated_cardboard_path, image_sampler_nearest);  // 0
+        corrugated_cardboard_image = add_gpu_image_for_sampling(corrugated_cardboard_path, image_sampler_nearest);
+        light_glow_image = add_gpu_image_for_sampling(light_glow_image_path, image_sampler_bilinear);
     }
     {
         // descriptor set for the per-frame uniform buffer

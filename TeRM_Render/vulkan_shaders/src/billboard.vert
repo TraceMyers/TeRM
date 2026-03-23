@@ -8,21 +8,21 @@ layout(location=1) out      vec3 out_tint;
 layout(location=2) out flat uint out_texture_index;
 
 struct Billboard_Instance {
-    vec3 position;  float __pad0;
+    vec3 position;  float _pad0;
     vec2 scale;
     vec2 uv_offset;
-    vec2 uv_scale;  vec2  __pad1;
+    vec2 uv_scale;  vec2  _pad1;
     vec3 tint;
-    uint texure_index;
+    uint texture_index;
 };
 
-layout(set=0, binding=0) uniform Per_Frame_Uniform_Buffer {
+layout(set=1, binding=0) uniform Per_Frame_Uniform_Buffer {
     mat4  view;
     mat4  view_projection;
-    vec3  camera_position; float __pad0;
-    vec3  camera_forward;  float __pad1;
-    vec3  camera_up;       float __pad2;
-    vec3  camera_right;    float __pad3;
+    vec3  camera_position; float _pad0;
+    vec3  camera_forward;  float _pad1;
+    vec3  camera_up;       float _pad2;
+    vec3  camera_right;    float _pad3;
     float time;
     float delta_time;
 } frame;
@@ -30,7 +30,7 @@ layout(set=0, binding=0) uniform Per_Frame_Uniform_Buffer {
 // std430 makes it so arrays of data are packed correctly rather
 // than having each element aligned to the struct's alignment.
 // does nothing here probably a good idea to always use it.
-layout(set=1, binding=0, std430) readonly buffer Instance_Data {
+layout(set=2, binding=0, std430) readonly buffer Instance_Data {
     Billboard_Instance instances[];
 } instance_data;
 

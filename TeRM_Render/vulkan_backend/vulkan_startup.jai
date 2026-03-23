@@ -170,10 +170,10 @@ set_physical_device_properties :: (physical: *Physical_Device) {
     properties.vendor_id = temp_properties.vendorID;
     properties.device_id = temp_properties.deviceID;
     properties.device_type = temp_properties.deviceType;
-    properties.texel_buffer_alignment = temp_properties.minTexelBufferOffsetAlignment;
-    properties.uniform_buffer_alignment = temp_properties.minUniformBufferOffsetAlignment;
-    properties.storage_buffer_alignment = temp_properties.minStorageBufferOffsetAlignment;
-    properties.image_alignment = temp_properties.bufferImageGranularity;
+    properties.texel_buffer_alignment = temp_properties.limits.minTexelBufferOffsetAlignment;
+    properties.uniform_buffer_alignment = temp_properties.limits.minUniformBufferOffsetAlignment;
+    properties.storage_buffer_alignment = temp_properties.limits.minStorageBufferOffsetAlignment;
+    // properties.image_alignment = temp_properties.limits.bufferImageGranularity;
     memcpy(properties.device_name_buffer.data, temp_properties.deviceName.data, min(properties.device_name_buffer.count, temp_properties.deviceName.count));
     properties.device_name = to_string_safe(properties.device_name_buffer.data, properties.device_name_buffer.count);
 }
@@ -300,10 +300,12 @@ create_logical_device :: () -> bool {
         wideLines = VK_TRUE,
     };
 
+    // refer to a set of descriptors as a runtime-length array in shader
     descriptor_indexing_enable := VkPhysicalDeviceDescriptorIndexingFeatures.{
         descriptorBindingPartiallyBound = VK_TRUE,
         runtimeDescriptorArray = VK_TRUE,
-        shaderSampledIMaeArrayNonUniformIndexing = VK_TRUE
+        shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
+        descriptorBindingVariableDescriptorCount = VK_TRUE
     };
 
     // smooths over a bunch of unnecessary boilerplate in creating graphics pipeline-related stuff
@@ -437,7 +439,7 @@ create_default_pipelines :: () -> bool {
     build_info: Graphics_Pipeline_Build_Info;
     build_info.pipeline_layout = billboard_pipeline_layout;
     make_default_vertex_fragment_pipeline_build_info(
-        *build_info, "billboard", "billboard", Billboard_Vertex
+        *build_info, "billboard_vert", "billboard_frag", Billboard_Vertex
     ); 
     billboard_pipeline = build_pipeline(*build_info);
     
@@ -452,17 +454,19 @@ create_default_pipeline_layouts :: () -> bool {
         descriptor_set_layouts := VkDescriptorSetLayout.[
             textures_descriptor_set_layout,
             per_frame_uniform_descriptor_set_layout,
-            billboard_descriptor_set_layout
+            storage_buffer_descriptor_set_layout
         ];
-        create_pipeline_layout = VkPipelineLayoutCreateInfo.{
+        create_pipeline_layout := VkPipelineLayoutCreateInfo.{
             setLayoutCount = 3,
-            pSetLayouts = *layouts[0],
+            pSetLayouts = descriptor_set_layouts.data,
         };
 
         if !validate(vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *billboard_pipeline_layout), "failed to create device space mesh pipeline layout") {
             return false;
         }
     }
+
+    return true;
 }
 
 // -----------------------------------------------------------------------------------
@@ -477,7 +481,7 @@ create_descriptors :: () -> bool {
         {.UNIFORM_BUFFER, 0.25},
         {.STORAGE_BUFFER, 0.25}
     ];
-    create_descriptor_pool(*descriptor_pool, 100, ratios);
+    create_descriptor_pool(*descriptor_pool, xx (max_texture_count * 4), ratios);
 
     // todo: use bindings for frames in flight
 
@@ -496,13 +500,13 @@ create_descriptors :: () -> bool {
         // descriptor set of all images
         textures_binding := VkDescriptorSetLayoutBinding.[{
             binding         = 0, 
-            descriptorCount = max_texture_count, 
+            descriptorCount = xx max_texture_count, 
             descriptorType  = .COMBINED_IMAGE_SAMPLER, 
             stageFlags      = .VERTEX_BIT | .FRAGMENT_BIT
         }];
 
         // Mark it as partially bound and variable count
-        binding_flags := VkDescriptorBindingFlags.{ .PARTIALLY_BOUND_BIT | .VARIABLE_DESCRIPTOR_COUNT_BIT };
+        binding_flags : VkDescriptorBindingFlags = .PARTIALLY_BOUND_BIT | .VARIABLE_DESCRIPTOR_COUNT_BIT;
         flags_info := VkDescriptorSetLayoutBindingFlagsCreateInfo.{
             bindingCount  = 1,
             pBindingFlags = *binding_flags
@@ -510,9 +514,11 @@ create_descriptors :: () -> bool {
 
         textures_descriptor_set_layout = build_descriptor_set_layout(textures_binding, p_next = *flags_info);
 
+        max_texture_count_u32 : u32 = xx max_texture_count;
+
         variable_count_info := VkDescriptorSetVariableDescriptorCountAllocateInfo.{
             descriptorSetCount = 1,
-            pDescriptorCounts  = *max_textures_count
+            pDescriptorCounts  = *max_texture_count_u32
         };
 
         textures_descriptor_set = allocate_descriptor_set(descriptor_pool, textures_descriptor_set_layout, *variable_count_info);
@@ -531,12 +537,12 @@ create_descriptors :: () -> bool {
         per_frame_uniform_buffer = gpu_linear_allocate(
             .HOST_VISIBLE_BUFFER, size_of(Per_Frame_Uniform_Buffer), .UNIFORM_BUFFER_BIT
         );
-        buffer := gpu_heap_pools[per_frame_uniform_buffer.source_heap].buffer;
+        buffer := gpu_heap_pool[per_frame_uniform_buffer.source_heap].buffer;
 
         info := VkDescriptorBufferInfo.{
             buffer = buffer,
             offset = xx per_frame_uniform_buffer.source_heap_offset,
-            range  = sizeof(Per_Frame_Uniform_Buffer)
+            range  = size_of(Per_Frame_Uniform_Buffer)
         };
 
         write := VkWriteDescriptorSet.{
@@ -552,7 +558,7 @@ create_descriptors :: () -> bool {
     {
         // any ssbo can use this layout
         storage_buffer_binding := VkDescriptorSetLayoutBinding.[
-            {binding=0, descriptorcount=1, descriptorType=.STORAGE_BUFFER, stageFlags=.VERTEX_BIT | .FRAGMENT_BIT}
+            {binding=0, descriptorCount=1, descriptorType=.STORAGE_BUFFER, stageFlags=.VERTEX_BIT | .FRAGMENT_BIT}
         ];
         storage_buffer_descriptor_set_layout = build_descriptor_set_layout(storage_buffer_binding);
     }
@@ -564,12 +570,12 @@ create_descriptors :: () -> bool {
         billboard_instance_buffer = gpu_linear_allocate(
             .HOST_VISIBLE_BUFFER, max_instance_count * size_of(Billboard_Instance), .STORAGE_BUFFER_BIT
         );
-        buffer := gpu_heap_pools[billboard_instance_buffer.source_heap].buffer;
+        buffer := gpu_heap_pool[billboard_instance_buffer.source_heap].buffer;
 
         info := VkDescriptorBufferInfo.{
             buffer = buffer,
-            offset = xx billboardinstance_buffer.source_heap_offset,
-            range  = sizeof(Billboard_Instance) * max_instance_count
+            offset = xx billboard_instance_buffer.source_heap_offset,
+            range  = xx (size_of(Billboard_Instance) * max_instance_count)
         };
 
         write := VkWriteDescriptorSet.{
@@ -649,22 +655,23 @@ initialize_allocators :: () -> bool {
     dummy_image_requirements: VkMemoryRequirements;
 
     vkCreateBuffer(logical.obj, *dummy_buffer_create_info, null, *dummy_buffer);
-    vkGetBufferMemoryRequirements(dummy_buffer, *dummy_buffer_requirements);
+    vkGetBufferMemoryRequirements(logical.obj, dummy_buffer, *dummy_buffer_requirements);
     vkDestroyBuffer(logical.obj, dummy_buffer, null);
 
-    vkCreateImage(dummy_image_create_info, *dummy_image);   // OPTIMAL tiling, typical format
-    vkGetImageMemoryRequirements(dummy_image, *dummy_image_requirements);
+    vkCreateImage(logical.obj, *dummy_image_create_info, null, *dummy_image);   // OPTIMAL tiling, typical format
+    vkGetImageMemoryRequirements(logical.obj, dummy_image, *dummy_image_requirements);
     vkDestroyImage(logical.obj, dummy_image, null);
 
     memory_properties: VkPhysicalDeviceMemoryProperties;
     vkGetPhysicalDeviceMemoryProperties(physical.obj, *memory_properties);
 
     physical.properties.device_local_buffer_memory_index = find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
-    physical.properties.host_coherent_buffer_memory_index = find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
+    physical.properties.host_visible_buffer_memory_index = find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
     physical.properties.device_local_image_memory_index = find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
-    physical.properties.host_coherent_image_memory_index = find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
+    physical.properties.host_visible_image_memory_index = find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
 
     // todo: allocate memory in each category for allocators.
+    return true;
 }
 
 // -----------------------------------------------------------------------------------

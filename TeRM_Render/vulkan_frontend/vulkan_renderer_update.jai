@@ -35,13 +35,12 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     // note: UNDEFINED treats the previous data in the image as garbage, which doesn't allow
     // reading from it at this stage. probably want to change this in the future.
     transition_image(cmd, render_target, .UNDEFINED, .COLOR_ATTACHMENT_OPTIMAL);
+    transition_image(cmd, depth_buffer.obj, .UNDEFINED, .DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     // clear render target, among other things
     begin_rendering(cmd, render_target_view);
 
     // note : frames in flight blech. will get memory tearing without buffer copies.
-
-    // just linear allocating all buffers every frame for now.
 
     {
         per_frame_uniform: Per_Frame_Uniform_Buffer;
@@ -59,17 +58,13 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         copy_to_gpu_buffer(*per_frame_uniform_buffer, *per_frame_uniform);
     }
 
-    billboard_vertex_buffer := gpu_linear_allocate(.HOST_VISIBLE_BUFFER, billboard_vertices.count * size_of(Billboard_Vertex), .VERTEX_BUFFER_BIT);
-
-    copy_to_gpu_buffer(*billboard_vertex_buffer, billboard_vertices.data);
-
     billboard_instance: Billboard_Instance;
     billboard_instance.position      = scratch_position;
-    billboard_instance.scale         = 20.0;
+    billboard_instance.scale         = {20.0, 20.0};
     billboard_instance.uv_offset     = {0,0};
     billboard_instance.uv_scale      = {1,1};
     billboard_instance.tint          = COLOR4F_WHITE.rgb;
-    billboard_instance.texture_index = 0;
+    billboard_instance.texture_index = 1;
 
     copy_to_gpu_buffer(*billboard_instance_buffer, *billboard_instance, 1 * size_of(Billboard_Instance));
 
@@ -85,20 +80,13 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *billboard_instance_buffer_descriptor_set, 0, null
     );
 
-    // note: the organizational structure of render metadata appears to be tree-like in nature.
-    // as in: each descriptor set is a node on a tree of descriptor sets, and within that node
-    // are the datas needed to do draws at that layer of the tree.
-
-    // but, making that might be over-complicating things. a more manageable version of this procedure
-    // (for me, at least) probably just hard-codes binding and render order. that seems especially
-    // true, given a render data item is unlikely to want to move to another node once added to the
-    // list of things to be drawn.
     {
         vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
         heap   := *gpu_heap_pool[billboard_vertex_buffer.source_heap];
         buffer := heap.buffer;
-        offset := billboard_vertex_Buffer.source_heap_offset;
-        vkCmdBindVertexBuffers(cmd, 0, 1, *buffer, *offset);
+        offset := billboard_vertex_buffer.source_heap_offset;
+        offset_u64 : u64 = xx billboard_vertex_buffer.source_heap_offset;
+        vkCmdBindVertexBuffers(cmd, 0, 1, *buffer, *offset_u64);
         vkCmdDraw(cmd, xx billboard_vertices.count, 1, 0, 0); 
     }
 

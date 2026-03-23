@@ -54,12 +54,14 @@ HERE,
         if !populate_shader_data() then return false;
     }
 
-    pool_initialize(*image_pool, max_texture_count, true);
+    pool_init(*gpu_heap_pool, 32, true);
+    pool_init(*image_pool,    max_texture_count, true);
     
     run_init_proc(create_vk_instance);
     run_init_proc(create_surface);
     run_init_proc(select_physical_device);
     run_init_proc(create_logical_device);
+    run_init_proc(initialize_allocators);
     run_init_proc(create_swapchain_and_attachments);
     run_init_proc(create_frame_datas);
     run_init_proc(create_default_descriptors);

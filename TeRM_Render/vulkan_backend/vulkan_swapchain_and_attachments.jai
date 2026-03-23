@@ -193,93 +193,24 @@ create_render_target :: () -> bool {
 create_depth_buffer :: () -> bool {
     using context.renderer;
 
-    if depth_buffer.view != null 
-    || depth_buffer.obj != null 
-    || depth_buffer.memory != null {
-        // if any of these are non-null, none of them should be null
-        assert(depth_buffer.view != null 
-            && depth_buffer.obj != null 
-            && depth_buffer.memory != null
-        );
+    if depth_buffer != null {
+        heap := *gpu_heap_pool[depth_buffer.allocation.source_heap];
+        // todo: free (using linear allocator rn)
 
         vkDestroyImageView(logical.obj, depth_buffer.view, null);
         vkDestroyImage(logical.obj, depth_buffer.obj, null);
-        vkFreeMemory(logical.obj, depth_buffer.memory, null);
-    }
 
-    depth_buffer = {};
+        pool_release(*image_pool, depth_buffer.pool_index);
+        depth_buffer = null;
+    }
 
     assert(render_target_width > 0 && render_target_height > 0);
 
-    depth_buffer.extent = VkExtent3D.{
-        render_target_width,
-        render_target_height,
-        (1).(u32)
-    };
+    depth_buffer = gpu_linear_allocate(.DEVICE_LOCAL_IMAGE, xx render_target_width, xx render_target_height, .DEPTH_STENCIL_ATTACHMENT_BIT | .SAMPLED_BIT, depth_buffer_format(physical.obj), create_color_view = false);
 
-    // just leaving this here for quick reference
-    // VkMemoryPropertyFlagBits :: enum_flags u32 {
-    //     DEVICE_LOCAL_BIT        :: 0x1;
-    //     HOST_VISIBLE_BIT        :: 0x2;
-    //     HOST_COHERENT_BIT       :: 0x4;
-    //     HOST_CACHED_BIT         :: 0x8;
-    //     LAZILY_ALLOCATED_BIT    :: 0x10;
-    //     PROTECTED_BIT           :: 0x20;
-    //     DEVICE_COHERENT_BIT_AMD :: 0x40;
-    //     DEVICE_UNCACHED_BIT_AMD :: 0x80;
-    //     RDMA_CAPABLE_BIT_NV     :: 0x100;
-    //     FLAG_BITS_MAX_ENUM      :: 0x7fffffff;
-    // }
-    // VkMemoryAllocateInfo :: struct {
-    //     sType:           VkStructureType = .MEMORY_ALLOCATE_INFO;
-    //     pNext:           *void;
-    //     allocationSize:  VkDeviceSize;
-    //     memoryTypeIndex: u32;
-    // }
-    // VkMemoryRequirements :: struct {
-    //     size:           VkDeviceSize;
-    //     alignment:      VkDeviceSize;
-    //     memoryTypeBits: u32;
-    // }
-    // VkPhysicalDeviceMemoryProperties :: struct {
-    //     memoryTypeCount: u32;
-    //     memoryTypes:     [32] VkMemoryType;
-    //     memoryHeapCount: u32;
-    //     memoryHeaps:     [16] VkMemoryHeap;
-    // }
-    // VkMemoryType :: struct {
-    //     propertyFlags: VkMemoryPropertyFlags;
-    //     heapIndex:     u32;
-    // }
+    view_info := image_view_create_info(depth_buffer.format, depth_buffer.obj, .DEPTH_BIT | .STENCIL_BIT);
 
-    memory_properties: VkPhysicalDeviceMemoryProperties = ---;
-    vkGetPhysicalDeviceMemoryProperties(physical.obj, *memory_properties);
-
-    depth_buffer.format = depth_buffer_format(physical.obj);
-    depth_buffer_usage : VkImageUsageFlags = .DEPTH_STENCIL_ATTACHMENT_BIT | .SAMPLED_BIT;
-    create_info := image_create_info(depth_buffer.format, depth_buffer_usage, depth_buffer.extent);
-
-    if !validate(vkCreateImage(logical.obj, *create_info, null, *depth_buffer.obj), "failed to create the depth buffer") then return false;
-
-    memory_requirements: VkMemoryRequirements = ---;
-    vkGetImageMemoryRequirements(logical.obj, depth_buffer.obj, *memory_requirements);
-
-    memory_type_index := find_index_of_memory_type(memory_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
-
-    if !validate(memory_type_index != INVALID_MEMORY_TYPE_INDEX, "unable to find a memory type that was device local") return false;
-
-    allocate_info := VkMemoryAllocateInfo.{
-        allocationSize=memory_requirements.size,
-        memoryTypeIndex=memory_type_index
-    };
-
-    if !validate(vkAllocateMemory(logical.obj, *allocate_info, null, *depth_buffer.memory), "failed to allocate memory for the depth buffer") then return false;
-
-    if !validate(vkBindImageMemory(logical.obj, depth_buffer.obj, depth_buffer.memory, 0), "failed to bind the depth buffer to its allocation") then return false;
-
-    view_info := image_view_create_info(depth_buffer.format, depth_buffer.obj, .DEPTH_BIT);
-
-    if !validate(vkCreateImageView(logical.obj, *view_info, null, *depth_buffer.image_view), "failed to create the view of depth buffer") then return false;
+    if !validate(vkCreateImageView(logical.obj, *view_info, null, *depth_buffer.view), "failed to create the view of depth buffer") then return false;
 
     render_log("created the depth buffer");
     return true;

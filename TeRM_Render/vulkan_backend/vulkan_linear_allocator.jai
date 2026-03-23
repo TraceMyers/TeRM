@@ -3,10 +3,10 @@
 // eventually be needed is hidden right now for convenience.
 
 GPU_Linear_Allocator :: struct {
-    buffers: [..]u16;
+    heaps: [..]s16;
     heap_type: GPU_Heap_Type;
     frontier: int;
-    frontier_offset: VkDeviceSize;
+    frontier_offset: int;
 }
 
 gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, size: int, usage_flags: VkBufferUsageFlags) -> GPU_Buffer {
@@ -29,20 +29,20 @@ gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, width: s32, height: s32
     assert(heap_type == .DEVICE_LOCAL_IMAGE || heap_type == .HOST_VISIBLE_IMAGE);
 
     image_index := pool_acquire(*image_pool);
-    assert(image_index < max_image_count);
+    assert(image_index < max_texture_count);
     image := *image_pool[image_index];
     image.pool_index = xx image_index;
 
     image.extent      = {xx width, xx height, 1};
     image.format      = format;
     image.usage       = usage_flags;
-    image.mip_count   = mip_count;
-    image.layer_count = layer_count;
+    image.mip_count   = xx mip_count;
+    image.layer_count = xx layer_count;
 
     create_info := VkImageCreateInfo.{
         imageType = ._2D,
-        format = texture.format,
-        extent = texture.extent,
+        format = image.format,
+        extent = image.extent,
         mipLevels = mip_count,
         // here, can stack images together, (like maybe albedo, metallic, roughness, etc.)
         // maybe it's not good for that example, though since I don't think we usually mip
@@ -63,11 +63,14 @@ gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, width: s32, height: s32
 
     image.allocation = gpu_linear_allocate_aligned(size, align, heap_type);
 
+    heap := *gpu_heap_pool[image.allocation.source_heap];
+    vkBindImageMemory(logical.obj, image.obj, heap.memory, xx image.allocation.source_heap_offset);
+
     if create_color_view {
         view_create_info := image_view_create_info(image.format, image.obj, .COLOR_BIT, image.mip_count);
         validate(vkCreateImageView(logical.obj, *view_create_info, null, *image.view), "failed to create an image view for a sampled texture");
     }
-        
+
     return image;
 }
 
@@ -81,7 +84,7 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type)
     heap: *GPU_Heap; 
     available_size: int;
 
-    aligned_size: int;
+    aligned_size := size;
     aligned_frontier_offset: int;
 
     while allocator.frontier < allocator.heaps.count {
@@ -89,8 +92,8 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type)
         heap = *gpu_heap_pool[frontier_heap_index];
         assert(heap.is_valid);
 
-        use_align := max(heap.buffer_min_alignment, align);
-        aligned_frontier_offset = align_up(heap.frontier_offset, use_align);
+        use_align := max(heap.buffer_min_alignment, cast(u32) align);
+        aligned_frontier_offset = align_up(allocator.frontier_offset, use_align);
         available_size = heap.size - aligned_frontier_offset;
 
         if available_size >= size {
@@ -128,7 +131,7 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type)
 
     allocation := GPU_Allocation.{
         source_heap           = allocator.heaps[allocator.frontier],
-        allocator_heap_index  = allocator.frontier,
+        allocator_heap_index  = xx allocator.frontier,
         source_heap_offset    = xx allocation_offset,
         size                  = xx size
     };
@@ -144,6 +147,7 @@ gpu_linear_allocator_reset :: (heap_type: GPU_Heap_Type) {
 }
 
 get_gpu_linear_allocator :: inline (heap_type: GPU_Heap_Type) -> *GPU_Linear_Allocator {
+    using context.renderer;
     if heap_type == {
     case .DEVICE_LOCAL_BUFFER;
         return *device_local_buffer_linear_allocator;

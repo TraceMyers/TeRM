@@ -56,7 +56,7 @@ transition_image :: (cmd: VkCommandBuffer, image: VkImage, old_layout: VkImageLa
         oldLayout = old_layout,
         newLayout = new_layout,
         subresourceRange = .{
-            aspectMask = ifx new_layout == .DEPTH_ATTACHMENT_OPTIMAL then .DEPTH_BIT else .COLOR_BIT, 
+            aspectMask = ifx new_layout == .DEPTH_ATTACHMENT_OPTIMAL || new_layout == .DEPTH_STENCIL_ATTACHMENT_OPTIMAL then .DEPTH_BIT | .STENCIL_BIT else .COLOR_BIT,
             baseMipLevel = 0,
             levelCount = VK_REMAINING_MIP_LEVELS,
             baseArrayLayer = 0,
@@ -95,7 +95,15 @@ begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
 
     depth_attachment := VkRenderingAttachmentInfo.{
         imageView = depth_buffer.view,
-        imageLayout = .DEPTH_ATTACHMENT_OPTIMAL,
+        imageLayout = .DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        loadOp = .CLEAR,
+        storeOp = .STORE,
+        clearValue.depthStencil = .{0, 0}
+    };
+
+    stencil_attachment := VkRenderingAttachmentInfo.{
+        imageView = depth_buffer.view,
+        imageLayout = .DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         loadOp = .CLEAR,
         storeOp = .STORE,
         clearValue.depthStencil = .{0, 0}
@@ -113,7 +121,7 @@ begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
         colorAttachmentCount = 1,
         pColorAttachments = *color_attachment,
         pDepthAttachment = *depth_attachment,
-        // pStencilAttachment:   *VkRenderingAttachmentInfo;
+        pStencilAttachment = *stencil_attachment,
     };
 
     viewport := VkViewport.{
@@ -280,9 +288,9 @@ create_gpu_buffer_for_array :: (data: []$T, usage_flags: VkBufferUsageFlags, mem
 
 copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0xffff_ffff) {
     using context.renderer;
-    assert((buffer.memory_flags & .HOST_VISIBLE_BIT) != 0);
-
     heap    := *gpu_heap_pool[buffer.source_heap];
+    assert(heap.type == .HOST_VISIBLE_BUFFER);
+
     assert(heap.is_valid);
     vbo     := heap.buffer; 
     offset  := buffer.source_heap_offset;
@@ -298,21 +306,28 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0x
     vkUnmapMemory(logical.obj, heap.memory);
 }
 
+// vkUpdateDescriptorSets :: (device: VkDevice, descriptorWriteCount: u32, pDescriptorWrites: *VkWriteDescriptorSet, descriptorCopyCount: u32, pDescriptorCopies: *VkCopyDescriptorSet) -> void #foreign libvulkan;
+
 add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
+    using context.renderer;
+
     image := create_gpu_image_for_sampling(path);
+    image_info := VkDescriptorImageInfo.{
+        sampler = sampler,
+        imageView = image.view,
+        imageLayout = .SHADER_READ_ONLY_OPTIMAL
+    };
     write := VkWriteDescriptorSet.{
         dstSet = textures_descriptor_set,
         dstBinding = 0,
         dstArrayElement = xx image.pool_index,
         descriptorCount = 1,
         descriptorType = .COMBINED_IMAGE_SAMPLER,
-        pImageInfo = &VkDescriptorImageInfo.{
-            sampler = sampler,
-            imageView = image.view,
-            imageLayout = .SHADER_READ_ONLY_OPTIMAL
-        }
+        pImageInfo = *image_info
     };
-    vkUpdateDescriptorSets(1, *write, 0, null);
+    vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
+
+    return image;
 }
 
 create_gpu_image_for_sampling :: (path: string) -> *GPU_Image {
@@ -329,39 +344,44 @@ create_gpu_image_for_sampling :: (path: string) -> *GPU_Image {
 
     // create staging resources (cpu visible)
     image_size     := width * height * 4;
-    staging_buffer := create_gpu_buffer(image_size, .TRANSFER_SRC_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT);
-    copy_to_gpu_buffer(image_data, *staging_buffer);
+    staging_buffer := gpu_linear_allocate(.HOST_VISIBLE_BUFFER, image_size, .TRANSFER_SRC_BIT);
+    copy_to_gpu_buffer(*staging_buffer, image_data);
 
-    // create device-local image and view
-    image          := create_gpu_image(width, height, .TRANSFER_DST_BIT | .SAMPLED_BIT, .DEVICE_LOCAL_BIT);
+    image := gpu_linear_allocate(.DEVICE_LOCAL_IMAGE, width, height, .TRANSFER_DST_BIT | .SAMPLED_BIT);
 
     // Record copy on transfer queue
     cmd := transfer_command_buffer;
     begin_command_buffer(cmd);
 
     transition_image(cmd, image.obj, .UNDEFINED, .TRANSFER_DST_OPTIMAL);
-    copy_buffer_to_image(cmd, *image, staging_buffer);
+    copy_buffer_to_image(cmd, image, staging_buffer);
 
     // Transition image layout for shader usage
     transition_image(cmd, image.obj, .TRANSFER_DST_OPTIMAL, .SHADER_READ_ONLY_OPTIMAL);
 
     submit_commands(cmd, transfer_fence, transfer_queue);
 
-    view_create_info := image_view_create_info(image.format, image.obj, .COLOR_BIT, image.mip_count);
-    validate(vkCreateImageView(logical.obj, *view_create_info, null, *image.view), "failed to create an image view for a sampled texture");
+    // view_create_info := image_view_create_info(image.format, image.obj, .COLOR_BIT, image.mip_count);
+    // validate(vkCreateImageView(logical.obj, *view_create_info, null, *image.view), "failed to create an image view for a sampled texture");
 
     return image;
 }
 
 copy_buffer_to_image :: (cmd: VkCommandBuffer, dst: *GPU_Image, src: GPU_Buffer) {
+    using context.renderer;
+
+    buffer_heap := *gpu_heap_pool[src.source_heap];
+
     copy_region := VkBufferImageCopy.{
+        bufferOffset = xx src.source_heap_offset,
         imageSubresource = {
             aspectMask = .COLOR_BIT,
             layerCount = dst.layer_count,
         },
         imageExtent = dst.extent
     };
-    vkCmdCopyBufferToImage(cmd, src.obj, dst.obj, .TRANSFER_DST_OPTIMAL, 1, *copy_region);
+
+    vkCmdCopyBufferToImage(cmd, buffer_heap.buffer, dst.obj, .TRANSFER_DST_OPTIMAL, 1, *copy_region);
 }
 
 create_gpu_buffer :: (size: int, usage_flags: VkBufferUsageFlags, memory_flags: VkMemoryPropertyFlags) -> GPU_Buffer {
@@ -433,21 +453,24 @@ heap_type_and_memory_index :: inline (heap_type: GPU_Heap_Type) -> VkMemoryPrope
     return 0, 0xffff_ffff;
 }
 
-allocate_gpu_buffer :: (size: VkDeviceSize, type: GPU_Heap_Type, 
-
-allocate_gpu_heap :: (size: VkDeviceSize, type: GPU_Heap_Type, allocator: GPU_Allocator, buffer_usage: VkBufferUsage = 0) -> u16 {
+allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, buffer_usage: VkBufferUsageFlags = 0) -> s16 {
     using context.renderer;
 
-    _, memory_index := heap_type_flags_and_memory_index(type);
+    // sType:           VkStructureType = .MEMORY_ALLOCATE_INFO;
+    // pNext:           *void;
+    // allocationSize:  VkDeviceSize;
+    // memoryTypeIndex: u32;
+
+    _, memory_index := heap_type_and_memory_index(type);
     allocate_info := VkMemoryAllocateInfo.{
-        allocationSize = size,
+        allocationSize = xx size,
         memoryTypeIndex = memory_index
     };
 
     memory: VkDeviceMemory;
 
     if !validate(vkAllocateMemory(logical.obj, *allocate_info, null, *memory), "failed to allocate a heap of type % from allocator % size %", type, allocator, size) {
-        return null;
+        return -1;
     }
 
     buffer: VkBuffer;
@@ -455,20 +478,20 @@ allocate_gpu_heap :: (size: VkDeviceSize, type: GPU_Heap_Type, allocator: GPU_Al
 
     if type == .DEVICE_LOCAL_BUFFER || type == .HOST_VISIBLE_BUFFER {
         create_info := VkBufferCreateInfo.{
-            size        = size,
+            size        = xx size,
             usage       = buffer_usage,
             sharingMode = .EXCLUSIVE
         };
 
         memory_requirements: VkMemoryRequirements;
-        vkCreateBuffer(logical.obj, *create_info, null, *buffer.obj);
-        vkGetBufferMemoryRequirements(logical.obj, buffer.obj, *memory_requirements);
+        vkCreateBuffer(logical.obj, *create_info, null, *buffer);
+        vkGetBufferMemoryRequirements(logical.obj, buffer, *memory_requirements);
         buffer_min_alignment = xx memory_requirements.alignment;
-        vkBindBufferMemory(logical.obj, buffer.obj, memory, 0);
+        vkBindBufferMemory(logical.obj, buffer, memory, 0);
     }
 
     heap_index := cast(u16) pool_acquire(*gpu_heap_pool);
-    heap := *gpu_heap_pool[heap_index]
+    heap := *gpu_heap_pool[heap_index];
 
     heap.* = GPU_Heap.{
         memory = memory,
@@ -478,25 +501,25 @@ allocate_gpu_heap :: (size: VkDeviceSize, type: GPU_Heap_Type, allocator: GPU_Al
         buffer               = buffer,
         buffer_usage         = buffer_usage,
         buffer_min_alignment = buffer_min_alignment,
-        is_valid             = true;
+        is_valid             = true
     };
 
-    return heap_index;
+    return xx heap_index;
 }
 
 usage_alignment :: inline (usage_flags: VkBufferUsageFlags) -> int {
     using context.renderer;
     align: u32 = 0;
-    if (usage_flags & (.TRANSFER_SRC_BIT | .TRANSFOR_DST_BIT | .STORAGE_BUFFER_BIT)) != 0 {
+    if (usage_flags & (.TRANSFER_SRC_BIT | .TRANSFER_DST_BIT | .STORAGE_BUFFER_BIT)) != 0 {
         // note: I was told by an AI that meeting the requirements for storage buffers
         // almost certainly meets the requirements for optimal transfer.
-        align = max(align, physical.properties.storage_buffer_alignment);
+        align = max(align, cast(u32) physical.properties.storage_buffer_alignment);
     }
     if (usage_flags & (.UNIFORM_TEXEL_BUFFER_BIT | .STORAGE_TEXEL_BUFFER_BIT)) != 0 {
-        align = max(align, physical.properties.texel_buffer_alignment);
+        align = max(align, cast(u32) physical.properties.texel_buffer_alignment);
     }
     if (usage_flags & .UNIFORM_BUFFER_BIT) != 0 {
-        align = max(align, physical.properties.uniform_buffer_alignment);
+        align = max(align, cast(u32) physical.properties.uniform_buffer_alignment);
     }
     if (usage_flags & .VERTEX_BUFFER_BIT) != 0 {
         align = max(align, 8);
@@ -630,7 +653,7 @@ allocate_descriptor_set :: (pool: VkDescriptorPool, layout: VkDescriptorSetLayou
         descriptorPool = pool,
         descriptorSetCount = 1,
         pSetLayouts = *layout,
-        pNex = p_next
+        pNext = p_next
     };
     descriptor_set: VkDescriptorSet;
     validate(vkAllocateDescriptorSets(context.renderer.logical.obj, *alloc_info, *descriptor_set), "failed to allocate a descriptor set");

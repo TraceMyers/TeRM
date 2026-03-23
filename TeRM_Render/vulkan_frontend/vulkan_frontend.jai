@@ -55,7 +55,7 @@ Renderer :: struct {
 
         rendered_frame_count: s32;
 
-        depth_buffer: GPU_Image;
+        depth_buffer: *GPU_Image;
 
         init_success: bool;
 
@@ -111,10 +111,10 @@ Renderer :: struct {
         billboard_instance_buffer: GPU_Buffer;
         billboard_instance_buffer_descriptor_set: VkDescriptorSet;
         billboard_pipeline_layout: VkPipelineLayout;
+        billboard_pipeline: VkPipeline;
 
         debug_switch: bool;
 
-        billboard_vertex_buffer: GPU_Buffer;
         billboard_vertices := Billboard_Vertex.[
             {position={-0.5, -0.5}, uv={0, 0}},
             {position={ 0.5, -0.5}, uv={1, 0}},
@@ -123,6 +123,8 @@ Renderer :: struct {
             {position={ 0.5,  0.5}, uv={1, 1}},
             {position={-0.5,  0.5}, uv={0, 1}},
         ];
+
+        point_light_position: Vector3;
 
         scratch_position: Vector3;
         scratch_update_position: bool;
@@ -165,7 +167,7 @@ Renderer :: struct {
 
 Render_Init_Options :: struct {
     populate_shader_data_in_working_directory := true;
-    max_texture_count := 4096
+    max_texture_count := 4096;
 }
 
 Queue_Family_Capability_Flags :: enum_flags {
@@ -220,7 +222,7 @@ Graphics_API_Version :: struct {
     patch: u32;
 }
 
-DEFAULT_ALLOCATOR_HEAP_SIZE : VkDeviceSize : 256 * 1024 * 1024;
+DEFAULT_ALLOCATOR_HEAP_SIZE : int : 256 * 1024 * 1024;
 
 GPU_Heap_Type :: enum_flags u8 {
     DEVICE_LOCAL_BUFFER;
@@ -231,7 +233,7 @@ GPU_Heap_Type :: enum_flags u8 {
 
 GPU_Heap :: struct {
     memory: VkDeviceMemory;
-    size: VkDeviceSize;
+    size: int;
 
     type: GPU_Heap_Type;
     allocator: GPU_Allocator;
@@ -249,8 +251,8 @@ GPU_Allocator :: enum u8 {
 }
 
 GPU_Allocation :: struct {
-    source_heap: u16;
-    allocator_heap_index: u16;
+    source_heap: s16 = -1;
+    allocator_heap_index: s16;
     source_heap_offset: s32;
     size: u32;
 }
@@ -332,7 +334,7 @@ Billboard_Instance :: struct {
     uv_offset:     Vector2;
     uv_scale:      Vector2; __pad1: Vector2;
     tint:          Vector3;
-    texture_index: uint32;
+    texture_index: u32;
 }
 
 Per_Frame_Uniform_Buffer :: struct {
@@ -370,6 +372,7 @@ Simple_Vertex :: struct {
 #load "../vulkan_backend/vulkan_create_data.jai";
 #load "../vulkan_backend/vulkan_pipelines.jai";
 #load "../vulkan_backend/vulkan_shaders.jai";
+#load "../vulkan_backend/vulkan_linear_allocator.jai";
 
 #import "Window_Creation";
 #import "Basic";

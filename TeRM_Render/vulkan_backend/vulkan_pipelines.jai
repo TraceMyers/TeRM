@@ -3,22 +3,12 @@
 // process of building pipelines:
 
 build_info: Graphics_Pipeline_Build_Info;
-{
-    build_info.pipeline_layout = my_pipeline_layout;
-    make_default_..._pipeline_build_info(*build_info, ...);
-    // set non-default fields in the build info
-    my_pipeline = build_pipeline(*build_info);
-}
-{
-    // don't need to reinitialize build_info, that is done in make_default..()
-    build_info.pipeline_layout = my_pipeline_layout_2;
-    make_default_..._pipeline_build_info(*build_info, ...);
-    // set non-default fields in the build info
-    my_pipeline_2 = build_pipeline(*build_info);
-}
+build_info.pipeline_layout = my_pipeline_layout;
+make_default_..._pipeline_build_info(*build_info, ...);
+// set non-default fields in the build info
+my_pipeline = build_pipeline(*build_info);
 
 */
-
 
 Graphics_Pipeline_Build_Info :: struct {
     // filled out before passing in
@@ -27,7 +17,7 @@ Graphics_Pipeline_Build_Info :: struct {
     pipeline_layout: VkPipelineLayout;
 
     // filled in per-type
-    type: Build_Info_Base_Type;
+    type: Build_Info_Type;
 
     shader_stages: []VkPipelineShaderStageCreateInfo;
     input_assembly: struct {
@@ -46,15 +36,8 @@ Graphics_Pipeline_Build_Info :: struct {
     using common_data: struct {
         viewport: struct {
             create: VkPipelineViewportStateCreateInfo;
-            viewport := VkViewport.{
-                width = xx swapchain.extent.width,
-                height = xx swapchain.extent.height,
-                minDepth = MIN_DEPTH,
-                maxDepth = MAX_DEPTH
-            };
-            scissor := VkRect2D.{
-                extent = swapchain.extent
-            };
+            viewport: VkViewport;
+            scissor: VkRect2D;
         };
         rasterization: struct {
             create := VkPipelineRasterizationStateCreateInfo.{
@@ -81,7 +64,7 @@ Graphics_Pipeline_Build_Info :: struct {
             };
         };
         color_blend: struct {
-            create: VkPipelineColorBlendAttachmentState;
+            create: VkPipelineColorBlendStateCreateInfo;
             attachment := VkPipelineColorBlendAttachmentState.{
                 colorWriteMask = .R_BIT | .G_BIT | .B_BIT | .A_BIT,
                 blendEnable = VK_TRUE,
@@ -91,7 +74,7 @@ Graphics_Pipeline_Build_Info :: struct {
                 srcAlphaBlendFactor = .ONE,
                 dstAlphaBlendFactor = .ZERO,
                 alphaBlendOp = .ADD
-            }
+            };
         };
         dynamic_state: struct {
             create := VkPipelineDynamicStateCreateInfo.{
@@ -115,7 +98,7 @@ Graphics_Pipeline_Build_Info :: struct {
 }
 
 make_default_vertex_fragment_pipeline_build_info :: (build_info: *Graphics_Pipeline_Build_Info, vertex_shader_filename: string = "", fragment_shader_filename: string = "", $Vertex_Type: Type) -> bool {
-    build_info.* = {type=.VERTEX_FRAGMENT};
+    build_info.type = .VERTEX_FRAGMENT;
 
     vert := get_shader(vertex_shader_filename);
     if !validate(vert != null, "failed to get vert shader %", vertex_shader_filename) then return false;
@@ -133,18 +116,18 @@ make_default_vertex_fragment_pipeline_build_info :: (build_info: *Graphics_Pipel
         stage = .FRAGMENT_BIT,
         module = frag,
         pName = "main"
-    }
+    };
 
     {
         using build_info.vertex_fragment;
 
         vertex_bindings, vertex_attributes = make_vertex_descriptors(Vertex_Type,, temp);
 
-        vertex_input = VkPipelineVertexInputStateCreateInfo.{
+        create = VkPipelineVertexInputStateCreateInfo.{
             vertexBindingDescriptionCount = 1,
-            pVertexBindingDescriptions = *build_info.vertex_bindings,
-            vertexAttributeDescriptionCount = xx build_info.vertex_attributes.count,
-            pVertexAttributeDescriptions = build_info.vertex_attributes.data
+            pVertexBindingDescriptions = *vertex_bindings,
+            vertexAttributeDescriptionCount = xx vertex_attributes.count,
+            pVertexAttributeDescriptions = vertex_attributes.data
         };
     }
 
@@ -152,32 +135,13 @@ make_default_vertex_fragment_pipeline_build_info :: (build_info: *Graphics_Pipel
         topology = .TRIANGLE_LIST,
     };
 
-    return rest_of_make_default_pipeline(build_info);
+    fill_default(build_info);
+    return true;
 }
 
-rest_of_make_default_pipeline_build_info :: (using build_info: *Graphics_Pipeline_Build_Info) -> bool {
-    viewport.create = VkPipelineViewportStateCreateInfo.{
-        viewportCount = 1,
-        pViewports = *viewport.viewport,
-        scissorCount = 1
-        pScissors = *viewport.scissor
-    };
+build_pipeline :: (using build_info: *Graphics_Pipeline_Build_Info) -> VkPipeline {
+    using context.renderer;
 
-    color_blend.create = VkPipelineColorBlendStateCreateInfo.{
-        logicOpEnable = VK_FALSE,
-        logicOp = .COPY,
-        attachmentCount = 1,
-        pAttachments = *color_blend.attachment
-    };
-
-    render.create = {
-        colorAttachmentCount=1,
-        pColorAttachmentFormats = *color_attachment_format,
-        depthAttachmentFormat = DEPTH_FORMAT // ?
-    }
-}
-
-build_pipeline :: (using build_info: *Graphics_Pipeline_Build_info) -> VkPipeline {
     // todo: this can be adapted to do non vert-frag
     pipeline_create := VkGraphicsPipelineCreateInfo.{
         pNext               = *render,
@@ -204,6 +168,42 @@ build_pipeline :: (using build_info: *Graphics_Pipeline_Build_info) -> VkPipelin
 }
 
 #scope_file
+
+fill_default :: (using build_info: *Graphics_Pipeline_Build_Info) {
+    using context.renderer;
+
+    viewport = {
+        create = {
+            viewportCount = 1,
+            pViewports = *viewport.viewport,
+            scissorCount = 1,
+            pScissors = *viewport.scissor
+        },
+        viewport = {
+            width = xx swapchain.extent.width,
+            height = xx swapchain.extent.height,
+            minDepth = MIN_DEPTH,
+            maxDepth = MAX_DEPTH
+        },
+        scissor = {
+            extent = swapchain.extent
+        }
+    };
+
+    color_blend.create = {
+        logicOpEnable = VK_FALSE,
+        logicOp = .COPY,
+        attachmentCount = 1,
+        pAttachments = *color_blend.attachment
+    };
+
+    render.create = {
+        colorAttachmentCount=1,
+        pColorAttachmentFormats = *color_attachment_format,
+        depthAttachmentFormat = DEPTH_FORMAT,
+        stencilAttachmentFormat = DEPTH_FORMAT
+    };
+}
 
 DEFAULT_DYNAMIC_STATES :: VkDynamicState.[.VIEWPORT, .SCISSOR];
 

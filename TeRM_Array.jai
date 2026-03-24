@@ -80,7 +80,7 @@ array_shrink :: (array: *[..]$T, remove_free_proportion := 0.75) {
     keep_allocated := array.allocated;
 
     if array.count > 0 {
-        keep_extra := cast(int) (cast(float) (array.allocated - array.count) * (1-remove_free_proportion));
+        keep_extra := round(cast(float) (array.allocated - array.count) * (1-remove_free_proportion));
         keep_allocated = array.count + keep_extra;
 
         if keep_allocated == array.allocated {
@@ -101,19 +101,26 @@ array_shrink :: (array: *[..]$T, remove_free_proportion := 0.75) {
     array.allocated = keep_allocated;
 }
 
-array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion := 0.5, remove_free_proportion := 0.75, minimum_count := 8) -> bool {
-    if array.count < minimum_count && array.count != 0 {
-        return false;
-    }
+array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion := 0.5, remove_free_proportion := 0.75, minimum_allocated := 8) -> bool {
     if array.allocated == 0 {
         assert(array.data == null);
         assert(array.count == 0);
         return false;
     }
-    if array.count.(float) / array.allocated.(float) <= realloc_if_using_leq_proportion {
-        array_shrink(array, remove_free_proportion);
-        return true;
+
+    using_proportion := array.count.(float) / array.allocated.(float);
+    if using_proportion <= realloc_if_using_leq_proportion {
+        if minimum_allocated >= array.allocated {
+            return false;
+        }
+        min_proportion := minimum_allocated.(float) / array.allocated.(float);
+        remove_proportion := min(1 - min_proportion, remove_free_proportion);
+        prev_allocated := array.allocated;
+        array_shrink(array, remove_proportion);
+        assert(prev_allocated >= array.allocated);
+        return prev_allocated != array.allocated;
     }
+
     return false;
 }
 
@@ -143,6 +150,8 @@ init_range :: (ptr: *$T, begin: s64, end: s64) {
         memset(ptr + begin, 0, count * size_of(T));
     }
 }
+
+#import "TeRM/TeRM_Math";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

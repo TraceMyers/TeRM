@@ -196,6 +196,10 @@ pool_acquire :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavi
     if index != -1 {
         set_bit(*in_use, index);
         if index > top then top = index;
+        if top >= items.count {
+            assert(top < items.allocated);
+            items.count = top + 1;
+        }
         items[index] = {};
         if init_item_proc then init_item_proc(*items[index]);
         return index;
@@ -246,11 +250,10 @@ pool_release :: (using pool: *Pool($T), i: s64, deinit_item_proc: (*T) = null, s
             }
 
             // only shrink by up to half the space we could shrink, to leave room for incoming adds
-            test_threshold <<= 1;
-            if test_threshold >= items.count then return;
-
-            new_count := max(test_threshold, shrink_to_min);
-            pool_set_capacity(pool, new_count);
+            new_cap := max(test_threshold << 1, required_count);
+            if new_cap < items.count {
+                pool_set_capacity(pool, new_cap);
+            }
         }
     }
 }

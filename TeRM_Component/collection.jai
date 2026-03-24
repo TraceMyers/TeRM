@@ -175,29 +175,25 @@ for_expansion :: (table_input: Component_Table, body: Code, flags: For_Flags) #e
     `table := table_input.table;
 
     for <=((flags & .REVERSE) != 0) outer_index : 0..`table.count-1 {
-        `it_index := outer_index;
+        `it_index      := outer_index;
+        `it            := *table[outer_index];
 
-        `table_section := table[outer_index];
-        `ids := context.user_component_storage.entity_ids[`table_section.kind];
-        `row_count := `table_section.arrays[0].untyped_array.count;
-        `component_kind := `table_section.kind;
+        `ids := context.user_component_storage.entity_ids[`it.kind];
+        `row_count := `it.arrays[0].untyped_array.count;
+        `component_kind := `it.kind;
 
         #insert -> string {
             builder: String_Builder;
             for name, ni : table_input.columns {
                 name_lower := to_lower(tprint("%", name));
-                print(*builder, "assert(`table_section.arrays[%].name == .%);\n", ni, name);
-                print(*builder, "`%% := cast,force([]#run component_types[Component_Name.%]) `table_section.arrays[outer_index].untyped_array;\n", name_lower, table_input.array_suffix, name, ni);
+                print(*builder, "assert(`it.arrays[%].name == .%);\n", ni, name);
+                print(*builder, "`%% := cast,force([]#run component_types[Component_Name.%]) `it.arrays[%].untyped_array;\n", name_lower, table_input.array_suffix, name, ni);
             }
             output := builder_to_string(*builder);
             return output;
         };
 
-        for <=((flags & .REVERSE) != 0) j : 0..row_count-1 {
-            `it := j;
-
-            #insert (break=break outer_index) body;
-        }
+        #insert body;
     }
 }
 

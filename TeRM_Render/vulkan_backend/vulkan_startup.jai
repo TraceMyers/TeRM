@@ -436,12 +436,15 @@ create_default_pipelines :: () -> bool {
     // making pipeline layouts
     create_default_pipeline_layouts();
 
-    build_info: Graphics_Pipeline_Build_Info;
-    build_info.pipeline_layout = billboard_pipeline_layout;
-    make_default_vertex_fragment_pipeline_build_info(
-        *build_info, "billboard_vert", "billboard_frag", Billboard_Vertex
-    ); 
-    billboard_pipeline = build_pipeline(*build_info);
+    {
+        build_info: Graphics_Pipeline_Build_Info;
+        build_info.pipeline_layout = billboard_pipeline_layout;
+        make_default_vertex_fragment_pipeline_build_info(
+            *build_info, "billboard_vert", "billboard_frag", Billboard_Vertex
+        );
+        build_info.depth_stencil.create.depthWriteEnable = VK_FALSE;
+        billboard_pipeline = build_pipeline(*build_info);
+    }
     
     render_log("created default pipelines");
     return true;
@@ -566,7 +569,7 @@ create_descriptors :: () -> bool {
     {
         billboard_instance_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
 
-        max_instance_count := 1000;
+        max_instance_count := 100_000;
 
         billboard_instance_buffer = gpu_linear_allocate(
             .HOST_VISIBLE_BUFFER, max_instance_count * size_of(Billboard_Instance), .STORAGE_BUFFER_BIT
@@ -595,26 +598,6 @@ create_descriptors :: () -> bool {
         );
         copy_to_gpu_buffer(*billboard_vertex_buffer, billboard_vertices.data);
     }
-
-// ***
-
-// struct BillboardInstance {
-//     vec3 position;
-//     vec2 size;
-//     uint texture_index;    // indexes into set 0
-//     vec4 color;
-//     // whatever else
-// };
-
-// layout(set = 2, binding = 0) buffer BillboardInstances {
-//     BillboardInstance instances[];
-// };
-
-// void main() {
-//     BillboardInstance inst = instances[gl_InstanceIndex];
-//     vec4 tex = texture(textures[nonuniformEXT(inst.texture_index)], uv);
-//     // ...
-// }
 
     return true;
 }

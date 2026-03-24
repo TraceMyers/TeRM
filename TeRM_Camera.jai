@@ -23,15 +23,18 @@ get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which 
 }
 
 make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaternion) -> Matrix4 {
-    // vpos = R * (p - C); (or, rotate the point's position relative to the camera)
-    // rotated = R * p
-    q := normalize(camera_orientation);
-    inverse_orientation :=  Quaternion.{xyz=-q.xyz, w=q.w};
-    view := rotation_matrix(Matrix4, inverse_orientation);
-    // vpos = R * p - R * C (to translate, the -C has to be rotated as well)
-    translate(*view, -camera_center);
-    // swap y and z, because y is forward and row 3 (index 2) is the depth channel
-    view.v[1], view.v[2] = view.v[2], view.v[1];
+    q     := normalize(camera_orientation);
+    up    := get_up_direction(*q); 
+    fore  := get_fore_direction(*q);
+    right := get_right_direction(*q);
+
+    view: Matrix4 = ---;
+    view.v[0] = .{right.x,   right.y,  right.z, -dot(right, camera_center)};
+    // flipping due to y-down normalized device coords
+    view.v[1] = .{-up.x,    -up.y,    -up.z,     dot(up,    camera_center)};
+    view.v[2] = .{fore.x,    fore.y,   fore.z,  -dot(fore,  camera_center)};
+    view.v[3] = .{0,         0,        0,        1};
+
     return view;
 }
 
@@ -109,9 +112,11 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
 
     WORLD_AXIS_FORE  :: Vector3.{0, 1, 0};
     WORLD_AXIS_RIGHT :: Vector3.{1, 0, 0};
+    // WORLD_AXIS_UP    :: Vector3.{0, 0, 1};
     camera_axis_fore := rotate(WORLD_AXIS_FORE, camera_orientation);
     camera_axis_right := rotate(WORLD_AXIS_RIGHT, camera_orientation);
     camera_axis_up := normalize(cross(camera_axis_right, camera_axis_fore));
+    // camera_axis_up := rotate(WORLD_AXIS_UP, camera_orientation);
 
     if camera.projection == .PERSPECTIVE {
         theta := (perspective_vertical_fov * 0.5) * (PI / 180.0);
@@ -119,7 +124,7 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
         clip_rect_height := half_y_dist * 2.0;
         clip_rect_width := get_camera_aspect_ratio(camera, viewport) * clip_rect_height;
 
-        world_clip_rect_diff := norm_center_diff * Vector2.{clip_rect_width, clip_rect_height};
+        world_clip_rect_diff := norm_center_diff * Vector2.{clip_rect_width, -clip_rect_height};
 
         world_clip_rect_center := camera_center + camera_axis_fore * near_plane;
         world_clip_rect_cursor_pos := world_clip_rect_center + world_clip_rect_diff.x * camera_axis_right + world_clip_rect_diff.y * camera_axis_up;
@@ -131,7 +136,7 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
         half_width := orthographic_scale * aspect;
         half_height := orthographic_scale;
 
-        world_clip_rect_diff := norm_center_diff * Vector2.{2*half_width, 2*half_height};   
+        world_clip_rect_diff := norm_center_diff * Vector2.{2*half_width, 2*half_height}; // negate y?
 
         origin := camera_center + world_clip_rect_diff.x * camera_axis_right + world_clip_rect_diff.y * camera_axis_up;
         return origin, camera_axis_fore;
@@ -143,3 +148,5 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
 #import "Math";
 #import "Window_Creation";
 #import "Basic";
+
+#import "TeRM/TeRM_Math";

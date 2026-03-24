@@ -12,8 +12,8 @@ Entity_Move :: struct {
     flags:        enum {};
 }
 
-// need an id type to uniquely identify an entity in order to communicate with the module
-// it can be whatever you want. I might do something like this.
+// need an id type to uniquely identify an entity in order to communicate with the module.
+// it can be whatever you want. here's a maybe not so great 64 bit id.
 
 Entity_Ref :: struct {
     id: u32;    
@@ -187,7 +187,6 @@ main :: () {
     // before the entities have been removed from memory, free their components.
     my_destroy_components();
 
-
     // component data interaction
     // --------------------------
     
@@ -206,6 +205,10 @@ main :: () {
         log("character % pointer: %", component, char.component_pointers[it]);
     }
 
+    // if you want to auto-dereference the component so as to treat the fields of that component 
+    // as if they were declared on-entity, you can do that, too. 
+    // see the 'set_these_pointers_to_using' field on Component_Sentinel.
+
     // if the entity doesn't have pointers, they get their component with get_component()
     // it is not an expensive operation. just indexing into an array.
     cam_tform := get_component(*cameras[0], .TRANSFORM);
@@ -215,31 +218,36 @@ main :: () {
     //                           .--- names/types ---.
     //                           v                   v
     //                         moves             transforms
-    //    .-> cameras     [  cam move 1 ]     [  cam tform 1 ]
-    //    |               [  cam move 2 ]     [  cam tform 2 ]
-    //  kinds             [  cam move 3 ]     [  cam tform 3 ]
+    //    .-> cameras     [  cam move 1 ]     [  cam tform 1 ]    inner loop iteration 1 | outer loop iteration 1
+    //    |               [  cam move 2 ]     [  cam tform 2 ]    inner loop iteration 2
+    //  kinds             [  cam move 3 ]     [  cam tform 3 ]    inner loop iteration 3
     //    |               [     ...     ]     [     ...      ]
     //    |
-    //    .-> characters  [ char move 1 ]     [ char tform 1 ]
+    //    .-> characters  [ char move 1 ]     [ char tform 1 ]    inner loop iteration 1 | outer loop iteration 2
     //                    [     ...     ]     [     ...      ]
 
     table := filter_components(.[.MOVE, .TRANSFORM]);
-     
-    // this is a nested for loop. using the above example, 
-    // - outer loop is cameras, characters
-    // - inner loop is over moves and transforms of the outer loop type.
-    // see for_expansion of Component_Table for details and for all vars defined in the scope.
+
+    // outer loop is over cameras, characters
     for table {
-        entity_move      := *move_components[it];
-        entity_transform := *transform_components[it];
+        // see for_expansion of Component_Table for details on all vars declared in this scope.
 
-        entity_transform.position += entity_move.velocity * delta_time;
+        // the inner loop could be unrolled with the if statement on the outside, though it may not be worth it,
+        // since you will benefit from basically perfect branch prediction by doing things this way.
 
-        if component_kind == {
-        case .CHARACTER;
-            character := get_entity(ids[it], Character);
-        case .CAMERA;
-            camera := get_entity(ids[it], Camera);
+        // first  iteration of outer loop, this inner loop is over all moves, transforms of cameras
+        // second iteration of outer loop, this inner loop is over all moves, transforms of characters
+        for 0..row_count-1 {
+            transform_components[it].position += move_components[it].velocity * delta_time;
+
+            if component_kind == {
+            case .CHARACTER;
+                character := get_entity(ids[it], Character);
+                // do something charactery
+            case .CAMERA;
+                camera := get_entity(ids[it], Camera);
+                // do somethine camera-like
+            }
         }
     }
 }
@@ -263,8 +271,6 @@ my_destroy_components :: () {
     prepare_component_memory_modification(*requests, destroyed_trees);
     free_components(*requests);
 }
-
-
 
 // -----
 

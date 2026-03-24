@@ -334,10 +334,10 @@ Billboard_Vertex :: struct {
 }
 
 Billboard_Instance :: struct {
-    position:      Vector3; __pad0: float32;
+    position:      Vector3; _pad0: float32;
     scale:         Vector2; 
     uv_offset:     Vector2;
-    uv_scale:      Vector2; __pad1: Vector2;
+    uv_scale:      Vector2; _pad1: Vector2;
     tint:          Vector3;
     texture_index: u32;
 }
@@ -345,10 +345,10 @@ Billboard_Instance :: struct {
 Per_Frame_Uniform_Buffer :: struct {
     view:            Matrix4;
     view_projection: Matrix4;
-    camera_position: Vector3; __pad0: float32;
-    camera_forward:  Vector3; __pad1: float32;
-    camera_up:       Vector3; __pad2: float32;
-    camera_right:    Vector3; __pad3: float32;
+    camera_position: Vector3; _pad0: float32;
+    camera_forward:  Vector3; _pad1: float32;
+    camera_up:       Vector3; _pad2: float32;
+    camera_right:    Vector3; _pad3: float32;
     time:            float32;
     delta_time:      float32;
 }

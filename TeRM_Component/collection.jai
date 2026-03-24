@@ -38,7 +38,7 @@ Untyped_Component_Rows :: struct {
     arrays: []*Component_Array_Base;
 }
 
-Component_Table :: struct($columns: []Component_Name, $array_suffix := "_components") {
+Component_Table :: struct($columns: []Component_Name, $skip_zero_length_rows := true, $array_suffix := "_components") {
     table: []Untyped_Component_Rows;
 }
 
@@ -181,6 +181,10 @@ for_expansion :: (table_input: Component_Table, body: Code, flags: For_Flags) #e
         `ids := context.user_component_storage.entity_ids[`it.kind];
         `row_count := `it.arrays[0].untyped_array.count;
         `component_kind := `it.kind;
+
+        #if table_input.skip_zero_length_rows {
+            if row_count == 0 then continue;
+        }
 
         #insert -> string {
             builder: String_Builder;

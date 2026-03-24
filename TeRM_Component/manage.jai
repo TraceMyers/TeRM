@@ -54,20 +54,20 @@ allocate_components :: (requests: *[..]Component_Memory_Modification) -> bool {
 
             reserve_count := new_count * 2;
             array_reserve(cast(*Resizable_Array) *component_array.untyped_array, reserve_count, elem_size);
+        }
 
-            // if the component type has no initializer, zero the memory
-            if component_array.type_initializer == null {
-                using component_array;
-                begin_zero := untyped_array.data + untyped_array.count * type_size;
-                end_zero   := untyped_array.data + new_count   * type_size;
-                zero_size  := end_zero - begin_zero;
-                memset(begin_zero, 0, zero_size);
-            // else iterate and initialize. the initializer can't be inlined because it was
-            // gotten at runtime, but we have the benefit of being able to use it type agnostically.
-            } else for component_index : component_array.untyped_array.count..new_count {
-                component_memory := component_array.untyped_array.data + (component_index * elem_size);
-                component_array.type_initializer(component_memory);
-            }
+        // if the component type has no initializer, zero the memory
+        if component_array.type_initializer == null {
+            using component_array;
+            begin_zero := untyped_array.data + untyped_array.count * type_size;
+            end_zero   := untyped_array.data + new_count   * type_size;
+            zero_size  := end_zero - begin_zero;
+            memset(begin_zero, 0, zero_size);
+        // else iterate and initialize. the initializer can't be inlined because it was
+        // gotten at runtime, but we have the benefit of being able to use it type agnostically.
+        } else for component_index : component_array.untyped_array.count..new_count {
+            component_memory := component_array.untyped_array.data + (component_index * elem_size);
+            component_array.type_initializer(component_memory);
         }
 
         component_array.untyped_array.count = new_count;
@@ -80,6 +80,9 @@ allocate_components :: (requests: *[..]Component_Memory_Modification) -> bool {
     for request, ri : requests.* {
 
         entity_ids_for_kind := *context.user_component_storage.entity_ids[request.kind];
+
+        // todo: it appears USE_ENTITY_IDS_ARRAY isn't being done properly. 
+        // I'm seeing particle systems default to USE_IDS_OF_ENTITIES_WITH_POINTERS_ARRAY
 
         // manage the array of id's referring to entities with pointers, because they need to be updated anytime
         // allocations change.

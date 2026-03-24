@@ -92,6 +92,9 @@ array_shrink :: (array: *[..]$T, remove_free_proportion := 0.75) {
             }
             array_free(array.*,,array.allocator);
         }
+    } else {
+        array_free(array.*,,array.allocator);
+        keep_allocated = 0;
     }
 
     array.data = maybe_new_allocation;

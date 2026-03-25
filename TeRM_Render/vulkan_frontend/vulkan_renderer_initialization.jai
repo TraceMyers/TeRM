@@ -69,6 +69,8 @@ HERE,
     run_init_proc(create_descriptors);
     run_init_proc(create_default_pipelines);
 
+    thread_local_renderer.particle_draws.allocator = temp;
+
     return init_success;
 }
 
@@ -107,7 +109,7 @@ populate_shader_data :: () -> bool {
     term_render_path  := move_path_back_one_directory(path_of_this_file);
     term_shaders_path := tprint("%/vulkan_shaders", term_render_path);
 
-    fully_exists, _:= how_much_of_path_exists_on_the_local_filesystem(parse_path(term_shaders_path));
+    fully_exists, _:= how_much_of_path_exists_on_the_local_filesystem(parse_path(term_shaders_path,, temp));
 
     spiel := "render init options have 'populate_shader_data_in_working_directory' set to true";
 
@@ -118,7 +120,7 @@ populate_shader_data :: () -> bool {
 
     source_path  := term_shaders_path;
     dest_path    := move_path_forward_one_directory(project_working_directory, "shaders");
-    copy_success := copy_directory(source_path, dest_path);
+    copy_success := copy_directory(source_path, dest_path,, temp);
 
     if !copy_success {
         render_log("%, but the copy failed for an unknown reason. this can either be investigated at the system level or it might just be easier to copy by hand from the % to %.", spiel, source_path, dest_path);
@@ -127,7 +129,7 @@ populate_shader_data :: () -> bool {
 
     spirv_directory := move_path_forward_one_directory(dest_path, "spirv");
     make_directory_if_it_does_not_exist(spirv_directory);
-    fully_exists, _ = how_much_of_path_exists_on_the_local_filesystem(parse_path(spirv_directory));
+    fully_exists, _ = how_much_of_path_exists_on_the_local_filesystem(parse_path(spirv_directory,, temp));
 
     if !fully_exists {
         render_log("tried to create directory for shader compilation spirv output at %, but failed", spirv_directory);

@@ -144,7 +144,7 @@ Super_Allocator :: struct ($MIN_ALLOCATION_SIZE := SUPER_ALLOCATOR_MIN_ALLOCATIO
     CHUNKS_PER_HEAP :: 64;
     CHUNK_SIZE :: size_of(Super_Allocator_Outer_Chunk(MIN_ALLOCATION_SIZE));
     #run assert(is_power_of_two(MIN_ALLOCATION_SIZE));
-    #run assert(MIN_ALLOCATION_SIZE >= size_of(Allocation_Header), "min allocation size: %, allocation header size: %", MIN_ALLOCATION_SIZE, size_of(Allocation_Header));
+    #run assert(MIN_ALLOCATION_SIZE >= ALLOCATION_HEADER_SPACE, "min allocation size: %, allocation header size: %", MIN_ALLOCATION_SIZE, ALLOCATION_HEADER_SPACE);
 }
 
 Super_Allocator_Outer_Chunk :: struct ($MIN_ALLOCATION_SIZE: s64) {
@@ -747,12 +747,13 @@ gp_allocator_add_list :: (using allocator: *GP_Allocator, bin_index: s64) {
 }
 
 gp_alloc :: (using allocator: *GP_Allocator, alloc_size: s64) -> *void {
+    size_with_header := alloc_size + ALLOCATION_HEADER_SPACE;
+    
     if alloc_size <= 0 {
         return null;
-    } else if alloc_size <= (2048 - size_of(Allocation_Header)) {
+    } else if size_with_header <= 2048 {
         // small allocations, fast track
-        alloc_size += size_of(Allocation_Header);
-        bin_index := max(bit_scan_reverse((alloc_size-1) >> 3) - 1, 0);
+        bin_index := max(bit_scan_reverse((size_with_header-1) >> 3) - 1, 0);
         bin := *bins[bin_index];
         if bin.first_available == -1 {
             gp_allocator_add_list(allocator, bin_index);
@@ -768,18 +769,18 @@ gp_alloc :: (using allocator: *GP_Allocator, alloc_size: s64) -> *void {
         allocation.(*Allocation_Header).id = xx ((Allocator_Identifier.GP_ALLOCATOR_16.(s32) + bin_index) | ALLOCATOR_VALIDATION_PATTERN);
         allocation.(*Allocation_Header).gp.list = xx list_index;
 
-        return allocation + size_of(Allocation_Header);
-    } else if alloc_size < (131072 - size_of(Allocation_Header)) {
+        return allocation + ALLOCATION_HEADER_SPACE;
+    } else if size_with_header < 131072 {
         // medium allocations ~(2-130KB)
         allocation := super_alloc(*med_allocator, alloc_size);
-        header := (allocation.(*u8) - size_of(Allocation_Header)).(*Allocation_Header);
+        header := (allocation.(*u8) - ALLOCATION_HEADER_SPACE).(*Allocation_Header);
         // overwrite the id so the allocator can be identified on free
         header.id = xx (Allocator_Identifier.GP_ALLOCATOR_SUPER_MED.(s32) | ALLOCATOR_VALIDATION_PATTERN);
         return allocation;
     } else {
         // large allocations (130KB+)
         allocation := super_alloc(*lrg_allocator, alloc_size);
-        header := (allocation.(*u8) - size_of(Allocation_Header)).(*Allocation_Header);
+        header := (allocation.(*u8) - ALLOCATION_HEADER_SPACE).(*Allocation_Header);
         // overwrite the id so the allocator can be identified on free
         header.id = xx (Allocator_Identifier.GP_ALLOCATOR_SUPER_LRG.(s32) | ALLOCATOR_VALIDATION_PATTERN);
         return allocation;
@@ -787,7 +788,7 @@ gp_alloc :: (using allocator: *GP_Allocator, alloc_size: s64) -> *void {
 }
 
 gp_free :: (using allocator: *GP_Allocator, addr: *u8) {
-    header := (addr - size_of(Allocation_Header)).(*Allocation_Header);
+    header := (addr - ALLOCATION_HEADER_SPACE).(*Allocation_Header);
     // log("free header address: %", header.(u64));
     identifier := (header.bit_pattern & 0x0f).(Allocator_Identifier);
     if identifier >= .GP_ALLOCATOR_16 && identifier <= .GP_ALLOCATOR_2048 {
@@ -988,6 +989,30 @@ did_small_chunk_count_warning := false;
 #import "Bit_Operations";
 #import "md5";
 #import "File";
+
+#scope_file
+
+align_up :: inline (value: int, align: int) -> int {
+    return (value + align - 1) & ~(align - 1);
+}
+
+// todo: crash
+
+// D:/dev/libraries/TeRM/TeRM_Allocation.jai:815,9: Assertion failed: invalid id for allocation 0
+
+// Stack trace:
+// D:/dev/build_tools/jai-beta-2-026/jai/modules/Runtime_Support.jai:103: runtime_support_assertion_failed
+// D:/dev/build_tools/jai-beta-2-026/jai/modules/Basic/module.jai:87: assert_helper
+// D:/dev/libraries/TeRM/TeRM_Allocation.jai:815: gp_free
+// D:/dev/libraries/TeRM/TeRM_Allocation.jai:690: gp_allocator_proc
+// D:/dev/build_tools/jai-beta-2-026/jai/modules/Basic/module.jai:127: realloc
+// D:/dev/build_tools/jai-beta-2-026/jai/modules/Basic/Array.jai:94: array_add
+// D:/dev/libraries/TeRM/TeRM_Component/manage.jai:114: allocate_components
+// D:/dev/games/imsim/src/entity/entity_storage.jai:76: spawn_entities
+// D:/dev/games/imsim/src/graphics/particle_system.jai:10: spawn_particle_system
+// D:/dev/games/imsim/src/input/input.jai:71: input_tick
+// D:/dev/games/imsim/src/main.jai:25: main
+// A breakpoint was hit, but no debugger is attached.
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

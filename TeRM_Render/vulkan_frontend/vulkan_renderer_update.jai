@@ -7,10 +7,22 @@ update_render_dimensions :: (width: u32, height: u32) {
     }
 }
 
+add_particle_draw :: inline (renderer: *Renderer, draw: Particle_Draw) {
+    billboard_instance := array_add(*renderer.particle_draws);
+    billboard_instance.position      = draw.position;
+    billboard_instance.scale         = {draw.scale, draw.scale};
+    billboard_instance.uv_offset     = {0,0};
+    billboard_instance.uv_scale      = {1,1};
+    billboard_instance.tint          = to_color4f(draw.color);
+    billboard_instance.texture_index = xx draw.texture_index;
+}
+
 update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     scope_set_renderer(thread_local_renderer);
     using context.renderer;
     auto_release_temp();
+
+    defer array_reset_keeping_memory(*particle_draws);
 
     if !is_window_open(window) || is_window_minimized(window) then return false;
 
@@ -57,21 +69,6 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         copy_to_gpu_buffer(*per_frame_uniform_buffer, *per_frame_uniform);
     }
 
-    instances := make_static_array(Billboard_Instance, particle_positions.count,, temp);
-
-    quick_sort(particle_positions, pos => -distance(pos, context.renderer.camera_position));
-
-    for *billboard_instance : instances {
-        billboard_instance.position      = particle_positions[it_index];
-        billboard_instance.scale         = {20.0, 20.0};
-        billboard_instance.uv_offset     = {0,0};
-        billboard_instance.uv_scale      = {1,1};
-        billboard_instance.tint          = COLOR4F_WHITE.rgb;
-        billboard_instance.texture_index = xx light_glow_image.pool_index;
-    }
-
-    copy_to_gpu_buffer(*billboard_instance_buffer, instances);
-
     vkCmdBindDescriptorSets(
         cmd, .GRAPHICS, billboard_pipeline_layout, 0, 1, *textures_descriptor_set, 0, null
     );
@@ -80,18 +77,24 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         cmd, .GRAPHICS, billboard_pipeline_layout, 1, 1, *per_frame_uniform_descriptor_set, 0, null
     );
 
-    vkCmdBindDescriptorSets(
-        cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *billboard_instance_buffer_descriptor_set, 0, null
-    );
+    if particle_draws.count > 0 {
+        quick_sort(particle_draws, draw => -distance(draw.position, context.renderer.camera_position));
 
-    {
-        vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
-        heap   := *gpu_heap_pool[billboard_vertex_buffer.source_heap];
-        buffer := heap.buffer;
-        offset := billboard_vertex_buffer.source_heap_offset;
-        offset_u64 : u64 = xx billboard_vertex_buffer.source_heap_offset;
-        vkCmdBindVertexBuffers(cmd, 0, 1, *buffer, *offset_u64);
-        vkCmdDraw(cmd, xx billboard_vertices.count, xx instances.count, 0, 0); 
+        copy_to_gpu_buffer(*billboard_instance_buffer, particle_draws);
+
+        vkCmdBindDescriptorSets(
+            cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *billboard_instance_buffer_descriptor_set, 0, null
+        );
+
+        {
+            vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
+            heap   := *gpu_heap_pool[billboard_vertex_buffer.source_heap];
+            buffer := heap.buffer;
+            offset := billboard_vertex_buffer.source_heap_offset;
+            offset_u64 : u64 = xx billboard_vertex_buffer.source_heap_offset;
+            vkCmdBindVertexBuffers(cmd, 0, 1, *buffer, *offset_u64);
+            vkCmdDraw(cmd, xx billboard_vertices.count, xx particle_draws.count, 0, 0); 
+        }
     }
 
     vkCmdEndRendering(cmd);

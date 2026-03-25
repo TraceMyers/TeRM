@@ -526,8 +526,18 @@ create_descriptors :: () -> bool {
 
         textures_descriptor_set = allocate_descriptor_set(descriptor_pool, textures_descriptor_set_layout, *variable_count_info);
 
-        corrugated_cardboard_image = add_gpu_image_for_sampling(corrugated_cardboard_path, image_sampler_nearest);
-        light_glow_image = add_gpu_image_for_sampling(light_glow_image_path, image_sampler_bilinear);
+        for *ref : context.renderer.texture_references {
+            sampler: VkSampler;
+            if ref.sampler == {
+            case .NEAREST;
+                sampler = image_sampler_nearest;
+            case .BILINEAR;
+                sampler = image_sampler_bilinear;
+            case .TRILINEAR;
+                sampler = image_sampler_trilinear;
+            }
+            ref.index = xx add_gpu_image_for_sampling(ref.path, sampler).pool_index;
+        }
     }
     {
         // descriptor set for the per-frame uniform buffer

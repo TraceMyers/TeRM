@@ -4,16 +4,16 @@ layout(location=0) in vec2 in_position;
 layout(location=1) in vec2 in_uv;
 
 layout(location=0) out      vec2 out_uv;
-layout(location=1) out      vec3 out_tint;
+layout(location=1) out      vec4 out_tint;
 layout(location=2) out flat uint out_texture_index;
 
 struct Billboard_Instance {
-    vec3 position;  float _pad0;
+    vec3 position;      float _pad0;
+    vec4 tint;
     vec2 scale;
     vec2 uv_offset;
-    vec2 uv_scale;  vec2  _pad1;
-    vec3 tint;
-    uint texture_index;
+    vec2 uv_scale;  
+    uint texture_index; float _pad1;
 };
 
 layout(set=1, binding=0) uniform Per_Frame_Uniform_Buffer {

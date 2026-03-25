@@ -134,6 +134,7 @@ brighten :: (color: Color3f, alpha := 0.2) -> Color3f {
 
 #import "Random";
 #import "Math";
+#import "TeRM/TeRM_Math";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

@@ -65,7 +65,7 @@ allocate_components :: (requests: *[..]Component_Memory_Modification) -> bool {
             memset(begin_zero, 0, zero_size);
         // else iterate and initialize. the initializer can't be inlined because it was
         // gotten at runtime, but we have the benefit of being able to use it type agnostically.
-        } else for component_index : component_array.untyped_array.count..new_count {
+        } else for component_index : component_array.untyped_array.count..new_count-1 {
             component_memory := component_array.untyped_array.data + (component_index * elem_size);
             component_array.type_initializer(component_memory);
         }

@@ -116,7 +116,9 @@ Renderer :: struct {
         billboard_pipeline_layout: VkPipelineLayout;
         billboard_pipeline: VkPipeline;
 
-        particle_positions: []Vector3;
+        texture_references: []Texture_Ref;
+
+        particle_draws: [..]Billboard_Instance;
 
         debug_switch: bool;
 
@@ -168,6 +170,23 @@ Renderer :: struct {
     };
 
     shader_table: Linear_Table(string, VkShaderModule);
+}
+
+Particle_Draw :: struct {
+    position: Vector3;
+    color: Color4b = #run to_color4b(COLOR4F_WHITE);
+    scale: float = 1.0;
+    texture_index: s16 = -1;
+}
+
+Texture_Ref :: struct {
+    path: string;
+    sampler: enum {
+        NEAREST;
+        BILINEAR;
+        TRILINEAR;
+    };
+    index: s16;
 }
 
 Render_Init_Options :: struct {
@@ -335,11 +354,11 @@ Billboard_Vertex :: struct {
 
 Billboard_Instance :: struct {
     position:      Vector3; _pad0: float32;
+    tint:          Color4f;
     scale:         Vector2; 
     uv_offset:     Vector2;
-    uv_scale:      Vector2; _pad1: Vector2;
-    tint:          Vector3;
-    texture_index: u32;
+    uv_scale:      Vector2; 
+    texture_index: u32;     _pad1: float32;
 }
 
 Per_Frame_Uniform_Buffer :: struct {

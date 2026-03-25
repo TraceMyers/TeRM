@@ -109,7 +109,16 @@ to_color4f :: inline (hex_color_code: u32) -> Color4f {
     return to_color4f(color_4b);
 }
 
-random_color4f :: inline (r_bounds := Vector2.{0.2, 0.8}, g_bounds := Vector2.{0.2, 0.8}, b_bounds := Vector2.{0.2, 0.8}, a := 1.0, random_state : *Random_State = null) -> Color4f {
+lerp :: inline (begin: Color4f, end: Color4f, t: float) -> Color4f {
+    return {
+        r = begin.r + (end.r - begin.r) * t,
+        g = begin.g + (end.g - begin.g) * t,
+        b = begin.b + (end.b - begin.b) * t,
+        a = begin.a + (end.a - begin.a) * t,
+    };
+}
+
+random_color4f :: inline (r_bounds := Vector2.{0.3, 0.95}, g_bounds := Vector2.{0.3, 0.95}, b_bounds := Vector2.{0.3, 0.95}, a := 1.0, random_state : *Random_State = null) -> Color4f {
     if random_state == null {
         random_state = *context.random_state;
     }

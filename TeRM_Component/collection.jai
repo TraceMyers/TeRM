@@ -174,6 +174,10 @@ for_expansion :: (table_input: Component_Table, body: Code, flags: For_Flags) #e
 
     `table := table_input.table;
 
+    if `table.count == 0 {
+        return;
+    }
+
     for <=((flags & .REVERSE) != 0) outer_index : 0..`table.count-1 {
         `it_index      := outer_index;
         `it            := *table[outer_index];
@@ -212,8 +216,8 @@ alloc_component_collection :: (name_count: int, rows_per_name: int) -> []Untyped
     collection.count = name_count;
 
     for name : 0..name_count-1 {
-        data_base := cast(*Component_Array_Base) (cast(*u8) collection.data) + collection.count * size_of(Untyped_Component_Rows);
-        collection[name].arrays.data = xx (data_base + rows_per_name * name);
+        data_base := (cast(*u8) collection.data) + collection.count * size_of(Untyped_Component_Rows);
+        collection[name].arrays.data = xx (data_base + (rows_per_name * name * size_of(*Component_Array_Base)));
         collection[name].arrays.count = rows_per_name;
     }
 

@@ -20,7 +20,7 @@ create_vk_instance :: () -> bool {
 
     if !validate(instance_layers_are_supported(required_layers), "required instance layers unsupported") then return false;
 
-    app_info := VkApplicationInfo .{
+    app_info := VkApplicationInfo.{
         pApplicationName    = temp_c_string(application_name),
         applicationVersion  = application_version,
         pEngineName         = temp_c_string(engine_name),

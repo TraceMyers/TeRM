@@ -69,8 +69,6 @@ HERE,
     run_init_proc(create_descriptors);
     run_init_proc(create_default_pipelines);
 
-    thread_local_renderer.particle_draws.allocator = temp;
-
     return init_success;
 }
 

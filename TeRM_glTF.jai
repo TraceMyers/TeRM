@@ -1,3 +1,11 @@
+// I left this unfinished because the format is frustratingly complex, and I'm no longer trying
+// to prove that I can make a complex loader from a spec, because I'm not actively looking for work
+// anymore. I'm making a game! So, I'm making my own format, which is thankfully a much easier thing
+// to do. See that work in TeRM_Mesh.
+
+// I may come back to this. feel free to copy it, though I worry I've only added to the complexity,
+// and so it may not be worth it for you.
+
 // glTF 2.0 spec (includes GLB):
 // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html
 
@@ -262,19 +270,50 @@ parse_file :: no_inline (parser: *GLTF_Parser, log_errors: bool) -> success: boo
     for_each_element(*jason, xx load_gltf_using_parsed_json, parser);
     parser.any_load_failures |= parser.asset_version_validated;
 
+    context.gltf_asset.cpu_buffers_allocation = string_copy(parser.binary_chunk.bytes);
+
     success = post_process_asset(context.gltf_asset);
     if !success then return false;
 
     {
         using context.gltf_asset;
-        module_log("asset: %", _fmt_verbose(context.gltf_asset.*));
-        module_log("asset self allocation size: %", context.gltf_asset.cpu_self_allocation.count);
-        // module_log("file path: %", file_path);
-        // module_log("roots: %", scene_roots);
-        // module_log("meshes: %", meshes);
+        log_asset(context.gltf_asset);
     }
 
     return !parser.any_load_failures;
+}
+
+log_asset :: (using asset: *Asset_3D) {
+    log(
+#string HERE
+    file_path      : %
+    scene_roots    : %
+    scenes         : %
+    meshes         : %
+    textures       : %
+    cameras        : %
+    materials      : %
+    mesh_skins     : %
+    primary_scene  : %
+HERE,
+        file_path,
+        scene_roots,
+        scenes,
+        meshes,
+        textures,
+        cameras,
+        materials,
+        mesh_skins,
+        primary_scene
+    );
+    for asset.mesh_buffers {
+        log(
+#string HERE
+    mesh buffer %  : cpu_allocation : %
+HERE,
+            it_index, it.cpu_allocation.count
+        );
+    }
 }
 
 post_process_asset :: (using asset: *Asset_3D) -> bool {
@@ -335,7 +374,62 @@ post_process_asset :: (using asset: *Asset_3D) -> bool {
         }
     }
 
+    if context.gltf_parser.buffer_views.count > 0 {
+        temp_mesh_buffers := asset.mesh_buffers;
+        asset.mesh_buffers = gltf_alloc_array(Mesh_Buffer, context.gltf_parser.accessors.count);
+
+        for mesh : asset.meshes {
+            for *section : mesh.sections {
+                i := cast(s32) section.indices;
+                if i != -1 {
+                    section.indices = *asset.mesh_buffers[i];
+                    log("setting buffer % to index", i);
+                    assert(asset.mesh_buffers[i].type == .UNDEFINED || asset.mesh_buffers[i].type == .INDEX);
+                    asset.mesh_buffers[i].type = .INDEX;
+                } else {
+                    section.indices = null;
+                }
+                
+                i = cast(s32) section.vertices;
+                assert(i == -1);
+
+                for attrib : section.attributes {
+                    mesh_buffer := *asset.mesh_buffers[attrib.accessor];
+                    assert(mesh_buffer.type == .UNDEFINED || mesh_buffer.type == .VERTEX);
+                    mesh_buffer.type = .VERTEX;
+                }
+
+                if i != -1 {
+                    section.vertices = *asset.mesh_buffers[i];
+                    log("setting buffer % to vertex", i);
+                    asset.mesh_buffers[i].type = .VERTEX;
+                } else {
+                    section.vertices = null;
+                }
+            }
+        }
+
+        for accessor, ai : context.gltf_parser.accessors {
+            view := *context.gltf_parser.buffer_views[accessor.buffer_view];
+            asset.mesh_buffers[ai].cpu_allocation.data  = asset.cpu_buffers_allocation.data + view.byte_offset + accessor.byte_offset;
+            asset.mesh_buffers[ai].cpu_allocation.count = view.byte_length;
+            if asset.mesh_buffers[ai].type ==  {
+            case .UNDEFINED;
+                log("undefined buf accessor: %", accessor);
+            case .INDEX;
+                log("index buf accessor: %", accessor);
+            case .VERTEX;
+                log("vertex buf accessor: %", accessor);
+            case .IMAGE;
+                log("image buf accessor: %", accessor);
+            }
+        }
+    } else {
+        assert(asset.mesh_buffers.count == 0);
+    }
+
     move_asset_allocation(asset);
+    
     return true;
 }
 
@@ -387,12 +481,11 @@ move_asset_allocation :: (using asset: *Asset_3D) {
                 return ifx asset.cameras.data       == null then null else *asset.cameras[i];
             case Texture;
                 return ifx asset.textures.data      == null then null else *asset.textures[i];
-            case Image;
-                return ifx asset.images.data        == null then null else *asset.images[i];
-            case Index_Buffer;
-                return ifx asset.index_buffers.data == null then null else *asset.index_buffers[i];
             case Material;
                 return ifx asset.materials.data     == null then null else *asset.materials[i];
+                // maybe maybe
+            // case Mesh_Buffer;
+            //     return ifx asset.mesh_buffers.data  == null then null else *asset.mesh_buffers[i];
             }
             return null;
         } else {
@@ -805,28 +898,30 @@ process_meshes_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) 
                         if key == {
                         case "attributes";
                             attributes := json_get(*field.value.object).elements;
-                            mesh_section.attributes = gltf_alloc_array(Mesh_Data_Attribute, attributes.count);
+                            mesh_section.vertex_attributes = gltf_alloc_array(Mesh_Data_Attribute, attributes.count);
                             for attrib, ai : attributes {
                                 attrib_key := json_get(*attrib.key.str).*;
                                 attrib_value := json_get(*attrib.value.i64).*;
-                                mesh_section.attributes[ai].accessor = xx attrib_value;
+                                mesh_section.vertex_attributes[ai].accessor = xx attrib_value;
                                 if attrib_key == {
                                 case "POSITION";
-                                    mesh_section.attributes[ai].type = .POSITION;
+                                    mesh_section.vertex_attributes[ai].type = .POSITION;
                                 case "NORMAL";
-                                    mesh_section.attributes[ai].type = .NORMAL;
+                                    mesh_section.vertex_attributes[ai].type = .NORMAL;
                                 case "TANGENT";
-                                    mesh_section.attributes[ai].type = .TANGENT;
+                                    mesh_section.vertex_attributes[ai].type = .TANGENT;
                                 case "TEXCOORD_0";
-                                    mesh_section.attributes[ai].type = .TEXCOORD_0;
+                                    mesh_section.vertex_attributes[ai].type = .TEXCOORD_0;
                                 case "TEXCOORD_1";
-                                    mesh_section.attributes[ai].type = .TEXCOORD_1;
-                                case "COLOR";
-                                    mesh_section.attributes[ai].type = .COLOR;
-                                case "JOINTS";
-                                    mesh_section.attributes[ai].type = .JOINTS;
-                                case "WEIGHTS";
-                                    mesh_section.attributes[ai].type = .WEIGHTS;
+                                    mesh_section.vertex_attributes[ai].type = .TEXCOORD_1;
+                                case "COLOR_0";
+                                    mesh_section.vertex_attributes[ai].type = .COLOR;
+                                case "JOINTS_0";
+                                    mesh_section.vertex_attributes[ai].type = .JOINTS;
+                                case "WEIGHTS_0";
+                                    mesh_section.vertex_attributes[ai].type = .WEIGHTS;
+                                case;
+                                    // todo: error, unsupported;
                                 }
                             }
                         case "indices";
@@ -954,9 +1049,29 @@ process_buffer_views_field :: (parser: *GLTF_Parser, element: JSON_Element_Conta
 }
 
 process_buffers_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
-    // unsupported
-    // add_load_error(.BUFFERS_FIELD_UNIMPLEMENTED, get_file_position(element.key));
-    // parser.any_load_failures = true;
+    buffers := json_get(*element.value.array).elements;
+
+    mesh_buffers  := *context.gltf_asset.mesh_buffers;
+    // using temp allocator here because 'buffers' and 'bufferViews' are combined into
+    // 'mesh_buffers' in post-processing.
+    mesh_buffers.* = make_static_array(Mesh_Buffer, buffers.count,, temp);
+
+    for buf, bi : buffers {
+        mesh_buffer := *mesh_buffers.*[bi];
+        for buf_prop, bpi : json_get(*buf.object).elements {
+            key := json_get(*buf_prop.key.str).*;
+            if key == {
+            case "byteLength";
+                // temporarily storing the byte length on 'count'. during post processing,
+                // this will help calculate offsets.
+                // mesh_buffer.count = xx json_get(*buf_prop.value.i64).*;
+            case "uri";
+                log("unsupported buffers prop uri");
+            case;
+                log("unsupported buffers prop %", key);
+            }
+        }
+    }
 }
 
 process_materials_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
@@ -1057,23 +1172,23 @@ process_images_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) 
         // todo: nonfatal error
     }
 
-    using context.gltf_asset;
-    images = gltf_alloc_array(Image, image_elems.count);
+    // using context.gltf_asset;
+    // images = gltf_alloc_array(Mesh_Buffer, image_elems.count);
 
-    for image_elem, imgi : image_elems {
-        image_elem_obj_elems := json_get(*image_elem.object).elements;
-        for elem : image_elem_obj_elems {
-            key := json_get(*elem.key.str).*;
-            if key == {
-            case "mimeType";
-                images[imgi].mime_type = json_get(*elem.value.str).*;
-            case "bufferView";
-                (cast(*Image_Internal) *images[imgi])._internal_buffer_view = xx json_get(*elem.value.i64).*;
-            case;
-                // todo: nonfatal error
-            }
-        }
-    }
+    // for image_elem, imgi : image_elems {
+    //     image_elem_obj_elems := json_get(*image_elem.object).elements;
+    //     for elem : image_elem_obj_elems {
+    //         key := json_get(*elem.key.str).*;
+    //         if key == {
+    //         case "mimeType";
+    //             images[imgi].image.mime_type = json_get(*elem.value.str).*;
+    //         case "bufferView";
+    //             (cast(*Image_Internal) *images[imgi])._internal_buffer_view = xx json_get(*elem.value.i64).*;
+    //         case;
+    //             // todo: nonfatal error
+    //         }
+    //     }
+    // }
 }
 
 process_samplers_field :: (parser: *GLTF_Parser, element: JSON_Element_Container) {
@@ -1403,8 +1518,8 @@ Accessor_Internal :: struct {
 }
 
 Image_Internal :: struct {
-    using #as image: Image;
-    #overlay(image.cpu_allocation.data) _internal_buffer_view: *Buffer_View_Internal;
+    using #as buffer: Mesh_Buffer;
+    #overlay(buffer.cpu_allocation.data) _internal_buffer_view: *Buffer_View_Internal;
 }
 
 // errors are cleared and added per-load and per-save, for each thread. 
@@ -1426,6 +1541,7 @@ Image_Internal :: struct {
 #import "Math";
 #import "Compiler";
 
+#import "TeRM/TeRM_Array";
 #import "TeRM/TeRM_JSON";
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_String";
@@ -1434,3 +1550,4 @@ Image_Internal :: struct {
 #import "TeRM/TeRM_LogHelpers";
 #import "TeRM/TeRM_Color";
 #import "TeRM/TeRM_Camera";
+#import "TeRM/TeRM_Asset3D";

@@ -65,7 +65,8 @@ HERE,
     run_init_proc(create_swapchain_and_attachments);
     run_init_proc(create_frame_datas);
     run_init_proc(create_default_descriptors);
-    run_init_proc(create_scratch_data);
+    run_init_proc(create_samplers);
+    run_init_proc(load_assets);
     run_init_proc(create_descriptors);
     run_init_proc(create_default_pipelines);
 

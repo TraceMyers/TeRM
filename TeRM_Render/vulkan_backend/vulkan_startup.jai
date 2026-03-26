@@ -6,7 +6,7 @@
 // logical device
 // frame data
 // descriptors
-// scratch
+// samplers
 
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------------- :vk instance
@@ -669,24 +669,10 @@ initialize_allocators :: () -> bool {
 }
 
 // -----------------------------------------------------------------------------------
-// -------------------------------------------------------------------------- :scratch
+// -------------------------------------------------------------------------- :samplers
 
-create_scratch_data :: () -> bool {
+create_samplers :: () -> bool {
     using context.renderer;
-
-    // simple_vertex_buffer = create_gpu_buffer_for_array(
-    //     scratch_vertices, .VERTEX_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT
-    // );
-    // simple_vertex_buffer = gpu_linear_allocate(.HOST_VISIBLE, scratch_vertices.count * size_of(scratch_vertices[0])), .VERTEX_BUFFER_BIT);
-
-    // copy_to_gpu_buffer(scratch_vertices.data, *simple_vertex_buffer);
-
-    // billboard_vertex_buffer = create_gpu_buffer_for_array(
-    //     billboard_vertices, .VERTEX_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT
-    // );
-    // copy_to_gpu_buffer(billboard_vertices.data, *billboard_vertex_buffer);
-
-    // per_frame_uniform_buffer = create_gpu_buffer(size_of(Per_Frame_Uniform_Buffer), .UNIFORM_BUFFER_BIT, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT);
 
     {
         create_info := VkSamplerCreateInfo.{
@@ -720,6 +706,19 @@ create_scratch_data :: () -> bool {
         validate(vkCreateSampler(logical.obj, *create_info, null, *image_sampler_trilinear), "failed to create the all nearest sampler");
     }
 
+    return true;
+}
+
+// -----------------------------------------------------------------------------------
+// --------------------------------------------------------------------------- :assets
+
+load_assets :: () -> bool {
+    using context.renderer;
+
+    for ref : asset_3d_references {
+        asset: Asset_3D;
+        result := load_gltf_from_file(ref.path, *asset, log_errors=true);
+    }
     return true;
 }
 

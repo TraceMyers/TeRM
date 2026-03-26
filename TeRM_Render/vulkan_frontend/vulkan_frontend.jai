@@ -117,6 +117,7 @@ Renderer :: struct {
         billboard_pipeline: VkPipeline;
 
         texture_references: []Texture_Ref;
+        asset_3d_references: []Asset_3D_Ref;
 
         particle_draws: [..]Billboard_Instance;
 
@@ -186,6 +187,11 @@ Texture_Ref :: struct {
         BILINEAR;
         TRILINEAR;
     };
+    index: s16;
+}
+
+Asset_3D_Ref :: struct {
+    path: string;
     index: s16;
 }
 
@@ -418,6 +424,8 @@ Simple_Vertex :: struct {
 #import "TeRM/TeRM_Render/vulkan-jai";
 #import "TeRM/TeRM_Camera";
 #import "TeRM/TeRM_Metaprogram";
+#import "TeRM/TeRM_glTF";
+#import "TeRM/TeRM_Asset3D";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

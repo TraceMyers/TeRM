@@ -53,10 +53,10 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) 
             _11 = inv_far_plane_half_width,
             // scale camera relative vertical dist by the far plane half height
             _22 = inv_far_plane_half_height,
-            // normalized depth (1=near, 0=far) = fore dist * (-1 / near far dist) ...
-            _33 = -inv_plane_to_plane,
-            // ... + far dist / near far dist
-            _34 = far_plane * inv_plane_to_plane,
+            // normalized depth (1=near, 0=far) = fore dist * (-near / near far dist) ...
+            _33 = -near_plane * inv_plane_to_plane,
+            // ... + near * far dist / near far dist
+            _34 = near_plane * far_plane * inv_plane_to_plane,
             // w = z, for ndc normalization using the depth coord I think
             _43 = 1,
             _44 = 0
@@ -136,7 +136,7 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
         half_width := orthographic_scale * aspect;
         half_height := orthographic_scale;
 
-        world_clip_rect_diff := norm_center_diff * Vector2.{2*half_width, 2*half_height}; // negate y?
+        world_clip_rect_diff := norm_center_diff * Vector2.{2*half_width, -2*half_height};
 
         origin := camera_center + world_clip_rect_diff.x * camera_axis_right + world_clip_rect_diff.y * camera_axis_up;
         return origin, camera_axis_fore;

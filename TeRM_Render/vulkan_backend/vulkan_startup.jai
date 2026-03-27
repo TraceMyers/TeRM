@@ -715,10 +715,10 @@ create_samplers :: () -> bool {
 load_assets :: () -> bool {
     using context.renderer;
 
-    for ref : asset_3d_references {
-        asset: Asset_3D;
-        result := load_gltf_from_file(ref.path, *asset, log_errors=true);
-    }
+    // for ref : asset_3d_references {
+    //     asset: Asset_3D;
+    //     result := load_gltf_from_file(ref.path, *asset, log_errors=true);
+    // }
     return true;
 }
 

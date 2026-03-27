@@ -424,8 +424,7 @@ Simple_Vertex :: struct {
 #import "TeRM/TeRM_Render/vulkan-jai";
 #import "TeRM/TeRM_Camera";
 #import "TeRM/TeRM_Metaprogram";
-#import "TeRM/TeRM_glTF";
-#import "TeRM/TeRM_Asset3D";
+#import "TeRM/TeRM_Mesh";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

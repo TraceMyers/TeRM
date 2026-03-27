@@ -159,10 +159,8 @@ Material :: struct {
     emissive_factor: Color3f;
 
     albedo_texture:    *Texture;
-    metallic_texture:  *Texture;
-    roughness_texture: *Texture;
+    occlusion_metallic_roughness_texture:  *Texture;
     normal_texture:    *Texture;
-    occlusion_texture: *Texture;
     emissive_texture:  *Texture;
      
     albedo_uv:    s8;

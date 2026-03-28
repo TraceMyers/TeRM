@@ -302,14 +302,14 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, array: []$T, override_count := -1) {
     copy_to_gpu_buffer(buffer, cast(*void) array.data, cast(u32) copy_size);
 }
 
-copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0xffff_ffff) {
+copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0xffff_ffff, additional_offset: u32 = 0) {
     using context.renderer;
     heap    := *gpu_heap_pool[buffer.source_heap];
     assert(heap.type == .HOST_VISIBLE_BUFFER);
 
     assert(heap.is_valid);
     vbo     := heap.buffer; 
-    offset  := buffer.source_heap_offset;
+    offset  := buffer.source_heap_offset + additional_offset;
     size    := min(buffer.size, override_size);
 
     if size == 0 {
@@ -321,8 +321,6 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0x
     memcpy(p, data, size);
     vkUnmapMemory(logical.obj, heap.memory);
 }
-
-// vkUpdateDescriptorSets :: (device: VkDevice, descriptorWriteCount: u32, pDescriptorWrites: *VkWriteDescriptorSet, descriptorCopyCount: u32, pDescriptorCopies: *VkCopyDescriptorSet) -> void #foreign libvulkan;
 
 add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
     using context.renderer;
@@ -552,6 +550,49 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
     };
 
     return xx heap_index;
+}
+
+allocate_material :: (mat: *Material) -> s32 {
+    using context.renderer;
+    new_mat_index := pool_acquire(*materials);
+    assert(new_mat != -1);
+    update_material(new_mat_index, mat);
+    return xx new_mat_index;
+}
+
+update_material :: (index: s32, mat: *Material) {
+    using context.renderer;
+    pool_mat := *materials[index];
+    pool_mat.* = mat.*;
+    gpu_mat := convert_material_to_gpu_format(mat);
+    copy_size   : u32 = xx size_of(GPU_Material);
+    copy_offset : u32 = xx (index * size_of(GPU_Material));
+    copy_to_gpu_buffer(*materials_uniform_buffer, *gpu_mat, copy_size, copy_offset);
+}
+
+convert_material_to_gpu_format :: inline (mat: *Material) -> GPU_Material {
+    gpu_mat: GPU_Material;
+
+    gpu_mat.albedo_factor    = mat.albedo_factor;
+    gpu_mat.emissive_factor  = mat.emissive_factor;
+    gpu_mat.metallic_factor  = mat.metallic_factor;
+    gpu_mat.roughness_factor = mat.roughness_factor;
+
+    gpu_mat.alpha_cutoff = mat.discard_alpha_cutoff_if_masked_alpha;
+
+    gpu_mat.albedo_uv    = mat.albedo_uv;
+    gpu_mat.metallic_uv  = mat.metallic_uv;
+    gpu_mat.roughness_uv = mat.roughness_uv;
+    gpu_mat.normal_uv    = mat.normal_uv;
+    gpu_mat.occlusion_uv = mat.occlusion_uv;
+    gpu_mat.emissive_uv  = mat.emissive_uv;
+
+    gpu_mat.albedo_tex   = mat.albedo_texture.buffer;
+    gpu_mat.normal_tex   = mat.normal_texture.buffer;
+    gpu_mat.emissive_tex = mat.emissive_texture.buffer;
+    gpu_mat.orm_tex      = mat.orm_texture.buffer;
+
+    return gpu_mat;
 }
 
 usage_alignment :: inline (usage_flags: VkBufferUsageFlags) -> int {

@@ -445,6 +445,11 @@ create_default_pipelines :: () -> bool {
         build_info.depth_stencil.create.depthWriteEnable = VK_FALSE;
         billboard_pipeline = build_pipeline(*build_info);
     }
+
+    {
+        build_info: Graphics_Pipeline_Build_Info;
+        build_info.pipeline_layout = opaque_mesh_pipeline_layout;
+    }
     
     render_log("created default pipelines");
     return true;
@@ -467,6 +472,13 @@ create_default_pipeline_layouts :: () -> bool {
         if !validate(vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *billboard_pipeline_layout), "failed to create device space mesh pipeline layout") {
             return false;
         }
+    }
+    {
+        // 0 = textures
+        // 1 = materials
+        // 2 = per frame uniform
+        // 3 = transforms
+        // 4 = mesh instances
     }
 
     return true;
@@ -538,6 +550,38 @@ create_descriptors :: () -> bool {
             }
             ref.index = xx add_gpu_image_for_sampling(ref.path, sampler).pool_index;
         }
+    }
+    {
+        materials_binding := VkDescriptroSetLayoutBinding.[{
+            binding = 0,
+            descriptorCount = 1,
+            descriptorType = .UNIFORM_BUFFER,
+            stageFlags = .FRAGMENT_BIT
+        }];
+
+        materials_uniform_buffer_descriptor_set_layout = build_descriptor_set_layout(materials_binding);
+        materials_uniform_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, materials_uniform_buffer_descriptor_set_layout);
+
+        materials_uniform_buffer = gpu_linear_allocate(
+            .HOST_VISIBLE_BUFFER, size_of(GPU_Material) * MAX_MATERIALS, .UNIFORM_BUFFER_BIT
+        );
+        buffer := gpu_heap_pool[materials_uniform_buffer.source_heap].buffer;
+
+        info := VkDescriptorBufferInfo.{
+            buffer = buffer,
+            offset = xx materials_uniform_buffer.source_heap_offset,
+            range  = size_of(GPU_Material) * MAX_MATERIALS
+        };
+
+        write := VkWriteDescriptorSet.{
+            dstSet          = materials_uniform_buffer_descriptor_set,
+            dstBinding      = 0,
+            descriptorCount = 1,
+            descriptorType  = .UNIFORM_BUFFER,
+            pBufferInfo     = *info
+        };
+
+        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
     }
     {
         // descriptor set for the per-frame uniform buffer
@@ -715,10 +759,15 @@ create_samplers :: () -> bool {
 load_assets :: () -> bool {
     using context.renderer;
 
-    // for ref : asset_3d_references {
-    //     asset: Asset_3D;
-    //     result := load_gltf_from_file(ref.path, *asset, log_errors=true);
-    // }
+    for ref : mesh_references {
+        mesh, success := load_mesh(ref.path);
+        if success {
+            array_add(*meshes, mesh);
+            render_log("succeeded loading mesh at %", ref.path);
+        } else {
+            render_log("FAILED loading mesh at %", ref.path);
+        }
+    }
     return true;
 }
 

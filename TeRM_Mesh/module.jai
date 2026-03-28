@@ -178,7 +178,6 @@ Mesh_Static_Vertex :: struct {
     uv_0:       Vector2;
     uv_1:       Vector2;
     color:      Color4f;
-    extra_data: [4]u32;
 }
 
 Mesh_Skinned_Vertex :: struct {
@@ -254,9 +253,9 @@ Material :: struct {
 
     // default values are meant to look obviously unconfigured
     albedo_factor    := COLOR4F_MAGENTA;
+    emissive_factor  := COLOR4F_WHITE;
     metallic_factor  := 1.0; 
     roughness_factor := 1.0;
-    emissive_factor  := COLOR4F_WHITE;
 
     albedo_texture:    Texture;
     normal_texture:    Texture;
@@ -360,6 +359,7 @@ read_vector3 :: #bake_arguments read_primitive(T=Vector3);
 read_vector4 :: #bake_arguments read_primitive(T=Vector4);
 read_color4f :: #bake_arguments read_primitive(T=Color4f);
 read_matrix4 :: #bake_arguments read_primitive(T=Matrix4);
+read_mesh_static_vertex :: #bake_arguments read_primitive(T=Mesh_Static_Vertex);
 
 read_block_header :: (file: string, location: *int) -> Block_Header{
     header: Block_Header;
@@ -389,18 +389,8 @@ read_array :: inline (array: []$T, file: string, location: *int, count: int) {
     }
 }
 
-read_mesh_static_vertex :: inline (vert: *Mesh_Static_Vertex, file: string, location: *int) {
-    vert.position   = read_vector3(file, location);
-    vert.normal     = read_vector3(file, location);
-    vert.tangent    = read_vector4(file, location);
-    vert.uv_0       = read_vector2(file, location);
-    vert.uv_1       = read_vector2(file, location);
-    vert.color      = read_color4f(file, location);
-    vert.extra_data = .[0, 0, 0, 0];
-}
-
 read_mesh_skinned_vertex :: inline (vert: *Mesh_Skinned_Vertex, file: string, location: *int) {
-    read_mesh_static_vertex(vert, file, location);
+    vert.base = read_mesh_static_vertex(file, location);
     read_array(vert.joints, file, location, 4);
     read_array(vert.weights, file, location, 4);
 }
@@ -534,7 +524,7 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
         bytes = xx,force make_static_array(Mesh_Static_Vertex, count);
         vertices := cast,force([]Mesh_Static_Vertex) bytes;
         for *v : vertices {
-            read_mesh_static_vertex(v, file, *pos);
+            v.* = read_mesh_static_vertex(file, *pos);
         }
     case .SKINNED_VERTEX;
         assert(size_of_one_item == size_of(Mesh_Skinned_Vertex) - 16);

@@ -108,6 +108,10 @@ Renderer :: struct {
         textures_descriptor_set_layout: VkDescriptorSetLayout;
         textures_descriptor_set: VkDescriptorSet;
 
+        materials_uniform_buffer_descriptor_set_layout: VkDescriptorSetLayout;
+        materials_uniform_buffer_descriptor_set: VkDescriptorSet;
+        materials_uniform_buffer: GPU_Buffer;
+
         storage_buffer_descriptor_set_layout: VkDescriptorSetLayout;
 
         billboard_vertex_buffer: GPU_Buffer;
@@ -116,8 +120,17 @@ Renderer :: struct {
         billboard_pipeline_layout: VkPipelineLayout;
         billboard_pipeline: VkPipeline;
 
+        opaque_mesh_pipeline_layout: VkPipelineLayout;
+        opaque_mesh_pipeline: VkPipeline;
+
+        mesh_instance_buffer: GPU_Buffer;
+        mesh_instance_buffer_Descriptor_set: VkDescriptorSet;
+
         texture_references: []Texture_Ref;
-        asset_3d_references: []Asset_3D_Ref;
+        mesh_references: []Mesh_Ref;
+
+        meshes: [..]Mesh;
+        materials: Pool(Material);
 
         particle_draws: [..]Billboard_Instance;
 
@@ -173,6 +186,33 @@ Renderer :: struct {
     shader_table: Linear_Table(string, VkShaderModule);
 }
 
+MAX_MATERIALS :: 1024;
+
+GPU_Material :: struct {
+    albedo_factor: Vector4;
+    emissive_factor: Vector4;
+    metallic_factor: float;
+    roughness_factor: float;
+
+    alpha_cutoff: float;
+
+    albedo_uv: s32;
+    metallic_uv: s32;
+    roughness_uv: s32;
+    normal_uv: s32;
+    occlusion_uv: s32;
+    emissive_uv: s32;
+
+    albedo_tex: s32;
+    normal_tex: s32;
+    emissive_tex: s32;
+    orm_tex: s32;
+
+    _pad1: s32;
+    _pad2: s32;
+    _pad3: s32;
+};
+
 Particle_Draw :: struct {
     position: Vector3;
     color: Color4b = #run to_color4b(COLOR4F_WHITE);
@@ -190,9 +230,14 @@ Texture_Ref :: struct {
     index: s16;
 }
 
-Asset_3D_Ref :: struct {
+Mesh_Ref :: struct {
     path: string;
-    index: s16;
+    index: int;
+}
+
+Mesh_Instance :: struct {
+    transform_id: s32;
+    material_id: s32;
 }
 
 Render_Init_Options :: struct {

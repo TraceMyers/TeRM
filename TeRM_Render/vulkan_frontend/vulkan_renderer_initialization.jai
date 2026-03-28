@@ -54,8 +54,9 @@ HERE,
         if !populate_shader_data() then return false;
     }
 
-    pool_init(*gpu_heap_pool, 32, true);
+    pool_init(*gpu_heap_pool, 32,                true);
     pool_init(*image_pool,    max_texture_count, true);
+    pool_init(*materials,     MAX_MATERIALS,     true);
     
     run_init_proc(create_vk_instance);
     run_init_proc(create_surface);

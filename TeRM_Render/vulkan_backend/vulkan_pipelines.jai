@@ -67,7 +67,7 @@ Graphics_Pipeline_Build_Info :: struct {
             create: VkPipelineColorBlendStateCreateInfo;
             attachment := VkPipelineColorBlendAttachmentState.{
                 colorWriteMask = .R_BIT | .G_BIT | .B_BIT | .A_BIT,
-                blendEnable = VK_TRUE,
+                blendEnable = VK_FALSE,
                 srcColorBlendFactor = .SRC_ALPHA,
                 dstColorBlendFactor = .ONE_MINUS_SRC_ALPHA,
                 colorBlendOp = .ADD,

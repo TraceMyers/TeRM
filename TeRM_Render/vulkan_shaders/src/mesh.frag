@@ -1,11 +1,13 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_scalar_block_layout : require
 
 layout(location=0) in mat3 in_tbn;
-layout(location=1) in vec2 in_uv_0;
-layout(location=2) in vec2 in_uv_1;
-layout(location=3) in vec4 in_color;
-layout(location=4) in int  in_material_id;
+// 1,2 = mat cols
+layout(location=3) in      vec2 in_uv_0;
+layout(location=4) in      vec2 in_uv_1;
+layout(location=5) in      vec4 in_color;
+layout(location=6) in flat int  in_material_id;
 
 layout(location=0) out vec4 color;
 
@@ -30,16 +32,12 @@ struct Material {
     int normal_tex;
     int emissive_tex;
     int orm_tex;             
-
-    int _pad1; 
-    int _pad2; 
-    int _pad3;
 };
 
 #define MAX_MATERIALS 1024
 
-layout(set=1, binding=0, std430) uniform Material_Block {
-    Material materials[MAX_MATERIALS];
+layout(set=1, binding=0, scalar) readonly buffer Material_Block {
+    Material materials[];
 } material_block;
 
 

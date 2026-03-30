@@ -1,3 +1,13 @@
+#module_parameters(
+    user_types : $I/interface Type_Provider_Default = Type_Provider_Default
+) {
+    Type_Provider_Default :: struct {
+        vertex_buffer_type: int;
+        index_buffer_type: int;
+        texture_type: int;
+    }
+};
+
 // load .trm mesh from file
 load_mesh :: (path: string) -> Mesh, bool {
     // doesn't seem like the option to temp allocate on-struct data is valuable
@@ -171,7 +181,7 @@ load_mesh :: (path: string) -> Mesh, bool {
     return mesh, true;
 }
 
-Mesh_Static_Vertex :: struct {
+Static_Mesh_Vertex :: struct {
     position:   Vector3;
     normal:     Vector3;
     tangent:    Vector4;
@@ -180,8 +190,8 @@ Mesh_Static_Vertex :: struct {
     color:      Color4f;
 }
 
-Mesh_Skinned_Vertex :: struct {
-    using #as base: Mesh_Static_Vertex;
+Skinned_Mesh_Vertex :: struct {
+    using #as base: Static_Mesh_Vertex;
     joints:  [4]u16;
     weights: [4]float32;
 }
@@ -189,6 +199,7 @@ Mesh_Skinned_Vertex :: struct {
 Mesh_Index_Buffer :: struct {
     type:  enum { U16; U32; };
     count: s32;
+    gpu_allocation: user_types.index_buffer_type;
     using cpu_allocation: union {
         _u16: []u16;
         _u32: []u32;
@@ -198,17 +209,19 @@ Mesh_Index_Buffer :: struct {
 Mesh_Vertex_Buffer :: struct {
     type: enum { STATIC; SKINNED; };
     count: s32;
+    gpu_allocation: user_types.vertex_buffer_type;
     using cpu_allocation: union {
-        static:  []Mesh_Static_Vertex;
-        skinned: []Mesh_Skinned_Vertex;
+        static:  []Static_Mesh_Vertex;
+        skinned: []Skinned_Mesh_Vertex;
     }
 }
 
 Texture_Buffer :: struct {
     width: s32;
     height: s32;
+    gpu_allocation: user_types.texture_type;
     // may not be allocated on cpu
-    pixels: []Color4b;
+    cpu_allocation: []Color4b;
 }
 
 Mesh :: struct {
@@ -359,7 +372,7 @@ read_vector3 :: #bake_arguments read_primitive(T=Vector3);
 read_vector4 :: #bake_arguments read_primitive(T=Vector4);
 read_color4f :: #bake_arguments read_primitive(T=Color4f);
 read_matrix4 :: #bake_arguments read_primitive(T=Matrix4);
-read_mesh_static_vertex :: #bake_arguments read_primitive(T=Mesh_Static_Vertex);
+read_mesh_static_vertex :: #bake_arguments read_primitive(T=Static_Mesh_Vertex);
 
 read_block_header :: (file: string, location: *int) -> Block_Header{
     header: Block_Header;
@@ -389,7 +402,7 @@ read_array :: inline (array: []$T, file: string, location: *int, count: int) {
     }
 }
 
-read_mesh_skinned_vertex :: inline (vert: *Mesh_Skinned_Vertex, file: string, location: *int) {
+read_mesh_skinned_vertex :: inline (vert: *Skinned_Mesh_Vertex, file: string, location: *int) {
     vert.base = read_mesh_static_vertex(file, location);
     read_array(vert.joints, file, location, 4);
     read_array(vert.weights, file, location, 4);
@@ -466,9 +479,9 @@ alloc_or_look_up_texture_buffer :: (file: string, start_pos: int) -> s32 {
     
     channels: s32;
     buf := *new_item.texture_buffer;
-    buf.pixels.data = xx stbi_load_from_memory(file.data + pos, count, *buf.width, *buf.height, *channels, 4);
+    buf.cpu_allocation.data = xx stbi_load_from_memory(file.data + pos, count, *buf.width, *buf.height, *channels, 4);
     assert(channels == 4);
-    buf.pixels.count = count / 4;
+    buf.cpu_allocation.count = count / 4;
 
     return xx (context.term_mesh_texture_buffer_table.count-1);
 }
@@ -520,16 +533,16 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
             else make_static_array(float, count);
         read_array(cast,force([]float32) bytes, file, *pos, count);
     case .STATIC_VERTEX;
-        assert(size_of_one_item == size_of(Mesh_Static_Vertex) - 16);
-        bytes = xx,force make_static_array(Mesh_Static_Vertex, count);
-        vertices := cast,force([]Mesh_Static_Vertex) bytes;
+        assert(size_of_one_item == size_of(Static_Mesh_Vertex));
+        bytes = xx,force make_static_array(Static_Mesh_Vertex, count);
+        vertices := cast,force([]Static_Mesh_Vertex) bytes;
         for *v : vertices {
             v.* = read_mesh_static_vertex(file, *pos);
         }
     case .SKINNED_VERTEX;
-        assert(size_of_one_item == size_of(Mesh_Skinned_Vertex) - 16);
-        bytes = xx,force make_static_array(Mesh_Skinned_Vertex, count);
-        vertices := cast,force([]Mesh_Skinned_Vertex) bytes;
+        assert(size_of_one_item == size_of(Skinned_Mesh_Vertex));
+        bytes = xx,force make_static_array(Skinned_Mesh_Vertex, count);
+        vertices := cast,force([]Skinned_Mesh_Vertex) bytes;
         for *v : vertices {
             read_mesh_skinned_vertex(v, file, *pos);
         }

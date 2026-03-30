@@ -16,7 +16,7 @@ struct Billboard_Instance {
     uint texture_index; float _pad1;
 };
 
-layout(set=1, binding=0) uniform Per_Frame_Uniform_Buffer {
+layout(set=2, binding=0) uniform Per_Frame_Uniform_Buffer {
     mat4  view;
     mat4  view_projection;
     vec3  camera_position; float _pad0;
@@ -30,7 +30,7 @@ layout(set=1, binding=0) uniform Per_Frame_Uniform_Buffer {
 // std430 makes it so arrays of data are packed correctly rather
 // than having each element aligned to the struct's alignment.
 // does nothing here probably a good idea to always use it.
-layout(set=2, binding=0, std430) readonly buffer Instance_Data {
+layout(set=3, binding=0, std430) readonly buffer Instance_Data {
     Billboard_Instance instances[];
 } instance_data;
 

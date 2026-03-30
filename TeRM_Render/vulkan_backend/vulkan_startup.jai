@@ -300,18 +300,78 @@ create_logical_device :: () -> bool {
         wideLines = VK_TRUE,
     };
 
-    // refer to a set of descriptors as a runtime-length array in shader
-    descriptor_indexing_enable := VkPhysicalDeviceDescriptorIndexingFeatures.{
+    // VkPhysicalDeviceVulkan12Features :: struct {
+    //     sType:                                              VkStructureType = .PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    //     pNext:                                              *void;
+    //     samplerMirrorClampToEdge:                           VkBool32;
+    //     drawIndirectCount:                                  VkBool32;
+    //     storageBuffer8BitAccess:                            VkBool32;
+    //     uniformAndStorageBuffer8BitAccess:                  VkBool32;
+    //     storagePushConstant8:                               VkBool32;
+    //     shaderBufferInt64Atomics:                           VkBool32;
+    //     shaderSharedInt64Atomics:                           VkBool32;
+    //     shaderFloat16:                                      VkBool32;
+    //     shaderInt8:                                         VkBool32;
+    //     descriptorIndexing:                                 VkBool32;
+    //     shaderInputAttachmentArrayDynamicIndexing:          VkBool32;
+    //     shaderUniformTexelBufferArrayDynamicIndexing:       VkBool32;
+    //     shaderStorageTexelBufferArrayDynamicIndexing:       VkBool32;
+    //     shaderUniformBufferArrayNonUniformIndexing:         VkBool32;
+    //     shaderSampledImageArrayNonUniformIndexing:          VkBool32;
+    //     shaderStorageBufferArrayNonUniformIndexing:         VkBool32;
+    //     shaderStorageImageArrayNonUniformIndexing:          VkBool32;
+    //     shaderInputAttachmentArrayNonUniformIndexing:       VkBool32;
+    //     shaderUniformTexelBufferArrayNonUniformIndexing:    VkBool32;
+    //     shaderStorageTexelBufferArrayNonUniformIndexing:    VkBool32;
+    //     descriptorBindingUniformBufferUpdateAfterBind:      VkBool32;
+    //     descriptorBindingSampledImageUpdateAfterBind:       VkBool32;
+    //     descriptorBindingStorageImageUpdateAfterBind:       VkBool32;
+    //     descriptorBindingStorageBufferUpdateAfterBind:      VkBool32;
+    //     descriptorBindingUniformTexelBufferUpdateAfterBind: VkBool32;
+    //     descriptorBindingStorageTexelBufferUpdateAfterBind: VkBool32;
+    //     descriptorBindingUpdateUnusedWhilePending:          VkBool32;
+    //     descriptorBindingPartiallyBound:                    VkBool32;
+    //     descriptorBindingVariableDescriptorCount:           VkBool32;
+    //     runtimeDescriptorArray:                             VkBool32;
+    //     samplerFilterMinmax:                                VkBool32;
+    //     scalarBlockLayout:                                  VkBool32;
+    //     imagelessFramebuffer:                               VkBool32;
+    //     uniformBufferStandardLayout:                        VkBool32;
+    //     shaderSubgroupExtendedTypes:                        VkBool32;
+    //     separateDepthStencilLayouts:                        VkBool32;
+    //     hostQueryReset:                                     VkBool32;
+    //     timelineSemaphore:                                  VkBool32;
+    //     bufferDeviceAddress:                                VkBool32;
+    //     bufferDeviceAddressCaptureReplay:                   VkBool32;
+    //     bufferDeviceAddressMultiDevice:                     VkBool32;
+    //     vulkanMemoryModel:                                  VkBool32;
+    //     vulkanMemoryModelDeviceScope:                       VkBool32;
+    //     vulkanMemoryModelAvailabilityVisibilityChains:      VkBool32;
+    //     shaderOutputViewportIndex:                          VkBool32;
+    //     shaderOutputLayer:                                  VkBool32;
+    //     subgroupBroadcastDynamicId:                         VkBool32;
+    // }
+
+    vulkan_1_2_features := VkPhysicalDeviceVulkan12Features.{
+        // optionally pack structures in glsl in a c-like fashion, with largest number primitive alignment
+        scalarBlockLayout = VK_TRUE,
+        // refer to a set of descriptors as a runtime-length array in shader
         descriptorBindingPartiallyBound = VK_TRUE,
         runtimeDescriptorArray = VK_TRUE,
         shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
-        descriptorBindingVariableDescriptorCount = VK_TRUE
+        descriptorBindingVariableDescriptorCount = VK_TRUE,
+    };
+
+    descriptor_indexing_enable := VkPhysicalDeviceDescriptorIndexingFeatures.{
+        descriptorBindingPartiallyBound = VK_TRUE,
+
+        pNext = *vulkan_1_2_features,
     };
 
     // smooths over a bunch of unnecessary boilerplate in creating graphics pipeline-related stuff
     dynamic_rendering_enable := VkPhysicalDeviceDynamicRenderingFeatures.{
         dynamicRendering = VK_TRUE,
-        pNext = *descriptor_indexing_enable
+        pNext = *vulkan_1_2_features
     };
 
     // enables syncing a fence on present
@@ -443,12 +503,17 @@ create_default_pipelines :: () -> bool {
             *build_info, "billboard_vert", "billboard_frag", Billboard_Vertex
         );
         build_info.depth_stencil.create.depthWriteEnable = VK_FALSE;
+        build_info.color_blend.attachment.blendEnable = VK_TRUE;
         billboard_pipeline = build_pipeline(*build_info);
     }
 
     {
         build_info: Graphics_Pipeline_Build_Info;
         build_info.pipeline_layout = opaque_mesh_pipeline_layout;
+        make_default_vertex_fragment_pipeline_build_info(
+            *build_info, "mesh_vert", "mesh_frag", Static_Mesh_Vertex
+        );
+        opaque_mesh_pipeline = build_pipeline(*build_info);
     }
     
     render_log("created default pipelines");
@@ -458,27 +523,47 @@ create_default_pipelines :: () -> bool {
 create_default_pipeline_layouts :: () -> bool {
     using context.renderer;
 
+    // 0 = textures
+    // 1 = materials
+    // 2 = per frame uniform
+
     {
+        // 3 = billboard instances
         descriptor_set_layouts := VkDescriptorSetLayout.[
             textures_descriptor_set_layout,
+            storage_buffer_descriptor_set_layout,
             per_frame_uniform_descriptor_set_layout,
             storage_buffer_descriptor_set_layout
         ];
         create_pipeline_layout := VkPipelineLayoutCreateInfo.{
-            setLayoutCount = 3,
+            setLayoutCount = xx descriptor_set_layouts.count,
             pSetLayouts = descriptor_set_layouts.data,
         };
 
-        if !validate(vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *billboard_pipeline_layout), "failed to create device space mesh pipeline layout") {
+        if !validate(vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *billboard_pipeline_layout), "failed to create billboard pipeline layout") {
             return false;
         }
     }
     {
-        // 0 = textures
-        // 1 = materials
-        // 2 = per frame uniform
-        // 3 = transforms
+
+        // 3 = mesh transforms
         // 4 = mesh instances
+        descriptor_set_layouts := VkDescriptorSetLayout.[
+            textures_descriptor_set_layout,
+            storage_buffer_descriptor_set_layout,
+            per_frame_uniform_descriptor_set_layout,
+            storage_buffer_descriptor_set_layout,
+            storage_buffer_descriptor_set_layout
+        ];
+
+        create_pipeline_layout := VkPipelineLayoutCreateInfo.{
+            setLayoutCount = xx descriptor_set_layouts.count,
+            pSetLayouts = descriptor_set_layouts.data
+        };
+
+        if !validate(vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *opaque_mesh_pipeline_layout), "failed to create mesh pipeline layout") {
+            return false;
+        }
     }
 
     return true;
@@ -552,38 +637,6 @@ create_descriptors :: () -> bool {
         }
     }
     {
-        materials_binding := VkDescriptroSetLayoutBinding.[{
-            binding = 0,
-            descriptorCount = 1,
-            descriptorType = .UNIFORM_BUFFER,
-            stageFlags = .FRAGMENT_BIT
-        }];
-
-        materials_uniform_buffer_descriptor_set_layout = build_descriptor_set_layout(materials_binding);
-        materials_uniform_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, materials_uniform_buffer_descriptor_set_layout);
-
-        materials_uniform_buffer = gpu_linear_allocate(
-            .HOST_VISIBLE_BUFFER, size_of(GPU_Material) * MAX_MATERIALS, .UNIFORM_BUFFER_BIT
-        );
-        buffer := gpu_heap_pool[materials_uniform_buffer.source_heap].buffer;
-
-        info := VkDescriptorBufferInfo.{
-            buffer = buffer,
-            offset = xx materials_uniform_buffer.source_heap_offset,
-            range  = size_of(GPU_Material) * MAX_MATERIALS
-        };
-
-        write := VkWriteDescriptorSet.{
-            dstSet          = materials_uniform_buffer_descriptor_set,
-            dstBinding      = 0,
-            descriptorCount = 1,
-            descriptorType  = .UNIFORM_BUFFER,
-            pBufferInfo     = *info
-        };
-
-        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
-    }
-    {
         // descriptor set for the per-frame uniform buffer
         per_frame_uniform_binding := VkDescriptorSetLayoutBinding.[
             {binding=0, descriptorCount=1, descriptorType=.UNIFORM_BUFFER, stageFlags=.ALL}
@@ -619,6 +672,77 @@ create_descriptors :: () -> bool {
             {binding=0, descriptorCount=1, descriptorType=.STORAGE_BUFFER, stageFlags=.VERTEX_BIT | .FRAGMENT_BIT}
         ];
         storage_buffer_descriptor_set_layout = build_descriptor_set_layout(storage_buffer_binding);
+    }
+    {
+        materials_storage_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
+
+        materials_storage_buffer = gpu_linear_allocate(
+            .HOST_VISIBLE_BUFFER, size_of(GPU_Material) * MAX_MATERIALS, .STORAGE_BUFFER_BIT
+        );
+        buffer := gpu_heap_pool[materials_storage_buffer.source_heap].buffer;
+
+        info := VkDescriptorBufferInfo.{
+            buffer = buffer,
+            offset = xx materials_storage_buffer.source_heap_offset,
+            range  = size_of(GPU_Material) * MAX_MATERIALS
+        };
+
+        write := VkWriteDescriptorSet.{
+            dstSet          = materials_storage_buffer_descriptor_set,
+            dstBinding      = 0,
+            descriptorCount = 1,
+            descriptorType  = .STORAGE_BUFFER,
+            pBufferInfo     = *info
+        };
+
+        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
+    }
+    {
+        mesh_transforms_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
+        mesh_transforms_buffer = gpu_linear_allocate(
+            .HOST_VISIBLE_BUFFER, size_of(Matrix4) * MAX_MESHES, .STORAGE_BUFFER_BIT
+        );
+        buffer := gpu_heap_pool[mesh_transforms_buffer.source_heap].buffer;
+
+        info := VkDescriptorBufferInfo.{
+            buffer = buffer,
+            offset = xx mesh_transforms_buffer.source_heap_offset,
+            range  = size_of(Matrix4) * MAX_MESHES
+        };
+
+        write := VkWriteDescriptorSet.{
+            dstSet          = mesh_transforms_descriptor_set,
+            dstBinding      = 0,
+            descriptorCount = 1,
+            descriptorType  = .STORAGE_BUFFER,
+            pBufferInfo     = *info
+        };
+
+        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
+    }
+    {
+
+        mesh_instance_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
+        mesh_instance_buffer = gpu_linear_allocate(
+            .HOST_VISIBLE_BUFFER, size_of(Matrix4) * MAX_MESHES, .STORAGE_BUFFER_BIT
+        );
+        buffer := gpu_heap_pool[mesh_instance_buffer.source_heap].buffer;
+
+        info := VkDescriptorBufferInfo.{
+            buffer = buffer,
+            offset = xx mesh_instance_buffer.source_heap_offset,
+            range  = size_of(Matrix4) * MAX_MESHES
+        };
+
+        write := VkWriteDescriptorSet.{
+            dstSet          = mesh_instance_buffer_descriptor_set,
+            dstBinding      = 0,
+            descriptorCount = 1,
+            descriptorType  = .STORAGE_BUFFER,
+            pBufferInfo     = *info
+        };
+
+        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
     }
     {
         billboard_instance_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
@@ -759,12 +883,24 @@ create_samplers :: () -> bool {
 load_assets :: () -> bool {
     using context.renderer;
 
-    for ref : mesh_references {
+    for *ref : mesh_references {
         mesh, success := load_mesh(ref.path);
         if success {
             array_add(*meshes, mesh);
+            mesh_in_array := *meshes[meshes.count-1];
+            for *buf : mesh_in_array.texture_buffers {
+                buf.gpu_allocation = xx add_gpu_image_for_sampling(buf.cpu_allocation.data, buf.width, buf.height).pool_index;
+            }
+            for section : mesh_in_array.sections {
+                // section.albedo_texture
+                // section.normal_texture
+                // section.emissive_texture
+                // section.orm_texture
+            }
+            ref.index = xx (meshes.count - 1);
             render_log("succeeded loading mesh at %", ref.path);
         } else {
+            ref.index = -1;
             render_log("FAILED loading mesh at %", ref.path);
         }
     }
@@ -803,6 +939,7 @@ required_device_extensions := (*u8).[
     "VK_EXT_swapchain_maintenance1",
     "VK_KHR_buffer_device_address",
     "VK_KHR_dynamic_rendering",
+    "VK_EXT_scalar_block_layout"
 ];
 
 // Copyright (c) 2026 Trace Myers

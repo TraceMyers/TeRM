@@ -309,7 +309,7 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0x
 
     assert(heap.is_valid);
     vbo     := heap.buffer; 
-    offset  := buffer.source_heap_offset + additional_offset;
+    offset  := buffer.source_heap_offset + xx additional_offset;
     size    := min(buffer.size, override_size);
 
     if size == 0 {
@@ -322,10 +322,22 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0x
     vkUnmapMemory(logical.obj, heap.memory);
 }
 
+
 add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
     using context.renderer;
 
-    image := create_gpu_image_for_sampling(path);
+    width, height, channels_in_file: s32;
+    desired_channels : s32 = 4;
+    image_data := stbi_load(temp_c_string(path), *width, *height, *channels_in_file, desired_channels); 
+    defer stbi_image_free(image_data);
+
+    use_image_data := image_data;
+
+    assert(channels_in_file == 4 || channels_in_file == 3, "tried to load image with channel count %", channels_in_file);
+    assert(width > 0 && height > 0);
+
+    image := create_gpu_image_for_sampling(use_image_data, width, height);
+
     image_info := VkDescriptorImageInfo.{
         sampler = sampler,
         imageView = image.view,
@@ -340,56 +352,15 @@ add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
         pImageInfo = *image_info
     };
     vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
-
+    
     return image;
 }
 
-create_gpu_image_for_sampling :: (path: string) -> *GPU_Image {
-
-    convert_two_to_four_channel :: (image_data: *void, width: s32, height: s32) -> *void {
-        RG_Pixel :: struct {
-            r: u8;
-            g: u8;
-        }
-        
-        rg_pixels: []RG_Pixel;
-        rg_pixels.data = image_data;
-        rg_pixels.count = width * height;
-
-        rgba_pixels := make_static_array(Color4b, rg_pixels.count,, temp);
-
-        for p : 0..rg_pixels.count-1 {
-            rgba_pixels[p].r = rg_pixels[p].r;
-            rgba_pixels[p].g = rg_pixels[p].r;
-            rgba_pixels[p].b = rg_pixels[p].r;
-            rgba_pixels[p].a = rg_pixels[p].g;
-        }
-
-        return rgba_pixels.data;
-    }
-
-    using context.renderer;
-    auto_release_temp();
-
-    width, height, channels_in_file: s32;
-    desired_channels : s32 = 4;
-    image_data := stbi_load(temp_c_string(path), *width, *height, *channels_in_file, desired_channels); 
-    defer stbi_image_free(image_data);
-
-    use_image_data := image_data;
-
-    // if channels_in_file == 2 {
-    //     channels_in_file = 4;
-    //     use_image_data = convert_two_to_four_channel(image_data, width, height);
-    // }
-
-    assert(channels_in_file == 4 || channels_in_file == 3, "tried to load image with channel count %", channels_in_file);
-    assert(width > 0 && height > 0);
-
+add_gpu_image_for_sampling :: (data: *Color4b, width: s32, height: s32) -> *GPU_Image {
     // create staging resources (cpu visible)
     image_size     := width * height * 4;
     staging_buffer := gpu_linear_allocate(.HOST_VISIBLE_BUFFER, image_size, .TRANSFER_SRC_BIT);
-    copy_to_gpu_buffer(*staging_buffer, use_image_data);
+    copy_to_gpu_buffer(*staging_buffer, data);
 
     image := gpu_linear_allocate(.DEVICE_LOCAL_IMAGE, width, height, .TRANSFER_DST_BIT | .SAMPLED_BIT);
 
@@ -405,12 +376,8 @@ create_gpu_image_for_sampling :: (path: string) -> *GPU_Image {
 
     submit_commands(cmd, transfer_fence, transfer_queue);
 
-    // view_create_info := image_view_create_info(image.format, image.obj, .COLOR_BIT, image.mip_count);
-    // validate(vkCreateImageView(logical.obj, *view_create_info, null, *image.view), "failed to create an image view for a sampled texture");
-
-    return image;
+    return image;   
 }
-
 
 copy_buffer_to_image :: (cmd: VkCommandBuffer, dst: *GPU_Image, src: GPU_Buffer) {
     using context.renderer;
@@ -552,6 +519,10 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
     return xx heap_index;
 }
 
+// todo: textures should work the same way as this, where you allocate, remove or update
+// makes for a nice interface for updating textures cpu-side arbitrarily
+// note that obviously I eventually need to get away from most things being host visible
+
 allocate_material :: (mat: *Material) -> s32 {
     using context.renderer;
     new_mat_index := pool_acquire(*materials);
@@ -594,6 +565,7 @@ convert_material_to_gpu_format :: inline (mat: *Material) -> GPU_Material {
 
     return gpu_mat;
 }
+
 
 usage_alignment :: inline (usage_flags: VkBufferUsageFlags) -> int {
     using context.renderer;

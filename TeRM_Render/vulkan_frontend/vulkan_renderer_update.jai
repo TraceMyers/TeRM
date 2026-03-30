@@ -17,12 +17,17 @@ add_particle_draw :: inline (renderer: *Renderer, draw: Particle_Draw) {
     billboard_instance.texture_index = xx draw.texture_index;
 }
 
+add_mesh_draw :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
+    array_add(*static_mesh_draws, draw);
+}
+
 update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     scope_set_renderer(thread_local_renderer);
     using context.renderer;
     auto_release_temp();
 
     defer array_reset_keeping_memory(*particle_draws);
+    defer array_reset_keeping_memory(*static_mesh_draws);
 
     if !is_window_open(window) || is_window_minimized(window) then return false;
 
@@ -74,16 +79,31 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     );
 
     vkCmdBindDescriptorSets(
-        cmd, .GRAPHICS, billboard_pipeline_layout, 1, 1, *per_frame_uniform_descriptor_set, 0, null
+        cmd, .GRAPHICS, billboard_pipeline_layout, 1, 1, *materials_storage_buffer_descriptor_set, 0, null
     );
 
+    vkCmdBindDescriptorSets(
+        cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *per_frame_uniform_descriptor_set, 0, null
+    );
+
+    if static_mesh_draws.count > 0 {
+        quick_sort(static_mesh_draws, draw => distance_squared(draw.position, context.renderer.camera_position));
+
+        mesh_transforms := make_static_array(Matrix4, static_mesh_draws.count,, temp);
+        mesh_instances  := make_static_array(Mesh_Instance, static_mesh_draws.count,, temp);
+        for draw : static_mesh_draws {
+            mesh := *meshes[draw.ref.index];
+
+        }
+    }
+
     if particle_draws.count > 0 {
-        quick_sort(particle_draws, draw => -distance(draw.position, context.renderer.camera_position));
+        quick_sort(particle_draws, draw => -distance_squared(draw.position, context.renderer.camera_position));
 
         copy_to_gpu_buffer(*billboard_instance_buffer, particle_draws);
 
         vkCmdBindDescriptorSets(
-            cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *billboard_instance_buffer_descriptor_set, 0, null
+            cmd, .GRAPHICS, billboard_pipeline_layout, 3, 1, *billboard_instance_buffer_descriptor_set, 0, null
         );
 
         {

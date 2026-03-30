@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : require
 
 layout(location=0) in vec3 in_position;
 layout(location=1) in vec3 in_normal;
@@ -8,10 +9,11 @@ layout(location=4) in vec2 in_uv_1;
 layout(location=5) in vec4 in_color;
 
 layout(location=0) out      mat3 out_tbn;
-layout(location=1) out      vec2 out_uv_0;
-layout(location=2) out      vec2 out_uv_1;
-layout(location=3) out      vec4 out_color;
-layout(location=4) out flat int  out_material_id;
+// 1, 2 = mat cols
+layout(location=3) out      vec2 out_uv_0;
+layout(location=4) out      vec2 out_uv_1;
+layout(location=5) out      vec4 out_color;
+layout(location=6) out flat int  out_material_id;
 
 layout(set=2, binding=0) uniform Per_Frame_Uniform_Buffer {
     mat4  view;

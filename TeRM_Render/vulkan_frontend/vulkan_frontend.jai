@@ -108,9 +108,11 @@ Renderer :: struct {
         textures_descriptor_set_layout: VkDescriptorSetLayout;
         textures_descriptor_set: VkDescriptorSet;
 
-        materials_uniform_buffer_descriptor_set_layout: VkDescriptorSetLayout;
-        materials_uniform_buffer_descriptor_set: VkDescriptorSet;
-        materials_uniform_buffer: GPU_Buffer;
+        materials_storage_buffer_descriptor_set: VkDescriptorSet;
+        materials_storage_buffer: GPU_Buffer;
+
+        mesh_transforms_descriptor_set: VkDescriptorSet;
+        mesh_transforms_buffer: GPU_Buffer;
 
         storage_buffer_descriptor_set_layout: VkDescriptorSetLayout;
 
@@ -124,7 +126,7 @@ Renderer :: struct {
         opaque_mesh_pipeline: VkPipeline;
 
         mesh_instance_buffer: GPU_Buffer;
-        mesh_instance_buffer_Descriptor_set: VkDescriptorSet;
+        mesh_instance_buffer_descriptor_set: VkDescriptorSet;
 
         texture_references: []Texture_Ref;
         mesh_references: []Mesh_Ref;
@@ -133,6 +135,9 @@ Renderer :: struct {
         materials: Pool(Material);
 
         particle_draws: [..]Billboard_Instance;
+        // todo: could probably do this the same way as Billboard_Instance and it'd be simpler.
+        // but I'd have to move transform into the mesh draw instance
+        static_mesh_draws: [..]Static_Mesh_Draw;
 
         debug_switch: bool;
 
@@ -187,6 +192,7 @@ Renderer :: struct {
 }
 
 MAX_MATERIALS :: 1024;
+MAX_MESHES   :: 128_000;
 
 GPU_Material :: struct {
     albedo_factor: Vector4;
@@ -212,6 +218,13 @@ GPU_Material :: struct {
     _pad2: s32;
     _pad3: s32;
 };
+
+Static_Mesh_Draw :: struct {
+    position: Vector3;
+    orientation: Quaternion;
+    scale: Vector3;
+    ref: Mesh_Ref;
+}
 
 Particle_Draw :: struct {
     position: Vector3;
@@ -434,6 +447,12 @@ Simple_Vertex :: struct {
     uv: Vector2;
 }
 
+Mesh_Import_Types :: struct {
+    vertex_buffer_type :: GPU_Buffer;
+    index_buffer_type :: GPU_Buffer;
+    texture_type :: s16;
+}
+
 #load "vulkan_renderer_initialization.jai";
 #load "vulkan_system_information.jai";
 #load "vulkan_renderer_update.jai";
@@ -469,7 +488,7 @@ Simple_Vertex :: struct {
 #import "TeRM/TeRM_Render/vulkan-jai";
 #import "TeRM/TeRM_Camera";
 #import "TeRM/TeRM_Metaprogram";
-#import "TeRM/TeRM_Mesh";
+#import "TeRM/TeRM_Mesh"(user_types = Mesh_Import_Types);
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

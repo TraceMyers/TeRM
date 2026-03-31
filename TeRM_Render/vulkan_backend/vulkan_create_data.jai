@@ -323,9 +323,7 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0x
         memcpy(p, data, size);
         vkUnmapMemory(logical.obj, heap.memory);
     } else {
-        scope_reset_linear_allocations_to_high_water_mark(.TEMP_HOST_VISIBLE_BUFFER);
-
-        staging_buffer := gpu_linear_allocate(.TEMP_HOST_VISIBLE_BUFFER, copy_size, .TRANSFER_SRC_BIT);
+        staging_buffer := gpu_linear_allocate(.HOST_VISIBLE_BUFFER, copy_size, .TRANSFER_SRC_BIT, true);
         copy_to_gpu_buffer(*staging_buffer, data);
         staging_buffer_heap := *gpu_heap_pool[staging_buffer.source_heap];
 
@@ -404,11 +402,9 @@ add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
 add_gpu_image_for_sampling :: (data: *Color4b, width: s32, height: s32, sampler: VkSampler) -> *GPU_Image {
     using context.renderer;
 
-    scope_reset_linear_allocations_to_high_water_mark(.TEMP_HOST_VISIBLE_BUFFER);
-
     // create staging resources (cpu visible)
     image_size     := width * height * 4;
-    staging_buffer := gpu_linear_allocate(.TEMP_HOST_VISIBLE_BUFFER, image_size, .TRANSFER_SRC_BIT);
+    staging_buffer := gpu_linear_allocate(.HOST_VISIBLE_BUFFER, image_size, .TRANSFER_SRC_BIT, true);
     copy_to_gpu_buffer(*staging_buffer, data);
 
     image := gpu_linear_allocate(.DEVICE_LOCAL_IMAGE, width, height, .TRANSFER_DST_BIT | .SAMPLED_BIT);
@@ -460,6 +456,56 @@ copy_buffer_to_image :: (cmd: VkCommandBuffer, dst: *GPU_Image, src: GPU_Buffer)
     vkCmdCopyBufferToImage(cmd, buffer_heap.buffer, dst.obj, .TRANSFER_DST_OPTIMAL, 1, *copy_region);
 }
 
+create_gpu_uniform_buffer :: (pool: VkDescriptorPool, set: *VkDescriptorSet, buffer: *GPU_Buffer, size: int, temp := false, heap_type := GPU_Heap_Type.DEVICE_LOCAL_BUFFER) {
+    internal_create_ubo_or_ssbo(pool, set, buffer, size, heap_type, temp, true);
+}
+
+create_gpu_storage_buffer :: (pool: VkDescriptorPool, set: *VkDescriptorSet, buffer: *GPU_Buffer, size: int, temp := false, heap_type := GPU_Heap_Type.DEVICE_LOCAL_BUFFER) {
+    internal_create_ubo_or_ssbo(pool, set, buffer, size, heap_type, temp, false);
+}
+
+internal_create_ubo_or_ssbo :: (pool: VkDescriptorPool, set: *VkDescriptorSet, buffer: *GPU_Buffer, size: int, heap_type: GPU_Heap_Type, temp: bool, uniform: bool) {
+    using context.renderer;
+
+    if heap_type == {
+    case .DEVICE_LOCAL_BUFFER; // good
+    case .HOST_VISIBLE_BUFFER; // good
+    case;
+        assert(false, "invalid heap type passed into create_gpu_storage_buffer: %", heap_type);
+    }
+    
+    layout := ifx uniform then uniform_buffer_descriptor_set_layout else storage_buffer_descriptor_set_layout;
+    set.* = allocate_descriptor_set(pool, layout);
+    buffer.* = gpu_linear_allocate(heap_type, size, ifx uniform then .UNIFORM_BUFFER_BIT else .STORAGE_BUFFER_BIT, temp);
+    vk_buffer := gpu_heap_pool[buffer.source_heap].buffer;
+
+    info := VkDescriptorBufferInfo.{
+        buffer = vk_buffer,
+        offset = xx buffer.source_heap_offset,
+        range  = xx size
+    };
+
+    write := VkWriteDescriptorSet.{
+        dstSet          = set.*,
+        dstBinding      = 0,
+        descriptorCount = 1,
+        descriptorType  = ifx uniform then .UNIFORM_BUFFER else .STORAGE_BUFFER,
+        pBufferInfo     = *info
+    };
+
+    vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
+}
+
+create_gpu_vertex_buffer :: (buffer: *GPU_Buffer, vertices: []$T) {
+    buffer.* = gpu_linear_allocate(.VERTEX_BUFFER, size_of(T) * vertices.count, .VERTEX_BUFFER_BIT);
+    copy_to_gpu_buffer(buffer, vertices);
+}
+
+create_gpu_index_buffer :: (buffer: *GPU_Buffer, indices: []u32) {
+    buffer.* = gpu_linear_allocate(.INDEX_BUFFER, size_of(u32) * indices.count, .INDEX_BUFFER_BIT);
+    copy_to_gpu_buffer(buffer, indices);
+}
+
 create_gpu_buffer :: (size: int, usage_flags: VkBufferUsageFlags, memory_flags: VkMemoryPropertyFlags) -> GPU_Buffer {
     using context.renderer;
 
@@ -478,6 +524,18 @@ create_gpu_buffer :: (size: int, usage_flags: VkBufferUsageFlags, memory_flags: 
     allocate_gpu_buffer(*buffer, create_info, memory_flags);
 
     return buffer;
+}
+
+get_vbo :: () -> VkBuffer {
+    vb_allocator := *context.renderer.linear_allocators[GPU_Heap_Type.VERTEX_BUFFER];
+    heap := *context.renderer.gpu_heap_pool[vb_allocator.heaps[0]];
+    return heap.buffer;
+}
+
+get_ibo :: () -> VkBuffer {
+    vb_allocator := *context.renderer.linear_allocators[GPU_Heap_Type.INDEX_BUFFER];
+    heap := *context.renderer.gpu_heap_pool[vb_allocator.heaps[0]];
+    return heap.buffer;
 }
 
 create_gpu_image :: (width: s32, height: s32, usage_flags: VkImageUsageFlags, memory_flags: VkMemoryPropertyFlags, format := VkFormat.R8G8B8A8_UNORM, mip_count: u32 = 1, layer_count: u32 = 1) ->  *GPU_Image {
@@ -535,11 +593,6 @@ heap_type_and_memory_index :: inline (heap_type: GPU_Heap_Type) -> VkMemoryPrope
 allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, buffer_usage: VkBufferUsageFlags = 0) -> s16 {
     using context.renderer;
 
-    // sType:           VkStructureType = .MEMORY_ALLOCATE_INFO;
-    // pNext:           *void;
-    // allocationSize:  VkDeviceSize;
-    // memoryTypeIndex: u32;
-
     _, memory_index := heap_type_and_memory_index(type);
     allocate_info := VkMemoryAllocateInfo.{
         allocationSize = xx size,
@@ -588,7 +641,6 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
 
 // todo: textures should work the same way as this, where you allocate, remove or update
 // makes for a nice interface for updating textures cpu-side arbitrarily
-// note that obviously I eventually need to get away from most things being host visible
 
 allocate_material :: (mat: *Material) -> s32 {
     using context.renderer;
@@ -632,7 +684,6 @@ convert_material_to_gpu_format :: inline (mat: *Material) -> GPU_Material {
 
     return gpu_mat;
 }
-
 
 usage_alignment :: inline (usage_flags: VkBufferUsageFlags) -> int {
     using context.renderer;
@@ -683,6 +734,7 @@ get_or_add_sampler :: (min_filter: Texture_Filter, mag_filter: Texture_Filter, h
         mipmapMode = ifx min_filter == .NEAREST then .NEAREST else .LINEAR,
     };
 
+    // translating same name to different enum type
     if horizontal_wrap == {
     case .CLAMP_TO_EDGE;
         create_info.addressModeU = .CLAMP_TO_EDGE;
@@ -691,6 +743,8 @@ get_or_add_sampler :: (min_filter: Texture_Filter, mag_filter: Texture_Filter, h
     case .REPEAT;
         create_info.addressModeU = .REPEAT;
     }
+
+    // translating same name to different enum type
     if vertical_wrap == {
     case .CLAMP_TO_EDGE;
         create_info.addressModeV = .CLAMP_TO_EDGE;

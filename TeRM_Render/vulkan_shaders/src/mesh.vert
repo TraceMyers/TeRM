@@ -1,5 +1,6 @@
-#version 450
-#extension GL_EXT_nonuniform_qualifier : require
+#version 460
+#extension GL_EXT_nonuniform_qualifier   : require
+#extension GL_EXT_scalar_block_layout    : require
 
 layout(location=0) in vec3 in_position;
 layout(location=1) in vec3 in_normal;
@@ -26,22 +27,30 @@ layout(set=2, binding=0) uniform Per_Frame_Uniform_Buffer {
     float delta_time;
 } frame;
 
-layout(set=3, binding=0, std430) readonly buffer Transform_Data {
-    mat4 model[];
-} transforms;
-
-struct Mesh_Instance {
-    int transform_id;
-    int material_id;
+struct Mesh_Instance_Shader_Data {
+    mat4 transform;
 };
 
-layout(set=4, binding=0, std430) readonly buffer Instance_Data {
-    Mesh_Instance instances[];
-} instance_data;
+layout(set=3, binding=0, scalar) readonly buffer Mesh_Instance_Data {
+    Mesh_Instance_Shader_Data array[];
+} mesh_instances;
+
+struct Mesh_Section_Shader_Data {
+    int mesh_instance_offset;
+    int mesh_instance_count;
+    int material;
+};
+
+layout(set=4, binding=0, scalar) readonly buffer Mesh_Section_Data {
+    Mesh_Section_Shader_Data array[];
+} mesh_sections;
 
 void main() {
-    Mesh_Instance inst = instance_data.instances[gl_InstanceIndex];
-    mat4 model = transforms.model[inst.transform_id];
+    Mesh_Section_Shader_Data  mesh_section = mesh_sections.array[gl_DrawID];
+    int mesh_instance_index = mesh_section.mesh_instance_offset + gl_InstanceIndex;
+    Mesh_Instance_Shader_Data mesh_inst = mesh_instances.array[mesh_instance_index];
+
+    mat4 model = mesh_inst.transform;
 
     gl_Position = vec4(in_position, 1.0) * model * frame.view_projection;
 
@@ -54,5 +63,5 @@ void main() {
     out_uv_0        = in_uv_0;
     out_uv_1        = in_uv_1;
     out_color       = in_color;
-    out_material_id = inst.material_id;
+    out_material_id = mesh_section.material;
 }

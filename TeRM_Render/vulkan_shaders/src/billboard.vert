@@ -1,7 +1,11 @@
 #version 450
 
-layout(location=0) in vec2 in_position;
-layout(location=1) in vec2 in_uv;
+layout(location=0) in vec3 in_position;
+layout(location=1) in vec3 in_normal;
+layout(location=2) in vec4 in_tangent;
+layout(location=3) in vec2 in_uv_0;
+layout(location=4) in vec2 in_uv_1;
+layout(location=5) in vec4 in_color;
 
 layout(location=0) out      vec2 out_uv;
 layout(location=1) out      vec4 out_tint;
@@ -46,6 +50,6 @@ void main() {
     gl_Position = vec4(world_pos, 1.0) * frame.view_projection;
 
     out_tint          = inst.tint;
-    out_uv            = inst.uv_offset + in_uv * inst.uv_scale;
+    out_uv            = inst.uv_offset + in_uv_0 * inst.uv_scale;
     out_texture_index = inst.texture_index;
 }

@@ -64,9 +64,6 @@ Renderer :: struct {
         light_glow_image_path: string;
         light_glow_image: *GPU_Image;
 
-        per_frame_uniform_buffer: GPU_Buffer;
-        per_frame_uniform_descriptor_set_layout: VkDescriptorSetLayout;
-        per_frame_uniform_descriptor_set: VkDescriptorSet;
 
         // allocator stuff
 
@@ -83,22 +80,16 @@ Renderer :: struct {
         materials_storage_buffer_descriptor_set: VkDescriptorSet;
         materials_storage_buffer: GPU_Buffer;
 
-        mesh_transforms_descriptor_set: VkDescriptorSet;
-        mesh_transforms_buffer: GPU_Buffer;
-
+        uniform_buffer_descriptor_set_layout: VkDescriptorSetLayout;
         storage_buffer_descriptor_set_layout: VkDescriptorSetLayout;
 
         billboard_vertex_buffer: GPU_Buffer;
-        billboard_instance_buffer: GPU_Buffer;
-        billboard_instance_buffer_descriptor_set: VkDescriptorSet;
+
         billboard_pipeline_layout: VkPipelineLayout;
         billboard_pipeline: VkPipeline;
 
         opaque_mesh_pipeline_layout: VkPipelineLayout;
         opaque_mesh_pipeline: VkPipeline;
-
-        mesh_instance_buffer: GPU_Buffer;
-        mesh_instance_buffer_descriptor_set: VkDescriptorSet;
 
         texture_references: []Texture_Ref;
         mesh_references: []Mesh_Ref;
@@ -113,53 +104,16 @@ Renderer :: struct {
 
         debug_switch: bool;
 
-        billboard_vertices := Billboard_Vertex.[
-            {position={-0.5, -0.5}, uv={0, 0}},
-            {position={ 0.5, -0.5}, uv={1, 0}},
-            {position={ 0.5,  0.5}, uv={1, 1}},
-            {position={-0.5, -0.5}, uv={0, 0}},
-            {position={ 0.5,  0.5}, uv={1, 1}},
-            {position={-0.5,  0.5}, uv={0, 1}},
+        billboard_vertices := Static_Mesh_Vertex.[
+            {position={-0.5, -0.5, 0}, uv_0={0, 0}},
+            {position={ 0.5, -0.5, 0}, uv_0={1, 0}},
+            {position={ 0.5,  0.5, 0}, uv_0={1, 1}},
+            {position={-0.5, -0.5, 0}, uv_0={0, 0}},
+            {position={ 0.5,  0.5, 0}, uv_0={1, 1}},
+            {position={-0.5,  0.5, 0}, uv_0={0, 1}},
         ];
-
-        point_light_position: Vector3;
 
         sampler_table: Linear_Table(u32, VkSampler);
-
-        scratch_position: Vector3;
-        scratch_update_position: bool;
-        scratch_time: float;
-        simple_vertex_buffer: GPU_Buffer;
-        scratch_vertices := Simple_Vertex.[
-            // front face
-            {{-0.5, -0.5,  0.5, 1}, {1, 1, 1}, {0, 0}},
-            {{ 0.5, -0.5,  0.5, 1}, {1, 1, 1}, {1, 0}},
-            {{ 0.5,  0.5,  0.5, 1}, {1, 1, 1}, {1, 1}},
-            {{-0.5, -0.5,  0.5, 1}, {1, 1, 1}, {0, 0}},
-            {{ 0.5,  0.5,  0.5, 1}, {1, 1, 1}, {1, 1}},
-            {{-0.5,  0.5,  0.5, 1}, {1, 1, 1}, {0, 1}},
-            // back face
-            {{-0.5, -0.5, -0.5, 1}, {1, 1, 1}, {0, 0}},
-            {{ 0.5, -0.5, -0.5, 1}, {1, 1, 1}, {1, 0}},
-            {{ 0.5,  0.5, -0.5, 1}, {1, 1, 1}, {1, 1}},
-            {{-0.5, -0.5, -0.5, 1}, {1, 1, 1}, {0, 0}},
-            {{ 0.5,  0.5, -0.5, 1}, {1, 1, 1}, {1, 1}},
-            {{-0.5,  0.5, -0.5, 1}, {1, 1, 1}, {0, 1}},
-            // // left face
-            {{-0.5, -0.5,  0.5, 1}, {1, 1, 1}, {0, 1}},
-            {{-0.5,  0.5,  0.5, 1}, {1, 1, 1}, {1, 1}},
-            {{-0.5,  0.5, -0.5, 1}, {1, 1, 1}, {1, 0}},
-            {{-0.5, -0.5,  0.5, 1}, {1, 1, 1}, {0, 1}},
-            {{-0.5,  0.5, -0.5, 1}, {1, 1, 1}, {1, 0}},
-            {{-0.5, -0.5, -0.5, 1}, {1, 1, 1}, {0, 0}},
-            // // right face
-            {{ 0.5, -0.5,  0.5, 1}, {1, 1, 1}, {0, 1}},
-            {{ 0.5,  0.5,  0.5, 1}, {1, 1, 1}, {1, 1}},
-            {{ 0.5,  0.5, -0.5, 1}, {1, 1, 1}, {1, 0}},
-            {{ 0.5, -0.5,  0.5, 1}, {1, 1, 1}, {0, 1}},
-            {{ 0.5,  0.5, -0.5, 1}, {1, 1, 1}, {1, 0}},
-            {{ 0.5, -0.5, -0.5, 1}, {1, 1, 1}, {0, 0}},
-        ];
     };
 
     shader_table: Linear_Table(string, VkShaderModule);
@@ -189,6 +143,30 @@ GPU_Material :: struct {
     orm_tex: s32;
 };
 
+//  mesh 1
+//          mesh instance                0, 1, 2
+//          draw (section) 0 
+//              (inst 0, inst 1, inst 2)
+//          draw (section) 1 
+//              (inst 0, inst 1, inst 2)
+//  mesh 2
+//          mesh instance                3, 4, 5
+//          draw (section) 2 
+//              (inst 0, inst 1, inst 2)
+//          draw (section) 3 
+//              (inst 0, inst 1, inst 2)
+
+Mesh_Instance_Shader_Data :: struct {
+    transform: Matrix4;
+}
+
+// this is on the per-draw level
+Mesh_Section_Shader_Data :: struct {
+    mesh_instance_offset: s32;
+    mesh_instance_count:  s32;
+    material: s32;
+}
+
 Static_Mesh_Draw :: struct {
     position: Vector3;
     orientation: Quaternion;
@@ -213,10 +191,6 @@ Mesh_Ref :: struct {
     index: int;
 }
 
-Mesh_Instance :: struct {
-    transform_id: s32;
-    material_id: s32;
-}
 
 Render_Init_Options :: struct {
     populate_shader_data_in_working_directory := true;
@@ -277,18 +251,15 @@ Graphics_API_Version :: struct {
 
 DEFAULT_BUFFER_HEAP_SIZE : int : 32  * 1024 * 1024;
 DEFAULT_IMAGE_HEAP_SIZE  : int : 128 * 1024 * 1024;
-VERTEX_BUFFER_SIZE : int : 96 * 1024 * 1024;
-INDEX_BUFFER_SIZE  : int : 32 * 1024 * 1024;
+VERTEX_BUFFER_SIZE       : int : 96 * 1024 * 1024;
+INDEX_BUFFER_SIZE        : int : 32 * 1024 * 1024;
 
 GPU_Heap_Type :: enum u8 {
-    PERMANENT_DEVICE_LOCAL_BUFFER;
-    PERMANENT_HOST_VISIBLE_BUFFER;
-    TEMP_DEVICE_LOCAL_BUFFER;
-    TEMP_HOST_VISIBLE_BUFFER;
+    DEVICE_LOCAL_BUFFER;
+    HOST_VISIBLE_BUFFER;
     VERTEX_BUFFER;
     INDEX_BUFFER; // if this isn't the last buffer type, update is_buffer_type
-
-    DEVICE_LOCAL_IMAGE; // if this isn't the first image type, update is_image_type
+    DEVICE_LOCAL_IMAGE; // if this isn't the first image type, update is_buffer_type
     HOST_VISIBLE_IMAGE;
 }
 
@@ -304,9 +275,7 @@ is_image_type :: (heap_type: GPU_Heap_Type) -> bool {
 
 is_host_visible_type :: (heap_type: GPU_Heap_Type) -> bool {
     if heap_type == {
-    case .PERMANENT_HOST_VISIBLE_BUFFER;
-        return true;
-    case .TEMP_HOST_VISIBLE_BUFFER;
+    case .HOST_VISIBLE_BUFFER;
         return true;
     case .HOST_VISIBLE_IMAGE;
         return true;
@@ -397,22 +366,39 @@ Swapchain :: struct {
 }
 
 
+get_current_frame :: () -> *Graphics_Frame {
+    using context.renderer;
+    return *frames[rendered_frame_count % frames.count];
+}
+
 Graphics_Frame :: struct {
     command_pool: VkCommandPool;
     command_buffer: VkCommandBuffer;
     image_available_semaphore: VkSemaphore;
     image_rendered_semaphore: VkSemaphore;
     fence: VkFence;
+
+    per_frame_uniform_buffer: GPU_Buffer;
+    per_frame_uniform_descriptor_set: VkDescriptorSet;
+
+    billboard_instance_buffer_descriptor_set: VkDescriptorSet;
+    billboard_instance_buffer: GPU_Buffer;
+
+    mesh_instances_shader_data_descriptor_set: VkDescriptorSet;
+    mesh_instances_shader_data: GPU_Buffer;
+
+    mesh_sections_shader_data_descriptor_set: VkDescriptorSet;
+    mesh_sections_shader_data: GPU_Buffer;
+
+    opaque_mesh_draw_commands_descriptor_set: VkDescriptorSet;
+    opaque_mesh_draw_commands: GPU_Buffer;
+
+    temp_allocators: [GPU_HEAP_TYPE_COUNT]GPU_Linear_Allocator;
 }
 
 Descriptor_Pool_Ratio :: struct {
     type: VkDescriptorType;
     ratio: float32;
-}
-
-Billboard_Vertex :: struct {
-    position: Vector2;
-    uv: Vector2;
 }
 
 Billboard_Instance :: struct {
@@ -438,12 +424,6 @@ Per_Frame_Uniform_Buffer :: struct {
 Sprite_Rect :: struct {
     offset: Vector2;
     scale: Vector2;
-}
-
-Simple_Vertex :: struct {
-    position: Vector4;
-    color: Color3f;
-    uv: Vector2;
 }
 
 Mesh_Import_Types :: struct {

@@ -363,16 +363,16 @@ create_logical_device :: () -> bool {
         descriptorBindingVariableDescriptorCount = VK_TRUE,
     };
 
-    descriptor_indexing_enable := VkPhysicalDeviceDescriptorIndexingFeatures.{
-        descriptorBindingPartiallyBound = VK_TRUE,
-
-        pNext = *vulkan_1_2_features,
+    // as far as I know, this is just for being able to use gl_DrawID in shaders for indexing by draw.
+    draw_params_enable := VkPhysicalDeviceShaderDrawParametersFeatures.{
+        shaderDrawParameters = VK_TRUE,
+        pNext = *vulkan_1_2_features
     };
 
     // smooths over a bunch of unnecessary boilerplate in creating graphics pipeline-related stuff
     dynamic_rendering_enable := VkPhysicalDeviceDynamicRenderingFeatures.{
         dynamicRendering = VK_TRUE,
-        pNext = *vulkan_1_2_features
+        pNext = *draw_params_enable
     };
 
     // enables syncing a fence on present
@@ -501,7 +501,7 @@ create_default_pipelines :: () -> bool {
         build_info: Graphics_Pipeline_Build_Info;
         build_info.pipeline_layout = billboard_pipeline_layout;
         make_default_vertex_fragment_pipeline_build_info(
-            *build_info, "billboard_vert", "billboard_frag", Billboard_Vertex
+            *build_info, "billboard_vert", "billboard_frag", Static_Mesh_Vertex
         );
         build_info.name = "billboard pipeline";
         build_info.depth_stencil.create.depthWriteEnable = VK_FALSE;
@@ -535,7 +535,7 @@ create_default_pipeline_layouts :: () -> bool {
         descriptor_set_layouts := VkDescriptorSetLayout.[
             textures_descriptor_set_layout,
             storage_buffer_descriptor_set_layout,
-            per_frame_uniform_descriptor_set_layout,
+            uniform_buffer_descriptor_set_layout,
             storage_buffer_descriptor_set_layout
         ];
         create_pipeline_layout := VkPipelineLayoutCreateInfo.{
@@ -554,7 +554,7 @@ create_default_pipeline_layouts :: () -> bool {
         descriptor_set_layouts := VkDescriptorSetLayout.[
             textures_descriptor_set_layout,
             storage_buffer_descriptor_set_layout,
-            per_frame_uniform_descriptor_set_layout,
+            uniform_buffer_descriptor_set_layout,
             storage_buffer_descriptor_set_layout,
             storage_buffer_descriptor_set_layout
         ];
@@ -586,18 +586,23 @@ create_descriptors :: () -> bool {
     ];
     create_descriptor_pool(*descriptor_pool, xx (max_texture_count * 4), ratios);
 
-    // todo: use bindings for frames in flight
-
-    // Set 0 — per-frame data (camera, time, lights) — shared across all pipelines
-    // Set 1 — per-pass data (shadow map, render targets)
-    // Set 2 — per-material data (textures, material params)
-    // Set 3 — per-object data (model matrix, object ID)
-
     // Sets = granularity of when things change
     // Bindings = individual resources within that granularity
 
     // can use UNIFORM_BUFFER_DYNAMIC and STORAGE_BUFFER_DYNAMIC for buffers
     // whose memory stays the same, but offset changes.
+
+    // any ubo can use this layout
+    uniform_buffer_binding := VkDescriptorSetLayoutBinding.[
+        {binding=0, descriptorCount=1, descriptorType=.UNIFORM_BUFFER, stageFlags=.ALL}
+    ];
+    uniform_buffer_descriptor_set_layout = build_descriptor_set_layout(uniform_buffer_binding);
+
+    // any ssbo can use this layout
+    storage_buffer_binding := VkDescriptorSetLayoutBinding.[
+        {binding=0, descriptorCount=1, descriptorType=.STORAGE_BUFFER, stageFlags=.VERTEX_BIT | .FRAGMENT_BIT}
+    ];
+    storage_buffer_descriptor_set_layout = build_descriptor_set_layout(storage_buffer_binding);
 
     {
         // descriptor set of all images
@@ -632,145 +637,53 @@ create_descriptors :: () -> bool {
             ref.global_buffer = xx add_gpu_image_for_sampling(ref.path, sampler).pool_index;
         }
     }
-    {
-        // descriptor set for the per-frame uniform buffer
-        per_frame_uniform_binding := VkDescriptorSetLayoutBinding.[
-            {binding=0, descriptorCount=1, descriptorType=.UNIFORM_BUFFER, stageFlags=.ALL}
-        ];
 
-        per_frame_uniform_descriptor_set_layout = build_descriptor_set_layout(per_frame_uniform_binding);
-        per_frame_uniform_descriptor_set = allocate_descriptor_set(descriptor_pool, per_frame_uniform_descriptor_set_layout);
+    create_gpu_storage_buffer(
+        descriptor_pool, 
+        *materials_storage_buffer_descriptor_set, 
+        *materials_storage_buffer, 
+        size_of(GPU_Material) * MAX_MATERIALS
+    );
 
-        per_frame_uniform_buffer = gpu_linear_allocate(
-            .PERMANENT_DEVICE_LOCAL_BUFFER, size_of(Per_Frame_Uniform_Buffer), .UNIFORM_BUFFER_BIT
+    create_gpu_vertex_buffer(*billboard_vertex_buffer, billboard_vertices);
+
+    for *frame : context.renderer.frames {
+        create_gpu_uniform_buffer(
+            descriptor_pool,
+            *frame.per_frame_uniform_descriptor_set, 
+            *frame.per_frame_uniform_buffer, 
+            size_of(Per_Frame_Uniform_Buffer)
+        ); 
+
+        create_gpu_storage_buffer(
+            descriptor_pool, 
+            *frame.mesh_instances_shader_data_descriptor_set, 
+            *frame.mesh_instances_shader_data, 
+            size_of(Mesh_Instance_Shader_Data) * MAX_MESHES
         );
-        buffer := gpu_heap_pool[per_frame_uniform_buffer.source_heap].buffer;
 
-        info := VkDescriptorBufferInfo.{
-            buffer = buffer,
-            offset = xx per_frame_uniform_buffer.source_heap_offset,
-            range  = size_of(Per_Frame_Uniform_Buffer)
-        };
-
-        write := VkWriteDescriptorSet.{
-            dstSet          = per_frame_uniform_descriptor_set,
-            dstBinding      = 0,
-            descriptorCount = 1,
-            descriptorType  = .UNIFORM_BUFFER,
-            pBufferInfo     = *info
-        };
-
-        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
-    }
-    {
-        // any ssbo can use this layout
-        storage_buffer_binding := VkDescriptorSetLayoutBinding.[
-            {binding=0, descriptorCount=1, descriptorType=.STORAGE_BUFFER, stageFlags=.VERTEX_BIT | .FRAGMENT_BIT}
-        ];
-        storage_buffer_descriptor_set_layout = build_descriptor_set_layout(storage_buffer_binding);
-    }
-    {
-        materials_storage_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
-
-        materials_storage_buffer = gpu_linear_allocate(
-            .PERMANENT_DEVICE_LOCAL_BUFFER, size_of(GPU_Material) * MAX_MATERIALS, .STORAGE_BUFFER_BIT
+        create_gpu_storage_buffer(
+            descriptor_pool, 
+            *frame.mesh_sections_shader_data_descriptor_set, 
+            *frame.mesh_sections_shader_data, 
+            size_of(Mesh_Section_Shader_Data) * MAX_MESHES * 4
         );
-        buffer := gpu_heap_pool[materials_storage_buffer.source_heap].buffer;
 
-        info := VkDescriptorBufferInfo.{
-            buffer = buffer,
-            offset = xx materials_storage_buffer.source_heap_offset,
-            range  = size_of(GPU_Material) * MAX_MATERIALS
-        };
-
-        write := VkWriteDescriptorSet.{
-            dstSet          = materials_storage_buffer_descriptor_set,
-            dstBinding      = 0,
-            descriptorCount = 1,
-            descriptorType  = .STORAGE_BUFFER,
-            pBufferInfo     = *info
-        };
-
-        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
-    }
-    {
-        mesh_transforms_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
-        mesh_transforms_buffer = gpu_linear_allocate(
-            .PERMANENT_DEVICE_LOCAL_BUFFER, size_of(Matrix4) * MAX_MESHES, .STORAGE_BUFFER_BIT
+        max_billboard_instance_count := 100_000;
+        create_gpu_storage_buffer(
+            descriptor_pool, 
+            *frame.billboard_instance_buffer_descriptor_set, 
+            *frame.billboard_instance_buffer, 
+            size_of(Billboard_Instance) * max_billboard_instance_count
         );
-        buffer := gpu_heap_pool[mesh_transforms_buffer.source_heap].buffer;
 
-        info := VkDescriptorBufferInfo.{
-            buffer = buffer,
-            offset = xx mesh_transforms_buffer.source_heap_offset,
-            range  = size_of(Matrix4) * MAX_MESHES
-        };
-
-        write := VkWriteDescriptorSet.{
-            dstSet          = mesh_transforms_descriptor_set,
-            dstBinding      = 0,
-            descriptorCount = 1,
-            descriptorType  = .STORAGE_BUFFER,
-            pBufferInfo     = *info
-        };
-
-        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
-    }
-    {
-
-        mesh_instance_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
-        mesh_instance_buffer = gpu_linear_allocate(
-            .PERMANENT_DEVICE_LOCAL_BUFFER, size_of(Matrix4) * MAX_MESHES, .STORAGE_BUFFER_BIT
+        max_draw_command_count := 5_000;
+        create_gpu_storage_buffer(
+            descriptor_pool,
+            *frame.opaque_mesh_draw_commands_descriptor_set,
+            *frame.opaque_mesh_draw_commands,
+            size_of(VkDrawIndexedIndirectCommand) * max_draw_command_count
         );
-        buffer := gpu_heap_pool[mesh_instance_buffer.source_heap].buffer;
-
-        info := VkDescriptorBufferInfo.{
-            buffer = buffer,
-            offset = xx mesh_instance_buffer.source_heap_offset,
-            range  = size_of(Matrix4) * MAX_MESHES
-        };
-
-        write := VkWriteDescriptorSet.{
-            dstSet          = mesh_instance_buffer_descriptor_set,
-            dstBinding      = 0,
-            descriptorCount = 1,
-            descriptorType  = .STORAGE_BUFFER,
-            pBufferInfo     = *info
-        };
-
-        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
-    }
-    {
-        billboard_instance_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
-
-        max_instance_count := 100_000;
-
-        billboard_instance_buffer = gpu_linear_allocate(
-            .PERMANENT_DEVICE_LOCAL_BUFFER, max_instance_count * size_of(Billboard_Instance), .STORAGE_BUFFER_BIT
-        );
-        buffer := gpu_heap_pool[billboard_instance_buffer.source_heap].buffer;
-
-        info := VkDescriptorBufferInfo.{
-            buffer = buffer,
-            offset = xx billboard_instance_buffer.source_heap_offset,
-            range  = xx (size_of(Billboard_Instance) * max_instance_count)
-        };
-
-        write := VkWriteDescriptorSet.{
-            dstSet          = billboard_instance_buffer_descriptor_set,
-            dstBinding      = 0,
-            descriptorCount = 1,
-            descriptorType  = .STORAGE_BUFFER,
-            pBufferInfo     = *info
-        };
-
-        vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
-    }
-    {
-        billboard_vertex_buffer = gpu_linear_allocate(
-            .VERTEX_BUFFER, billboard_vertices.count * size_of(Billboard_Vertex), .VERTEX_BUFFER_BIT
-        );
-        copy_to_gpu_buffer(*billboard_vertex_buffer, billboard_vertices.data);
     }
 
     return true;
@@ -846,7 +759,7 @@ load_assets :: () -> bool {
         if local_buffer != -1 {
             sampler := get_or_add_sampler(min_filter, mag_filter, horizontal_wrap, vertical_wrap);
             buffer := *mesh.texture_buffers[local_buffer];
-            // assuming all textures are unique -> adding buffers per texture
+            // assuming all textures are unique -> adding one buffer per texture
             assert(buffer.gpu_allocation == -1);
 
             buffer.gpu_allocation = add_gpu_image_for_sampling(buffer.cpu_allocation.data, buffer.width, buffer.height, sampler).pool_index;
@@ -870,6 +783,7 @@ load_assets :: () -> bool {
                 buf.gpu_allocation = -1;
             }
 
+            // todo: free vertices & indices?
             for *section : mesh_in_array.sections {
                 {
                     using section.indices;
@@ -877,35 +791,25 @@ load_assets :: () -> bool {
                         auto_release_temp();
                         assert(cpu_allocation._u16.count == count);
                         // all indices are converted to u32 so the can all go in a single buffer.
-                        gpu_allocation = gpu_linear_allocate(
-                            .INDEX_BUFFER, count * size_of(u32), .INDEX_BUFFER_BIT
-                        );
                         type = .U32;
                         temp_u32_buffer := make_static_array(u32, count,, temp);
                         for 0..cpu_allocation._u16.count-1 {
                             temp_u32_buffer[it] = cpu_allocation._u16[it];
                         }
-                        copy_to_gpu_buffer(*gpu_allocation, temp_u32_buffer.data);
+                        create_gpu_index_buffer(*gpu_allocation, temp_u32_buffer);
                     } else {
                         assert(cpu_allocation._u32.count == count);
-                        gpu_allocation = gpu_linear_allocate(
-                            .INDEX_BUFFER, count * size_of(u32), .INDEX_BUFFER_BIT
-                        );
-                        copy_to_gpu_buffer(*gpu_allocation, cpu_allocation._u32.data);
+                        create_gpu_index_buffer(*gpu_allocation, cpu_allocation._u32);
                     }
                 }
                 {
                     using section.vertices;
                     if type == .STATIC {
-                        gpu_allocation = gpu_linear_allocate(
-                            .VERTEX_BUFFER, count * size_of(Static_Mesh_Vertex), .VERTEX_BUFFER_BIT
-                        );
-                        copy_to_gpu_buffer(*gpu_allocation, cpu_allocation.static.data);
+                        assert(cpu_allocation.static.count == count);
+                        create_gpu_vertex_buffer(*gpu_allocation, cpu_allocation.static);
                     } else {
-                        gpu_allocation = gpu_linear_allocate(
-                            .VERTEX_BUFFER, count * size_of(Skinned_Mesh_Vertex), .VERTEX_BUFFER_BIT
-                        );
-                        copy_to_gpu_buffer(*gpu_allocation, cpu_allocation.skinned.data);
+                        assert(cpu_allocation.skinned.count == count);
+                        create_gpu_vertex_buffer(*gpu_allocation, cpu_allocation.skinned);
                     }
                 }
 
@@ -956,6 +860,7 @@ load_assets :: () -> bool {
     ];
 }
 
+// todo: revisit which of these are needed and which are core
 required_device_extensions := (*u8).[
     "VK_KHR_swapchain",
     "VK_EXT_swapchain_maintenance1",

@@ -26,14 +26,15 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     using context.renderer;
     auto_release_temp();
 
+    current_frame := get_current_frame();
+
     defer array_reset_keeping_memory(*particle_draws);
     defer array_reset_keeping_memory(*static_mesh_draws);
-    defer gpu_linear_allocator_reset(.TEMP_DEVICE_LOCAL_BUFFER);
-    defer gpu_linear_allocator_reset(.TEMP_HOST_VISIBLE_BUFFER);
+    defer for 0..GPU_HEAP_TYPE_COUNT-1 {
+        gpu_linear_allocator_reset(*current_frame.temp_allocators[it], true);
+    }
 
     if !is_window_open(window) || is_window_minimized(window) then return false;
-
-    current_frame := *frames[rendered_frame_count % frames.count];
 
     if !validate(vkWaitForFences(logical.obj, 1, *current_frame.fence, VK_TRUE, NANOSECONDS_PER_SECOND), "timed out waiting for the render fence") then return false;
 
@@ -73,7 +74,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         per_frame_uniform.time            = 0;
         per_frame_uniform.delta_time      = 1.0 / 120.0;
 
-        copy_to_gpu_buffer(*per_frame_uniform_buffer, *per_frame_uniform);
+        copy_to_gpu_buffer(*current_frame.per_frame_uniform_buffer, *per_frame_uniform);
     }
 
     vkCmdBindDescriptorSets(
@@ -85,83 +86,109 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     );
 
     vkCmdBindDescriptorSets(
-        cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *per_frame_uniform_descriptor_set, 0, null
+        cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *current_frame.per_frame_uniform_descriptor_set, 0, null
     );
 
     if static_mesh_draws.count > 0 {
-        // quick_sort(static_mesh_draws, draw => draw.ref.index);
+        mesh_draw_commands := make_dynamic_array(VkDrawIndexedIndirectCommand, static_mesh_draws.count*4,, temp);
 
-        // vkCmdBindDescriptorSets(
-        //     cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 3, 1, *mesh_transforms_descriptor_set
-        // );
-        // vkCmdBindDescriptorSets(
-        //     cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 4, 1, *mesh_instance_buffer_descriptor_set
-        // );
-        // vkCmdBindPipeline(cmd, .GRAPHICS, opaque_mesh_pipeline);
+        quick_sort(static_mesh_draws, draw => draw.ref.index);
 
-        // mesh_transforms := make_static_array(Matrix4, static_mesh_draws.count,, temp);
-        // mesh_instances  := make_dynamic_array(Mesh_Instance, static_mesh_draws.count*3,, temp);
+        vkCmdBindDescriptorSets(
+            cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 3, 1, *current_frame.mesh_instances_shader_data_descriptor_set, 0, null
+        );
+        vkCmdBindDescriptorSets(
+            cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 4, 1, *current_frame.mesh_sections_shader_data_descriptor_set, 0, null
+        );
 
-        // instances_begin_index: int;
-        // instances_end_index:   int;
-        // instances_ref_index:   int = -1;
+        vkCmdBindIndexBuffer(cmd, get_ibo(), 0, .UINT32);
+        vbo_offset: u64;
+        vbo := get_vbo();
+        vkCmdBindVertexBuffers(cmd, 0, 1, *vbo, *vbo_offset);
+        vkCmdBindPipeline(cmd, .GRAPHICS, opaque_mesh_pipeline);
 
-        // for 0..static_mesh_draws.count {
-        //     draw := *static_mesh_draws[it];
-        //     if it == static_mesh_draws.count || instances_ref_index != draw.ref.index {
-        //         draw_count := instances_end_index - instances_begin_index;
-        //         if draw_count > 0 {
-        //             // draw
-        //         }
-        //         instances_ref_index = draw.ref.index;
-        //         instances_begin_index = it;
-        //         instances_end_index = it + 1;
-        //     } else {
-        //         instances_end_index += 1;
-        //     }
-        // }
+        mesh_instances := make_static_array(Mesh_Instance_Shader_Data, static_mesh_draws.count,, temp);
+        mesh_sections  := make_dynamic_array(Mesh_Section_Shader_Data, static_mesh_draws.count*4,, temp);
 
+        instances_begin_index: int = 0;
+        instances_count:       int = 0;
+        instances_ref_index:   int = static_mesh_draws[0].ref.index;
 
+        instance_count_total:  s32;
 
-        // for draw : static_mesh_draws {
-        //     transform_index := it_index;
-        //     mesh := *meshes[draw.ref.index];
+        for 0..static_mesh_draws.count-1 {
+            draw := *static_mesh_draws[it];
 
-        //     // add transform
-        //     // transform := *mesh_transforms[transform_index];
-        //     transform := make_translation_matrix4(draw.position);
-        //     transform  = rotate(transform, draw.orientation);
-        //     scale := make_scale_matrix4(draw.scale);
-        //     transform *= scale;
-            
-        //     for section : mesh {
-        //         // array_add(*mesh_instances, {xx transform_index, section.material.user_data});
-        //         heap   := *gpu_heap_pool[section.vertex_buffer.gpu_allocation.source_heap];
-        //         buffer := heap.buffer;
-        //         offset := section.vertex_buffer.gpu_allocation.source_heap_offset;
+            transform   := *mesh_instances[it].transform;
+            transform.*  = make_translation_matrix4(draw.position);
+            transform.*  = rotate(transform.*, draw.orientation);
+            scale := make_scale_matrix4(draw.scale);
+            transform.* *= scale;           
 
-        //     }
-        // }
+            if it == static_mesh_draws.count-1 || instances_ref_index != draw.ref.index {
+                if it == 0 {
+                    instances_count += 1;
+                }
+                if instances_count > 0 {
+                    draws_of_one_mesh: []Static_Mesh_Draw;
+                    draws_of_one_mesh.data  = static_mesh_draws.data + instances_begin_index;
+                    draws_of_one_mesh.count = instances_count;
 
-        // for now, not actually instanced draw, but it will be pretty quick to add.
+                    if draws_of_one_mesh.count > 1 {
+                        // sort opaque instances in front-to-back order to take advantage of the depth buffer
+                        quick_sort(draws_of_one_mesh, draw => distance_squared(draw.position, context.renderer.camera_position));
+                    }
+                    
+                    mesh := *meshes[draw.ref.index];
 
-        // copy_to_gpu_buffer(*mesh_transforms_buffer, mesh_transforms);
-        // copy_to_gpu_buffer(*mesh_instance_buffer,   mesh_instances);
+                    for section : mesh.sections {
+                        array_add(*mesh_sections, Mesh_Section_Shader_Data.{
+                            cast(s32) instance_count_total, 
+                            cast(s32) instances_count, 
+                            cast(s32) section.material.user_data
+                        });
+                        array_add(*mesh_draw_commands, {
+                            indexCount    = xx section.indices.count,
+                            instanceCount = xx instances_count,
+                            firstIndex    = xx (section.indices.gpu_allocation.source_heap_offset / size_of(u32)),
+                            vertexOffset  = xx (section.vertices.gpu_allocation.source_heap_offset / size_of(Static_Mesh_Vertex)),
+                            firstInstance = 0
+                        });
+                    }
 
-        // instancing is actually a little complicated, since a set of instances may span
-        // some depth, meaning it might sometimes be better to break up an instanced
-        // set into depth groups...
+                    instance_count_total += cast(s32) instances_count;
+                }
+
+                instances_ref_index = draw.ref.index;
+                instances_begin_index = it;
+                instances_count = 1;
+            } else {
+                instances_count += 1;
+            }
+        }
+
+        copy_to_gpu_buffer(*current_frame.mesh_instances_shader_data, mesh_instances);
+        copy_to_gpu_buffer(*current_frame.mesh_sections_shader_data,  mesh_sections);
+        copy_to_gpu_buffer(*current_frame.opaque_mesh_draw_commands, mesh_draw_commands);
+
+        dcbuf := *current_frame.opaque_mesh_draw_commands;
+        draw_command_buffer := gpu_heap_pool[dcbuf.source_heap].buffer;
+
+        vkCmdDrawIndexedIndirect(
+            cmd,
+            draw_command_buffer,
+            xx dcbuf.source_heap_offset,
+            cast(u32) mesh_draw_commands.count,
+            size_of(VkDrawIndexedIndirectCommand)
+        );
     }
 
 
     if particle_draws.count > 0 {
         quick_sort(particle_draws, draw => -distance_squared(draw.position, context.renderer.camera_position));
 
-        copy_to_gpu_buffer(*billboard_instance_buffer, particle_draws);
-
-        vkCmdBindDescriptorSets(
-            cmd, .GRAPHICS, billboard_pipeline_layout, 3, 1, *billboard_instance_buffer_descriptor_set, 0, null
-        );
+        copy_to_gpu_buffer(*current_frame.billboard_instance_buffer, particle_draws);
+        vkCmdBindDescriptorSets(cmd, .GRAPHICS, billboard_pipeline_layout, 3, 1, *current_frame.billboard_instance_buffer_descriptor_set, 0, null);
 
         vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
         heap   := *gpu_heap_pool[billboard_vertex_buffer.source_heap];

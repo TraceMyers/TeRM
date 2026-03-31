@@ -1,7 +1,40 @@
+
 import sys
+import importlib
+
+def ensure_deps():
+    """Install any missing packages into Blender's bundled Python."""
+    import site
+    # Blender excludes user site-packages from sys.path; add it so pip's
+    # --user installs (the default when the system dir isn't writable) work.
+    user_site = site.getusersitepackages()
+    if user_site not in sys.path:
+        sys.path.append(user_site)
+
+    required = [('numpy', 'numpy'), ('png', 'pypng')]
+    missing = []
+    for mod_name, pip_name in required:
+        try:
+            importlib.import_module(mod_name)
+        except ImportError:
+            missing.append(pip_name)
+    if not missing:
+        return
+
+    try:
+        subprocess.check_call(
+            [sys.executable, '-m', 'ensurepip', '--upgrade'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    subprocess.check_call(
+        [sys.executable, '-m', 'pip', 'install', '--quiet'] + missing)
+    importlib.invalidate_caches()
+
+ensure_deps()
+
 import os
 import subprocess
-import importlib
 import bpy
 import struct
 import bmesh
@@ -418,9 +451,13 @@ def extract_sections(mesh_obj, arm_obj, bufs):
                 pos = tuple(vt.co)
                 nrm = tuple(lp.normal)
                 tan = tuple(lp.tangent) + (lp.bitangent_sign,)
-                u0 = tuple(me.uv_layers[0].data[li].uv)
-                u1 = (tuple(me.uv_layers[1].data[li].uv)
-                       if len(me.uv_layers) > 1 else (0.0, 0.0))
+                u0_raw = me.uv_layers[0].data[li].uv
+                u0 = (u0_raw[0], 1.0 - u0_raw[1])
+                if len(me.uv_layers) > 1:
+                    u1_raw = me.uv_layers[1].data[li].uv
+                    u1 = (u1_raw[0], 1.0 - u1_raw[1])
+                else:
+                    u1 = (0.0, 0.0)
                 col = loop_color(me, li)
                 key = pos + nrm + tan + u0 + u1 + col
                 if skinned:
@@ -610,38 +647,8 @@ def main():
           f"{len(anims)} animations -> {out}")
 
 
-def ensure_deps():
-    """Install any missing packages into Blender's bundled Python."""
-    import site
-    # Blender excludes user site-packages from sys.path; add it so pip's
-    # --user installs (the default when the system dir isn't writable) work.
-    user_site = site.getusersitepackages()
-    if user_site not in sys.path:
-        sys.path.append(user_site)
-
-    required = [('numpy', 'numpy'), ('png', 'pypng')]
-    missing = []
-    for mod_name, pip_name in required:
-        try:
-            importlib.import_module(mod_name)
-        except ImportError:
-            missing.append(pip_name)
-    if not missing:
-        return
-
-    try:
-        subprocess.check_call(
-            [sys.executable, '-m', 'ensurepip', '--upgrade'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-    subprocess.check_call(
-        [sys.executable, '-m', 'pip', 'install', '--quiet'] + missing)
-    importlib.invalidate_caches()
-
 
 if __name__ == '__main__':
-    ensure_deps()
     main()
 
 

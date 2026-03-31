@@ -1,3 +1,5 @@
+// todo: texture deduplication/sharing
+// todo: material instancing
 
 // --- sections ---
 // vk instance
@@ -6,7 +8,6 @@
 // logical device
 // frame data
 // descriptors
-// samplers
 
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------------- :vk instance
@@ -246,7 +247,7 @@ determine_physical_device_queue_family_capabilities :: (physical: *Physical_Devi
             compute_index = xx it_index;
         }
         if family.queueFlags & .TRANSFER_BIT {
-            if transfer_index == -1 || family.queueFlags & (.GRAPHICS_BIT | .COMPUTE_BIT) == 0 {
+            if transfer_index == -1 || (family.queueFlags & .GRAPHICS_BIT) != 0 {
                 transfer_index = xx it_index;
             }
         }
@@ -502,6 +503,7 @@ create_default_pipelines :: () -> bool {
         make_default_vertex_fragment_pipeline_build_info(
             *build_info, "billboard_vert", "billboard_frag", Billboard_Vertex
         );
+        build_info.name = "billboard pipeline";
         build_info.depth_stencil.create.depthWriteEnable = VK_FALSE;
         build_info.color_blend.attachment.blendEnable = VK_TRUE;
         billboard_pipeline = build_pipeline(*build_info);
@@ -513,6 +515,7 @@ create_default_pipelines :: () -> bool {
         make_default_vertex_fragment_pipeline_build_info(
             *build_info, "mesh_vert", "mesh_frag", Static_Mesh_Vertex
         );
+        build_info.name = "opaque mesh pipeline";
         opaque_mesh_pipeline = build_pipeline(*build_info);
     }
     
@@ -624,16 +627,9 @@ create_descriptors :: () -> bool {
         textures_descriptor_set = allocate_descriptor_set(descriptor_pool, textures_descriptor_set_layout, *variable_count_info);
 
         for *ref : context.renderer.texture_references {
-            sampler: VkSampler;
-            if ref.sampler == {
-            case .NEAREST;
-                sampler = image_sampler_nearest;
-            case .BILINEAR;
-                sampler = image_sampler_bilinear;
-            case .TRILINEAR;
-                sampler = image_sampler_trilinear;
-            }
-            ref.index = xx add_gpu_image_for_sampling(ref.path, sampler).pool_index;
+            sampler := get_or_add_sampler(ref.min_filter, ref.mag_filter, ref.horizontal_wrap, ref.vertical_wrap);
+            ref.local_buffer  = -1;
+            ref.global_buffer = xx add_gpu_image_for_sampling(ref.path, sampler).pool_index;
         }
     }
     {
@@ -646,7 +642,7 @@ create_descriptors :: () -> bool {
         per_frame_uniform_descriptor_set = allocate_descriptor_set(descriptor_pool, per_frame_uniform_descriptor_set_layout);
 
         per_frame_uniform_buffer = gpu_linear_allocate(
-            .HOST_VISIBLE_BUFFER, size_of(Per_Frame_Uniform_Buffer), .UNIFORM_BUFFER_BIT
+            .PERMANENT_DEVICE_LOCAL_BUFFER, size_of(Per_Frame_Uniform_Buffer), .UNIFORM_BUFFER_BIT
         );
         buffer := gpu_heap_pool[per_frame_uniform_buffer.source_heap].buffer;
 
@@ -677,7 +673,7 @@ create_descriptors :: () -> bool {
         materials_storage_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
 
         materials_storage_buffer = gpu_linear_allocate(
-            .HOST_VISIBLE_BUFFER, size_of(GPU_Material) * MAX_MATERIALS, .STORAGE_BUFFER_BIT
+            .PERMANENT_DEVICE_LOCAL_BUFFER, size_of(GPU_Material) * MAX_MATERIALS, .STORAGE_BUFFER_BIT
         );
         buffer := gpu_heap_pool[materials_storage_buffer.source_heap].buffer;
 
@@ -700,7 +696,7 @@ create_descriptors :: () -> bool {
     {
         mesh_transforms_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
         mesh_transforms_buffer = gpu_linear_allocate(
-            .HOST_VISIBLE_BUFFER, size_of(Matrix4) * MAX_MESHES, .STORAGE_BUFFER_BIT
+            .PERMANENT_DEVICE_LOCAL_BUFFER, size_of(Matrix4) * MAX_MESHES, .STORAGE_BUFFER_BIT
         );
         buffer := gpu_heap_pool[mesh_transforms_buffer.source_heap].buffer;
 
@@ -724,7 +720,7 @@ create_descriptors :: () -> bool {
 
         mesh_instance_buffer_descriptor_set = allocate_descriptor_set(descriptor_pool, storage_buffer_descriptor_set_layout);
         mesh_instance_buffer = gpu_linear_allocate(
-            .HOST_VISIBLE_BUFFER, size_of(Matrix4) * MAX_MESHES, .STORAGE_BUFFER_BIT
+            .PERMANENT_DEVICE_LOCAL_BUFFER, size_of(Matrix4) * MAX_MESHES, .STORAGE_BUFFER_BIT
         );
         buffer := gpu_heap_pool[mesh_instance_buffer.source_heap].buffer;
 
@@ -750,7 +746,7 @@ create_descriptors :: () -> bool {
         max_instance_count := 100_000;
 
         billboard_instance_buffer = gpu_linear_allocate(
-            .HOST_VISIBLE_BUFFER, max_instance_count * size_of(Billboard_Instance), .STORAGE_BUFFER_BIT
+            .PERMANENT_DEVICE_LOCAL_BUFFER, max_instance_count * size_of(Billboard_Instance), .STORAGE_BUFFER_BIT
         );
         buffer := gpu_heap_pool[billboard_instance_buffer.source_heap].buffer;
 
@@ -772,7 +768,7 @@ create_descriptors :: () -> bool {
     }
     {
         billboard_vertex_buffer = gpu_linear_allocate(
-            .HOST_VISIBLE_BUFFER, billboard_vertices.count * size_of(Billboard_Vertex), .VERTEX_BUFFER_BIT
+            .VERTEX_BUFFER, billboard_vertices.count * size_of(Billboard_Vertex), .VERTEX_BUFFER_BIT
         );
         copy_to_gpu_buffer(*billboard_vertex_buffer, billboard_vertices.data);
     }
@@ -832,48 +828,11 @@ initialize_allocators :: () -> bool {
     physical.properties.device_local_image_memory_index = find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
     physical.properties.host_visible_image_memory_index = find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
 
-    // todo: allocate memory in each category for allocators.
-    return true;
-}
-
-// -----------------------------------------------------------------------------------
-// -------------------------------------------------------------------------- :samplers
-
-create_samplers :: () -> bool {
-    using context.renderer;
-
-    {
-        create_info := VkSamplerCreateInfo.{
-            minFilter = .NEAREST,
-            magFilter = .NEAREST,
-            mipmapMode = .NEAREST,
-            addressModeU = .REPEAT,
-            addressModeV = .REPEAT,
-            addressModeW = .REPEAT,
-        };
-        validate(vkCreateSampler(logical.obj, *create_info, null, *image_sampler_nearest), "failed to create the all nearest sampler");
-
-        create_info = VkSamplerCreateInfo.{
-            minFilter = .LINEAR,
-            magFilter = .LINEAR,
-            mipmapMode = .NEAREST,
-            addressModeU = .REPEAT,
-            addressModeV = .REPEAT,
-            addressModeW = .REPEAT,
-        };
-        validate(vkCreateSampler(logical.obj, *create_info, null, *image_sampler_bilinear), "failed to create the all nearest sampler");
-
-        create_info = VkSamplerCreateInfo.{
-            minFilter = .LINEAR,
-            magFilter = .LINEAR,
-            mipmapMode = .LINEAR,
-            addressModeU = .REPEAT,
-            addressModeV = .REPEAT,
-            addressModeW = .REPEAT,
-        };
-        validate(vkCreateSampler(logical.obj, *create_info, null, *image_sampler_trilinear), "failed to create the all nearest sampler");
+    for *linear_allocators {
+        it.heap_type = cast(GPU_Heap_Type) it_index;
     }
 
+    // todo: allocate memory in each category for allocators.
     return true;
 }
 
@@ -883,20 +842,83 @@ create_samplers :: () -> bool {
 load_assets :: () -> bool {
     using context.renderer;
 
+    upload_texture :: (using tex: *Texture, mesh: *Mesh) {
+        if local_buffer != -1 {
+            sampler := get_or_add_sampler(min_filter, mag_filter, horizontal_wrap, vertical_wrap);
+            buffer := *mesh.texture_buffers[local_buffer];
+            // assuming all textures are unique -> adding buffers per texture
+            assert(buffer.gpu_allocation == -1);
+
+            buffer.gpu_allocation = add_gpu_image_for_sampling(buffer.cpu_allocation.data, buffer.width, buffer.height, sampler).pool_index;
+            global_buffer = buffer.gpu_allocation;
+
+            stbi_image_free(buffer.cpu_allocation.data);
+            buffer.cpu_allocation.data = null;
+            buffer.cpu_allocation.count = 0;
+        } else {
+            global_buffer = -1;
+        }
+    }
+
     for *ref : mesh_references {
         mesh, success := load_mesh(ref.path);
         if success {
             array_add(*meshes, mesh);
             mesh_in_array := *meshes[meshes.count-1];
+
             for *buf : mesh_in_array.texture_buffers {
-                buf.gpu_allocation = xx add_gpu_image_for_sampling(buf.cpu_allocation.data, buf.width, buf.height).pool_index;
+                buf.gpu_allocation = -1;
             }
-            for section : mesh_in_array.sections {
-                // section.albedo_texture
-                // section.normal_texture
-                // section.emissive_texture
-                // section.orm_texture
+
+            for *section : mesh_in_array.sections {
+                {
+                    using section.indices;
+                    if type == .U16 {
+                        auto_release_temp();
+                        assert(cpu_allocation._u16.count == count);
+                        // all indices are converted to u32 so the can all go in a single buffer.
+                        gpu_allocation = gpu_linear_allocate(
+                            .INDEX_BUFFER, count * size_of(u32), .INDEX_BUFFER_BIT
+                        );
+                        type = .U32;
+                        temp_u32_buffer := make_static_array(u32, count,, temp);
+                        for 0..cpu_allocation._u16.count-1 {
+                            temp_u32_buffer[it] = cpu_allocation._u16[it];
+                        }
+                        copy_to_gpu_buffer(*gpu_allocation, temp_u32_buffer.data);
+                    } else {
+                        assert(cpu_allocation._u32.count == count);
+                        gpu_allocation = gpu_linear_allocate(
+                            .INDEX_BUFFER, count * size_of(u32), .INDEX_BUFFER_BIT
+                        );
+                        copy_to_gpu_buffer(*gpu_allocation, cpu_allocation._u32.data);
+                    }
+                }
+                {
+                    using section.vertices;
+                    if type == .STATIC {
+                        gpu_allocation = gpu_linear_allocate(
+                            .VERTEX_BUFFER, count * size_of(Static_Mesh_Vertex), .VERTEX_BUFFER_BIT
+                        );
+                        copy_to_gpu_buffer(*gpu_allocation, cpu_allocation.static.data);
+                    } else {
+                        gpu_allocation = gpu_linear_allocate(
+                            .VERTEX_BUFFER, count * size_of(Skinned_Mesh_Vertex), .VERTEX_BUFFER_BIT
+                        );
+                        copy_to_gpu_buffer(*gpu_allocation, cpu_allocation.skinned.data);
+                    }
+                }
+
+                upload_texture(*section.material.albedo_texture, mesh_in_array);
+                upload_texture(*section.material.normal_texture, mesh_in_array);
+                upload_texture(*section.material.emissive_texture, mesh_in_array);
+                upload_texture(*section.material.orm_texture, mesh_in_array);
+
+                // todo: the material is stored twice. this is annoying. fix it!
+                // also index type misalignment
+                section.material.user_data = xx allocate_material(*section.material);
             }
+
             ref.index = xx (meshes.count - 1);
             render_log("succeeded loading mesh at %", ref.path);
         } else {

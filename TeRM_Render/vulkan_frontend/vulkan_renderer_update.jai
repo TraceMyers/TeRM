@@ -28,6 +28,8 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
 
     defer array_reset_keeping_memory(*particle_draws);
     defer array_reset_keeping_memory(*static_mesh_draws);
+    defer gpu_linear_allocator_reset(.TEMP_DEVICE_LOCAL_BUFFER);
+    defer gpu_linear_allocator_reset(.TEMP_HOST_VISIBLE_BUFFER);
 
     if !is_window_open(window) || is_window_minimized(window) then return false;
 
@@ -87,15 +89,70 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     );
 
     if static_mesh_draws.count > 0 {
-        quick_sort(static_mesh_draws, draw => distance_squared(draw.position, context.renderer.camera_position));
+        // quick_sort(static_mesh_draws, draw => draw.ref.index);
 
-        mesh_transforms := make_static_array(Matrix4, static_mesh_draws.count,, temp);
-        mesh_instances  := make_static_array(Mesh_Instance, static_mesh_draws.count,, temp);
-        for draw : static_mesh_draws {
-            mesh := *meshes[draw.ref.index];
+        // vkCmdBindDescriptorSets(
+        //     cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 3, 1, *mesh_transforms_descriptor_set
+        // );
+        // vkCmdBindDescriptorSets(
+        //     cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 4, 1, *mesh_instance_buffer_descriptor_set
+        // );
+        // vkCmdBindPipeline(cmd, .GRAPHICS, opaque_mesh_pipeline);
 
-        }
+        // mesh_transforms := make_static_array(Matrix4, static_mesh_draws.count,, temp);
+        // mesh_instances  := make_dynamic_array(Mesh_Instance, static_mesh_draws.count*3,, temp);
+
+        // instances_begin_index: int;
+        // instances_end_index:   int;
+        // instances_ref_index:   int = -1;
+
+        // for 0..static_mesh_draws.count {
+        //     draw := *static_mesh_draws[it];
+        //     if it == static_mesh_draws.count || instances_ref_index != draw.ref.index {
+        //         draw_count := instances_end_index - instances_begin_index;
+        //         if draw_count > 0 {
+        //             // draw
+        //         }
+        //         instances_ref_index = draw.ref.index;
+        //         instances_begin_index = it;
+        //         instances_end_index = it + 1;
+        //     } else {
+        //         instances_end_index += 1;
+        //     }
+        // }
+
+
+
+        // for draw : static_mesh_draws {
+        //     transform_index := it_index;
+        //     mesh := *meshes[draw.ref.index];
+
+        //     // add transform
+        //     // transform := *mesh_transforms[transform_index];
+        //     transform := make_translation_matrix4(draw.position);
+        //     transform  = rotate(transform, draw.orientation);
+        //     scale := make_scale_matrix4(draw.scale);
+        //     transform *= scale;
+            
+        //     for section : mesh {
+        //         // array_add(*mesh_instances, {xx transform_index, section.material.user_data});
+        //         heap   := *gpu_heap_pool[section.vertex_buffer.gpu_allocation.source_heap];
+        //         buffer := heap.buffer;
+        //         offset := section.vertex_buffer.gpu_allocation.source_heap_offset;
+
+        //     }
+        // }
+
+        // for now, not actually instanced draw, but it will be pretty quick to add.
+
+        // copy_to_gpu_buffer(*mesh_transforms_buffer, mesh_transforms);
+        // copy_to_gpu_buffer(*mesh_instance_buffer,   mesh_instances);
+
+        // instancing is actually a little complicated, since a set of instances may span
+        // some depth, meaning it might sometimes be better to break up an instanced
+        // set into depth groups...
     }
+
 
     if particle_draws.count > 0 {
         quick_sort(particle_draws, draw => -distance_squared(draw.position, context.renderer.camera_position));
@@ -106,15 +163,13 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
             cmd, .GRAPHICS, billboard_pipeline_layout, 3, 1, *billboard_instance_buffer_descriptor_set, 0, null
         );
 
-        {
-            vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
-            heap   := *gpu_heap_pool[billboard_vertex_buffer.source_heap];
-            buffer := heap.buffer;
-            offset := billboard_vertex_buffer.source_heap_offset;
-            offset_u64 : u64 = xx billboard_vertex_buffer.source_heap_offset;
-            vkCmdBindVertexBuffers(cmd, 0, 1, *buffer, *offset_u64);
-            vkCmdDraw(cmd, xx billboard_vertices.count, xx particle_draws.count, 0, 0); 
-        }
+        vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
+        heap   := *gpu_heap_pool[billboard_vertex_buffer.source_heap];
+        buffer := heap.buffer;
+        offset := billboard_vertex_buffer.source_heap_offset;
+        offset_u64 : u64 = xx billboard_vertex_buffer.source_heap_offset;
+        vkCmdBindVertexBuffers(cmd, 0, 1, *buffer, *offset_u64);
+        vkCmdDraw(cmd, xx billboard_vertices.count, xx particle_draws.count, 0, 0); 
     }
 
     vkCmdEndRendering(cmd);

@@ -12,7 +12,7 @@ GPU_Linear_Allocator :: struct {
 gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, size: int, usage_flags: VkBufferUsageFlags) -> GPU_Buffer {
     using context.renderer;
 
-    assert(heap_type == .DEVICE_LOCAL_BUFFER || heap_type == .HOST_VISIBLE_BUFFER);
+    assert(is_buffer_type(heap_type));
 
     align := usage_alignment(usage_flags);
     buffer := GPU_Buffer.{
@@ -26,7 +26,7 @@ gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, size: int, usage_flags:
 gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, width: s32, height: s32, usage_flags: VkImageUsageFlags, format := VkFormat.R8G8B8A8_UNORM, mip_count: u32 = 1, layer_count: u32 = 1, create_color_view := true) -> *GPU_Image {
     using context.renderer;
 
-    assert(heap_type == .DEVICE_LOCAL_IMAGE || heap_type == .HOST_VISIBLE_IMAGE);
+    assert(is_image_type(heap_type));
 
     image_index := pool_acquire(*image_pool);
     assert(image_index < max_texture_count);
@@ -79,7 +79,7 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type)
 
     if size == 0 then return {};
 
-    allocator := get_gpu_linear_allocator(heap_type);
+    allocator := *linear_allocators[heap_type];
 
     heap: *GPU_Heap; 
     available_size: int;
@@ -106,17 +106,35 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type)
     allocation_offset := aligned_frontier_offset;
 
     if available_size < aligned_size {
-        buffer_usage : VkBufferUsageFlags = 
-              .TRANSFER_SRC_BIT
-            | .TRANSFER_DST_BIT
-            | .UNIFORM_TEXEL_BUFFER_BIT
-            | .STORAGE_TEXEL_BUFFER_BIT
-            | .UNIFORM_BUFFER_BIT
-            | .STORAGE_BUFFER_BIT
-            | .INDEX_BUFFER_BIT
-            | .VERTEX_BUFFER_BIT;
 
-        heap_size := max(size, DEFAULT_ALLOCATOR_HEAP_SIZE);
+        target_heap_size: int;
+        buffer_usage: VkBufferUsageFlags;
+
+        if heap_type == .VERTEX_BUFFER {
+            target_heap_size = VERTEX_BUFFER_SIZE;
+            buffer_usage = .VERTEX_BUFFER_BIT | .TRANSFER_DST_BIT;
+            // there can be only one vertex buffer, because all draws use one buffer for draw simplicity
+            assert(allocator.heaps.count == 0);
+        } else if heap_type == .INDEX_BUFFER {
+            target_heap_size = INDEX_BUFFER_SIZE;
+            buffer_usage = .INDEX_BUFFER_BIT | .TRANSFER_DST_BIT;
+            // there can be only one index buffer, because all draws use one buffer for draw simplicity
+            assert(allocator.heaps.count == 0);
+        } else if is_buffer_type(heap_type) {
+            target_heap_size = DEFAULT_BUFFER_HEAP_SIZE;
+            buffer_usage = 
+                  .TRANSFER_SRC_BIT
+                | .TRANSFER_DST_BIT
+                | .UNIFORM_TEXEL_BUFFER_BIT
+                | .STORAGE_TEXEL_BUFFER_BIT
+                | .UNIFORM_BUFFER_BIT
+                | .STORAGE_BUFFER_BIT;
+        } else {
+            target_heap_size = DEFAULT_IMAGE_HEAP_SIZE;
+        }
+
+        heap_size := max(size, target_heap_size);
+
         heap_index := allocate_gpu_heap(heap_size, heap_type, .LINEAR_ALLOCATOR, buffer_usage);
         assert(heap_index != 0xffff);
         array_add(*allocator.heaps, heap_index);
@@ -141,25 +159,22 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type)
 
 // assumes keeping memory. will add a parameter for not if needed
 gpu_linear_allocator_reset :: (heap_type: GPU_Heap_Type) {
-    allocator := get_gpu_linear_allocator(heap_type);
+    allocator := *context.renderer.linear_allocators[heap_type];
     allocator.frontier = 0;
     allocator.frontier_offset = 0;
 }
 
-get_gpu_linear_allocator :: inline (heap_type: GPU_Heap_Type) -> *GPU_Linear_Allocator {
-    using context.renderer;
-    if heap_type == {
-    case .DEVICE_LOCAL_BUFFER;
-        return *device_local_buffer_linear_allocator;
-    case .DEVICE_LOCAL_IMAGE;
-        return *device_local_image_linear_allocator;
-    case .HOST_VISIBLE_BUFFER;
-        return *host_visible_buffer_linear_allocator;
-    case .HOST_VISIBLE_IMAGE;
-        return *host_visible_image_linear_allocator;
-    case;
-        assert(false, "invalid heap type");
-    }
-    return null;
-}
+scope_reset_linear_allocations_to_high_water_mark :: (heap_type: GPU_Heap_Type) #expand {
+    assert(heap_type == .TEMP_DEVICE_LOCAL_BUFFER || heap_type == .TEMP_HOST_VISIBLE_BUFFER);
 
+    allocator := *context.renderer.linear_allocators[heap_type];
+    remember_frontier := allocator.frontier;
+    remember_offset   := allocator.frontier_offset;
+
+    `defer {
+        assert(allocator.frontier >= remember_frontier);
+        assert(allocator.frontier_offset >= remember_offset);
+        allocator.frontier = remember_frontier;
+        allocator.frontier_offset = remember_offset;
+    }
+}

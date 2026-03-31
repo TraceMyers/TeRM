@@ -288,8 +288,7 @@ create_gpu_buffer_for_array :: (data: []$T, usage_flags: VkBufferUsageFlags, mem
 
 copy_to_gpu_buffer :: (buffer: *GPU_Buffer, array: []$T, override_count := -1) {
     using context.renderer;
-    heap    := *gpu_heap_pool[buffer.source_heap];
-    assert(heap.type == .HOST_VISIBLE_BUFFER);
+    heap := *gpu_heap_pool[buffer.source_heap];
     
     copy_count := ifx override_count != -1 then override_count else array.count;
     if copy_count == 0 {
@@ -304,24 +303,85 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, array: []$T, override_count := -1) {
 
 copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0xffff_ffff, additional_offset: u32 = 0) {
     using context.renderer;
-    heap    := *gpu_heap_pool[buffer.source_heap];
-    assert(heap.type == .HOST_VISIBLE_BUFFER);
+    heap := *gpu_heap_pool[buffer.source_heap];
 
-    assert(heap.is_valid);
-    vbo     := heap.buffer; 
-    offset  := buffer.source_heap_offset + xx additional_offset;
-    size    := min(buffer.size, override_size);
+    copy_offset := buffer.source_heap_offset + xx additional_offset;
+    copy_size   := min(buffer.size, override_size);
 
-    if size == 0 {
-        return;
+    if is_host_visible_type(heap.type) {
+        assert(heap.is_valid);
+        vbo     := heap.buffer; 
+        offset  := copy_offset;
+        size    := copy_size;
+
+        if size == 0 {
+            return;
+        }
+
+        p: *void;
+        vkMapMemory(logical.obj, heap.memory, xx offset, xx size, 0, *p);
+        memcpy(p, data, size);
+        vkUnmapMemory(logical.obj, heap.memory);
+    } else {
+        scope_reset_linear_allocations_to_high_water_mark(.TEMP_HOST_VISIBLE_BUFFER);
+
+        staging_buffer := gpu_linear_allocate(.TEMP_HOST_VISIBLE_BUFFER, copy_size, .TRANSFER_SRC_BIT);
+        copy_to_gpu_buffer(*staging_buffer, data);
+        staging_buffer_heap := *gpu_heap_pool[staging_buffer.source_heap];
+
+        copy_region := VkBufferCopy.{
+            srcOffset = xx staging_buffer.source_heap_offset,
+            dstOffset = xx copy_offset,
+            size      = xx copy_size
+        };
+
+        // Record copy on transfer queue
+        cmd := transfer_command_buffer;
+        begin_command_buffer(cmd);
+
+        vkCmdCopyBuffer(cmd, staging_buffer_heap.buffer, heap.buffer, 1, *copy_region);
+        
+        access_flags: VkAccessFlags;
+        pipeline_stage_flags: VkPipelineStageFlags;
+
+        if heap.type == {
+        case .VERTEX_BUFFER;
+            access_flags = .VERTEX_ATTRIBUTE_READ_BIT;
+            pipeline_stage_flags = .VERTEX_INPUT_BIT;
+        case .INDEX_BUFFER;
+            access_flags = .INDEX_READ_BIT;
+            pipeline_stage_flags = .VERTEX_INPUT_BIT;
+        case;
+            // todo: can tighten this with the buffer's stated usage
+            access_flags = 
+                  .INDIRECT_COMMAND_READ_BIT
+                | .UNIFORM_READ_BIT
+                | .INPUT_ATTACHMENT_READ_BIT
+                | .SHADER_READ_BIT
+                | .SHADER_WRITE_BIT;
+            pipeline_stage_flags =
+                  .DRAW_INDIRECT_BIT
+                // | .GEOMETRY_SHADER_BIT
+                // | .TESSELLATION_CONTROL_SHADER_BIT
+                // | .TESSELLATION_EVALUATION_SHADER_BIT
+                | .VERTEX_SHADER_BIT
+                | .FRAGMENT_SHADER_BIT
+                | .COMPUTE_SHADER_BIT;
+        }
+
+        barrier := VkBufferMemoryBarrier.{
+            srcAccessMask = .TRANSFER_WRITE_BIT,
+            dstAccessMask = access_flags,
+            buffer        = heap.buffer,
+            offset        = xx copy_offset,
+            size          = xx copy_size
+        };
+
+        vkCmdPipelineBarrier(cmd, .TRANSFER_BIT, pipeline_stage_flags, 0, 0, null, 1, *barrier, 0, null);
+
+        submit_commands(cmd, transfer_fence, transfer_queue);
     }
-
-    p: *void;
-    vkMapMemory(logical.obj, heap.memory, xx offset, xx size, 0, *p);
-    memcpy(p, data, size);
-    vkUnmapMemory(logical.obj, heap.memory);
 }
-
 
 add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
     using context.renderer;
@@ -336,30 +396,19 @@ add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
     assert(channels_in_file == 4 || channels_in_file == 3, "tried to load image with channel count %", channels_in_file);
     assert(width > 0 && height > 0);
 
-    image := create_gpu_image_for_sampling(use_image_data, width, height);
+    image := add_gpu_image_for_sampling(xx use_image_data, width, height, sampler);
 
-    image_info := VkDescriptorImageInfo.{
-        sampler = sampler,
-        imageView = image.view,
-        imageLayout = .SHADER_READ_ONLY_OPTIMAL
-    };
-    write := VkWriteDescriptorSet.{
-        dstSet = textures_descriptor_set,
-        dstBinding = 0,
-        dstArrayElement = xx image.pool_index,
-        descriptorCount = 1,
-        descriptorType = .COMBINED_IMAGE_SAMPLER,
-        pImageInfo = *image_info
-    };
-    vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
-    
     return image;
 }
 
-add_gpu_image_for_sampling :: (data: *Color4b, width: s32, height: s32) -> *GPU_Image {
+add_gpu_image_for_sampling :: (data: *Color4b, width: s32, height: s32, sampler: VkSampler) -> *GPU_Image {
+    using context.renderer;
+
+    scope_reset_linear_allocations_to_high_water_mark(.TEMP_HOST_VISIBLE_BUFFER);
+
     // create staging resources (cpu visible)
     image_size     := width * height * 4;
-    staging_buffer := gpu_linear_allocate(.HOST_VISIBLE_BUFFER, image_size, .TRANSFER_SRC_BIT);
+    staging_buffer := gpu_linear_allocate(.TEMP_HOST_VISIBLE_BUFFER, image_size, .TRANSFER_SRC_BIT);
     copy_to_gpu_buffer(*staging_buffer, data);
 
     image := gpu_linear_allocate(.DEVICE_LOCAL_IMAGE, width, height, .TRANSFER_DST_BIT | .SAMPLED_BIT);
@@ -375,6 +424,21 @@ add_gpu_image_for_sampling :: (data: *Color4b, width: s32, height: s32) -> *GPU_
     transition_image(cmd, image.obj, .TRANSFER_DST_OPTIMAL, .SHADER_READ_ONLY_OPTIMAL);
 
     submit_commands(cmd, transfer_fence, transfer_queue);
+
+    image_info := VkDescriptorImageInfo.{
+        sampler = sampler,
+        imageView = image.view,
+        imageLayout = .SHADER_READ_ONLY_OPTIMAL
+    };
+    write := VkWriteDescriptorSet.{
+        dstSet = textures_descriptor_set,
+        dstBinding = 0,
+        dstArrayElement = xx image.pool_index,
+        descriptorCount = 1,
+        descriptorType = .COMBINED_IMAGE_SAMPLER,
+        pImageInfo = *image_info
+    };
+    vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
 
     return image;   
 }
@@ -452,15 +516,18 @@ create_gpu_image :: (width: s32, height: s32, usage_flags: VkImageUsageFlags, me
 
 heap_type_and_memory_index :: inline (heap_type: GPU_Heap_Type) -> VkMemoryPropertyFlags, u32 {
     using context.renderer;
-    if heap_type == {
-    case .DEVICE_LOCAL_BUFFER;
-        return .DEVICE_LOCAL_BIT, physical.properties.device_local_buffer_memory_index;
-    case .DEVICE_LOCAL_IMAGE;
-        return .DEVICE_LOCAL_BIT, physical.properties.device_local_image_memory_index;
-    case .HOST_VISIBLE_BUFFER;
-        return .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, physical.properties.host_visible_buffer_memory_index;
-    case .HOST_VISIBLE_IMAGE;
-        return .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, physical.properties.host_visible_image_memory_index;
+    if is_buffer_type(heap_type) {
+        if is_host_visible_type(heap_type) {
+            return .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, physical.properties.host_visible_buffer_memory_index;
+        } else {
+            return .DEVICE_LOCAL_BIT, physical.properties.device_local_buffer_memory_index;
+        }
+    } else {
+        if is_host_visible_type(heap_type) {
+            return .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, physical.properties.host_visible_image_memory_index;
+        } else {
+            return .DEVICE_LOCAL_BIT, physical.properties.device_local_image_memory_index;
+        }
     }
     return 0, 0xffff_ffff;
 }
@@ -488,7 +555,7 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
     buffer: VkBuffer;
     buffer_min_alignment: u32;
 
-    if type == .DEVICE_LOCAL_BUFFER || type == .HOST_VISIBLE_BUFFER {
+    if is_buffer_type(type) {
         create_info := VkBufferCreateInfo.{
             size        = xx size,
             usage       = buffer_usage,
@@ -526,8 +593,8 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
 allocate_material :: (mat: *Material) -> s32 {
     using context.renderer;
     new_mat_index := pool_acquire(*materials);
-    assert(new_mat != -1);
-    update_material(new_mat_index, mat);
+    assert(new_mat_index != -1);
+    update_material(xx new_mat_index, mat);
     return xx new_mat_index;
 }
 
@@ -538,7 +605,7 @@ update_material :: (index: s32, mat: *Material) {
     gpu_mat := convert_material_to_gpu_format(mat);
     copy_size   : u32 = xx size_of(GPU_Material);
     copy_offset : u32 = xx (index * size_of(GPU_Material));
-    copy_to_gpu_buffer(*materials_uniform_buffer, *gpu_mat, copy_size, copy_offset);
+    copy_to_gpu_buffer(*materials_storage_buffer, *gpu_mat, copy_size, copy_offset);
 }
 
 convert_material_to_gpu_format :: inline (mat: *Material) -> GPU_Material {
@@ -558,10 +625,10 @@ convert_material_to_gpu_format :: inline (mat: *Material) -> GPU_Material {
     gpu_mat.occlusion_uv = mat.occlusion_uv;
     gpu_mat.emissive_uv  = mat.emissive_uv;
 
-    gpu_mat.albedo_tex   = mat.albedo_texture.buffer;
-    gpu_mat.normal_tex   = mat.normal_texture.buffer;
-    gpu_mat.emissive_tex = mat.emissive_texture.buffer;
-    gpu_mat.orm_tex      = mat.orm_texture.buffer;
+    gpu_mat.albedo_tex   = mat.albedo_texture.global_buffer;
+    gpu_mat.normal_tex   = mat.normal_texture.global_buffer;
+    gpu_mat.emissive_tex = mat.emissive_texture.global_buffer;
+    gpu_mat.orm_tex      = mat.orm_texture.global_buffer;
 
     return gpu_mat;
 }
@@ -592,6 +659,57 @@ usage_alignment :: inline (usage_flags: VkBufferUsageFlags) -> int {
 
 align_up :: inline (value: int, align: int) -> int {
     return (value + align - 1) & ~(align - 1);
+}
+
+get_or_add_sampler :: (min_filter: Texture_Filter, mag_filter: Texture_Filter, horizontal_wrap: Texture_Wrap, vertical_wrap: Texture_Wrap) -> VkSampler {
+    using context.renderer;
+    // this procedure has to change if this isn't true, because we're turning these into a simple hash.
+    assert(size_of(Texture_Filter) == 1 && size_of(Texture_Wrap) == 1);
+
+    key := 
+          ((cast(u32) min_filter)     << 24) 
+        | ((cast(u32) mag_filter)     << 16) 
+        | ((cast(u32) horizontal_wrap) << 8) 
+        | ((cast(u32) vertical_wrap)   << 0);
+
+    existing_sampler := table_get(*sampler_table, key);
+    if existing_sampler != null {
+        return existing_sampler.*;
+    }
+
+    create_info := VkSamplerCreateInfo.{
+        minFilter  = ifx min_filter == .NEAREST then .NEAREST else .LINEAR,
+        magFilter  = ifx mag_filter == .NEAREST then .NEAREST else .LINEAR,
+        mipmapMode = ifx min_filter == .NEAREST then .NEAREST else .LINEAR,
+    };
+
+    if horizontal_wrap == {
+    case .CLAMP_TO_EDGE;
+        create_info.addressModeU = .CLAMP_TO_EDGE;
+    case .MIRRORED_REPEAT;
+        create_info.addressModeU = .MIRRORED_REPEAT;
+    case .REPEAT;
+        create_info.addressModeU = .REPEAT;
+    }
+    if vertical_wrap == {
+    case .CLAMP_TO_EDGE;
+        create_info.addressModeV = .CLAMP_TO_EDGE;
+    case .MIRRORED_REPEAT;
+        create_info.addressModeV = .MIRRORED_REPEAT;
+    case .REPEAT;
+        create_info.addressModeV = .REPEAT;
+    }
+
+    // not using because I don't have 3d uv maps
+    create_info.addressModeW = create_info.addressModeW;
+
+    new_sampler: VkSampler;
+    validate(vkCreateSampler(logical.obj, *create_info, null, *new_sampler), "failed to create sampler with min filter %, mag filter %, hz wrap %, vt wrap %", min_filter, mag_filter, horizontal_wrap, vertical_wrap);
+
+    made_edit, added_item := table_set(*sampler_table, key, new_sampler, .ONLY_ADD);
+    assert(added_item);
+
+    return new_sampler;
 }
 
 allocate_gpu_image :: (image: *GPU_Image, create_info: VkImageCreateInfo, memory_flags: VkMemoryPropertyFlags) {

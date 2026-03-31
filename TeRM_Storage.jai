@@ -456,9 +456,15 @@ Table_Base :: struct($key_type: Type, $value_type: Type, $use_simple_key_hash: b
 
 table_hash :: (table: *Table_Base, key: table.key_type) -> u32 {
     KEY_IS_STRING :: #run table.key_type == string;
-    KEY_IS_ARRAY :: #run table.key_type.(*Type_Info).type == .ARRAY;
+    KEY_IS_ARRAY  :: #run table.key_type.(*Type_Info).type == .ARRAY;
+    KEY_IS_NUMBER :: #run table.key_type.(*Type_Info).type == .INTEGER || table.key_type.(*Type_Info).type == .FLOAT;
+    KEY_IS_SMALL_NUMBER :: #run KEY_IS_NUMBER && size_of(table.key_type) <= 4;
+
     hash_input: string = ---;
-    #if KEY_IS_STRING && !table.use_simple_key_hash {
+
+    #if KEY_IS_SMALL_NUMBER {
+        return (cast(*u32) *key).*;
+    } else #if KEY_IS_STRING && !table.use_simple_key_hash {
         hash_input = key;
     } else #if KEY_IS_ARRAY && !table.use_simple_key_hash {
         tinfo_array := table.key_type.(*Type_Info_Array);

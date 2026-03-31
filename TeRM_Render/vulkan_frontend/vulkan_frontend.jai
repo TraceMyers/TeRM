@@ -42,12 +42,6 @@ Renderer :: struct {
         transfer_command_buffer: VkCommandBuffer;
         transfer_fence: VkFence;
 
-        // device_space_mesh_pipeline: VkPipeline;
-        // device_space_mesh_pipeline_layout: VkPipelineLayout;
-
-        // device_space_mesh_textured_pipeline: VkPipeline;
-        // device_space_mesh_textured_pipeline_layout: VkPipelineLayout;
-
         graphics_queue: VkQueue; // per thread?
         transfer_queue: VkQueue; // per thread?
 
@@ -81,29 +75,7 @@ Renderer :: struct {
         gpu_heap_pool: Pool(GPU_Heap);
         image_pool: Pool(GPU_Image);
 
-        // this set of allocators makes no sense, but it's already a lot of space at 256mb min allocation
-        // so, maybe could use a linear allocator to allocate to allocators, so they can maybe have
-        // a min size of 128mb or something like that.
-        host_visible_buffer_linear_allocator: GPU_Linear_Allocator;
-        device_local_buffer_linear_allocator: GPU_Linear_Allocator;
-        host_visible_image_linear_allocator:  GPU_Linear_Allocator;
-        device_local_image_linear_allocator:  GPU_Linear_Allocator;
-
-        // descriptor_set_layouts: []VkDescriptorSetLayout;
-        // descriptor_sets: []VkDescriptorSet;
-
-        // scratch_texture_sampler_descriptor_set_layout: VkDescriptorSetLayout;
-        // scratch_texture_sampler_descriptor_set: VkDescriptorSet;
-
-        image_sampler_nearest: VkSampler;
-        image_sampler_bilinear: VkSampler;
-        image_sampler_trilinear: VkSampler;
-
-        // - host visible persisent lifetime
-        // - host visible indeterminate lifetime
-        // - host visible frame lifetime
-        // eventually probably use staging rather than host visible for persistent and indeterminate,
-        // but that's more complicated
+        linear_allocators: [GPU_HEAP_TYPE_COUNT]GPU_Linear_Allocator;
 
         textures_descriptor_set_layout: VkDescriptorSetLayout;
         textures_descriptor_set: VkDescriptorSet;
@@ -151,6 +123,8 @@ Renderer :: struct {
         ];
 
         point_light_position: Vector3;
+
+        sampler_table: Linear_Table(u32, VkSampler);
 
         scratch_position: Vector3;
         scratch_update_position: bool;
@@ -213,10 +187,6 @@ GPU_Material :: struct {
     normal_tex: s32;
     emissive_tex: s32;
     orm_tex: s32;
-
-    _pad1: s32;
-    _pad2: s32;
-    _pad3: s32;
 };
 
 Static_Mesh_Draw :: struct {
@@ -235,12 +205,7 @@ Particle_Draw :: struct {
 
 Texture_Ref :: struct {
     path: string;
-    sampler: enum {
-        NEAREST;
-        BILINEAR;
-        TRILINEAR;
-    };
-    index: s16;
+    using texture: Texture;
 }
 
 Mesh_Ref :: struct {
@@ -310,13 +275,47 @@ Graphics_API_Version :: struct {
     patch: u32;
 }
 
-DEFAULT_ALLOCATOR_HEAP_SIZE : int : 256 * 1024 * 1024;
+DEFAULT_BUFFER_HEAP_SIZE : int : 32  * 1024 * 1024;
+DEFAULT_IMAGE_HEAP_SIZE  : int : 128 * 1024 * 1024;
+VERTEX_BUFFER_SIZE : int : 96 * 1024 * 1024;
+INDEX_BUFFER_SIZE  : int : 32 * 1024 * 1024;
 
-GPU_Heap_Type :: enum_flags u8 {
-    DEVICE_LOCAL_BUFFER;
-    DEVICE_LOCAL_IMAGE;
-    HOST_VISIBLE_BUFFER;
+GPU_Heap_Type :: enum u8 {
+    PERMANENT_DEVICE_LOCAL_BUFFER;
+    PERMANENT_HOST_VISIBLE_BUFFER;
+    TEMP_DEVICE_LOCAL_BUFFER;
+    TEMP_HOST_VISIBLE_BUFFER;
+    VERTEX_BUFFER;
+    INDEX_BUFFER; // if this isn't the last buffer type, update is_buffer_type
+
+    DEVICE_LOCAL_IMAGE; // if this isn't the first image type, update is_image_type
     HOST_VISIBLE_IMAGE;
+}
+
+GPU_HEAP_TYPE_COUNT :: #run enum_highest_value(GPU_Heap_Type) + 1;
+
+is_buffer_type :: (heap_type: GPU_Heap_Type) -> bool {
+    return heap_type <= .INDEX_BUFFER;
+}
+
+is_image_type :: (heap_type: GPU_Heap_Type) -> bool {
+    return !is_buffer_type(heap_type);
+}
+
+is_host_visible_type :: (heap_type: GPU_Heap_Type) -> bool {
+    if heap_type == {
+    case .PERMANENT_HOST_VISIBLE_BUFFER;
+        return true;
+    case .TEMP_HOST_VISIBLE_BUFFER;
+        return true;
+    case .HOST_VISIBLE_IMAGE;
+        return true;
+    }
+    return false;
+}
+
+is_device_local_type :: (heap_type: GPU_Heap_Type) -> bool {
+    return !is_host_visible_type(heap_type);
 }
 
 GPU_Heap :: struct {
@@ -354,7 +353,7 @@ GPU_Image :: struct {
     usage:                VkImageUsageFlags;
     mip_count:            u8;
     layer_count:          u8;
-    pool_index:           u16;
+    pool_index:           s16;
 }
 
 GPU_Buffer :: struct {
@@ -449,8 +448,9 @@ Simple_Vertex :: struct {
 
 Mesh_Import_Types :: struct {
     vertex_buffer_type :: GPU_Buffer;
-    index_buffer_type :: GPU_Buffer;
-    texture_type :: s16;
+    index_buffer_type  :: GPU_Buffer;
+    texture_type       :: s16;
+    material_type      :: s16;
 }
 
 #load "vulkan_renderer_initialization.jai";

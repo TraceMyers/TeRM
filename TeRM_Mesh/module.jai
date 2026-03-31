@@ -2,9 +2,10 @@
     user_types : $I/interface Type_Provider_Default = Type_Provider_Default
 ) {
     Type_Provider_Default :: struct {
-        vertex_buffer_type: int;
-        index_buffer_type: int;
-        texture_type: int;
+        vertex_buffer_type :: int;
+        index_buffer_type  :: int;
+        texture_type       :: int;
+        material_type      :: int;
     }
 };
 
@@ -247,13 +248,14 @@ Texture :: struct {
     min_filter: Texture_Filter;
     horizontal_wrap: Texture_Wrap;
     vertical_wrap:   Texture_Wrap;
-    buffer: s32;
+    local_buffer: s16;
+    global_buffer: s16;
 }
 
 Material :: struct {
     name: string;
 
-    alpha_mode: Material_Alpha_Mode;    
+    alpha_mode: Material_Alpha_Mode;
 
     albedo_uv:    s8;
     metallic_uv:  s8;
@@ -261,6 +263,8 @@ Material :: struct {
     normal_uv:    s8;
     occlusion_uv: s8;
     emissive_uv:  s8;
+
+    user_data: user_types.material_type;
 
     discard_alpha_cutoff_if_masked_alpha := 0.5;
 
@@ -302,7 +306,7 @@ Skeletal_Animation :: struct {
     transforms:    []Joint_Transform; // joint_count * timestamps.count
 }
 
-Skeleton_Pose :: struct {
+Skeletal_Pose :: struct {
     skeleton:        *Skeleton;
     local_joints:    []Joint_Transform;
     world_joints:    []Matrix4;    // local accumulated up the hierarchy
@@ -426,9 +430,9 @@ read_joint_transform :: inline (tform: *Joint_Transform, file: string, location:
 read_texture :: (tex: *Texture, file: string, pos: *int) {
     offset_to_buffer := read_s32(file, pos);
     if offset_to_buffer == -1 {
-        tex.buffer = -1;
+        tex.local_buffer = -1;
     } else {
-        tex.buffer = alloc_or_look_up_texture_buffer(file, offset_to_buffer);
+        tex.local_buffer = xx alloc_or_look_up_texture_buffer(file, offset_to_buffer);
     }
     tex.mag_filter      = cast(Texture_Filter) read_s32(file, pos);
     tex.min_filter      = cast(Texture_Filter) read_s32(file, pos);
@@ -568,3 +572,6 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
 #import "TeRM/TeRM_Scope";
 #import "TeRM/TeRM_Metaprogram";
 #import "TeRM/TeRM_Array";
+
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

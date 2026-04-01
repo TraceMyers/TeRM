@@ -1,7 +1,7 @@
 # =====================================================================
 # TRM Mesh Exporter
 # Usage: blender --background --python convert_mesh.py -- <input> <output.trm>
-# optional arg: can repeatedly use --exclude <node name> to exclude a node in the mesh from being exported
+# optional arg: you can repeatedly use --exclude <node name> to exclude that node
 # =====================================================================
 # leverage blender to convert other mesh file formats to the term mesh file format
 # for format specs / ai tool codegen instructions, see end of file

@@ -172,18 +172,21 @@ def do_import(path):
 # ---- Scene traversal ----
 
 def find_objects():
-    mesh_obj = next((o for o in bpy.context.scene.objects
-                     if o.type == 'MESH'), None)
-    if not mesh_obj:
+    mesh_objs = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+    if not mesh_objs:
         fatal("No mesh found in scene")
     arm = None
-    for mod in mesh_obj.modifiers:
-        if mod.type == 'ARMATURE' and mod.object:
-            arm = mod.object
+    for mesh_obj in mesh_objs:
+        for mod in mesh_obj.modifiers:
+            if mod.type == 'ARMATURE' and mod.object:
+                arm = mod.object
+                break
+        if arm:
             break
-    if not arm and mesh_obj.parent and mesh_obj.parent.type == 'ARMATURE':
-        arm = mesh_obj.parent
-    return mesh_obj, arm
+        if mesh_obj.parent and mesh_obj.parent.type == 'ARMATURE':
+            arm = mesh_obj.parent
+            break
+    return mesh_objs, arm
 
 
 # ---- Texture helpers ----
@@ -429,6 +432,10 @@ def extract_sections(mesh_obj, arm_obj, bufs):
         me.calc_normals_split()
     me.calc_tangents()
 
+    # Object world transform — apply to positions, normals, tangents
+    world = mesh_obj.matrix_world
+    nmat = world.to_3x3().inverted_safe().transposed()
+
     skinned = arm_obj is not None
     g2j = {}
     if skinned:
@@ -448,9 +455,11 @@ def extract_sections(mesh_obj, arm_obj, bufs):
             for li in poly.loop_indices:
                 lp = me.loops[li]
                 vt = me.vertices[lp.vertex_index]
-                pos = tuple(vt.co)
-                nrm = tuple(lp.normal)
-                tan = tuple(lp.tangent) + (lp.bitangent_sign,)
+                pos = tuple(world @ vt.co)
+                n = (nmat @ lp.normal).normalized()
+                nrm = tuple(n)
+                t = (nmat @ lp.tangent).normalized()
+                tan = tuple(t) + (lp.bitangent_sign,)
                 u0_raw = me.uv_layers[0].data[li].uv
                 u0 = (u0_raw[0], 1.0 - u0_raw[1])
                 if len(me.uv_layers) > 1:
@@ -618,25 +627,62 @@ def main():
     try:
         args = sys.argv[sys.argv.index('--') + 1:]
     except ValueError:
+        print(f"args: {sys.argv}")
         fatal("Usage: blender --background --python convert_mesh.py "
               "-- <input> <output.trm>")
-    if len(args) != 2:
-        fatal("Expected 2 arguments: input_path output_path")
+    if len(args) < 2:
+        fatal("Expected at least 2 arguments: input_path output_path [--exclude name ...]")
 
     inp, out = os.path.abspath(args[0]), os.path.abspath(args[1])
+    excludes = set()
+    i = 2
+    while i < len(args):
+        if args[i] == '--exclude' and i + 1 < len(args):
+            excludes.add(args[i + 1])
+            i += 2
+        else:
+            fatal(f"Unknown argument: {args[i]}")
+            i += 1
     if not os.path.isfile(inp):
         fatal(f"Input not found: {inp}")
     if not out.lower().endswith('.trm'):
         fatal("Output must have .trm extension")
 
     bpy.ops.wm.read_homefile(use_empty=True)
+    # Ensure scene is truly empty — some Blender versions/configs
+    # don't respect use_empty=True, leaving default objects behind.
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
     do_import(inp)
 
-    mesh_obj, arm_obj = find_objects()
+    mesh_objs, arm_obj = find_objects()
+
+    if excludes:
+        before = len(mesh_objs)
+        mesh_objs = [o for o in mesh_objs if o.name not in excludes]
+        skipped = before - len(mesh_objs)
+        if skipped:
+            print(f"  Excluded {skipped} object(s): {excludes}")
+
+    print(f"  Found {len(mesh_objs)} mesh objects:")
+    for i, o in enumerate(mesh_objs):
+        me = o.data
+        loc = o.matrix_world.translation
+        n_mats = len(me.materials) if me else 0
+        n_verts = len(me.vertices) if me else 0
+        n_polys = len(me.polygons) if me else 0
+        mat_names = [m.name if m else "(None)" for m in me.materials] if me else []
+        print(f"    [{i}] \"{o.name}\"  verts={n_verts}  polys={n_polys}  "
+              f"mats={n_mats} {mat_names}  "
+              f"pos=({loc.x:.3f}, {loc.y:.3f}, {loc.z:.3f})  "
+              f"hide_viewport={o.hide_viewport}  hide_render={o.hide_render}")
+
     bufs = Bufs()
     bufs.string(inp)  # buffer 0 is always the origin file path
 
-    sections = extract_sections(mesh_obj, arm_obj, bufs)
+    sections = []
+    for mesh_obj in mesh_objs:
+        sections.extend(extract_sections(mesh_obj, arm_obj, bufs))
     if not sections:
         fatal("No geometry found")
     joints = extract_joints(arm_obj, bufs)

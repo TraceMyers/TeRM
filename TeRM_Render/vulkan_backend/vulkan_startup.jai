@@ -299,6 +299,7 @@ create_logical_device :: () -> bool {
     enable_device_features := VkPhysicalDeviceFeatures.{
         fillModeNonSolid = VK_TRUE,
         wideLines = VK_TRUE,
+        multiDrawIndirect = VK_TRUE,
     };
 
     // VkPhysicalDeviceVulkan12Features :: struct {
@@ -453,7 +454,9 @@ create_frame_datas :: () -> bool {
 
         if !validate(vkAllocateCommandBuffers(logical.obj, *command_alloc_info, *frames[it].command_buffer), "failed to create a command buffer") then return false;
 
-        if !validate(vkCreateFence(logical.obj, *fence_info, null, *frames[it].fence), "failed to create a render fence") then return false;
+        if !validate(vkCreateFence(logical.obj, *fence_info, null, *frames[it].render_fence), "failed to create a render fence") then return false;
+
+        if !validate(vkCreateFence(logical.obj, *fence_info, null, *frames[it].present_fence), "failed to create a present fence") then return false;
 
         if !validate(vkCreateSemaphore(logical.obj, *semaphore_info, null, *frames[it].image_available_semaphore), "failed to create a semaphore") then return false;
 
@@ -809,7 +812,13 @@ load_assets :: () -> bool {
                         create_gpu_vertex_buffer(*gpu_allocation, cpu_allocation.static);
                     } else {
                         assert(cpu_allocation.skinned.count == count);
-                        create_gpu_vertex_buffer(*gpu_allocation, cpu_allocation.skinned);
+                        type = .STATIC;
+                        temp_static_buffer := make_static_array(Static_Mesh_Vertex, count,, temp);
+                        for 0..cpu_allocation.skinned.count-1 {
+                            temp_static_buffer[it] = cpu_allocation.skinned[it].base;
+                        }
+                        // create_gpu_vertex_buffer(*gpu_allocation, cpu_allocation.skinned);
+                        create_gpu_vertex_buffer(*gpu_allocation, temp_static_buffer);
                     }
                 }
 

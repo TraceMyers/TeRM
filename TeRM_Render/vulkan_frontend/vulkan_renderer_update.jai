@@ -17,8 +17,12 @@ add_particle_draw :: inline (renderer: *Renderer, draw: Particle_Draw) {
     billboard_instance.texture_index = xx draw.texture_index;
 }
 
-add_mesh_draw :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
-    array_add(*static_mesh_draws, draw);
+add_static_mesh_draw :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
+    array_add(*renderer.static_mesh_draws, draw);
+}
+
+add_static_mesh_draw :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}) {
+    array_add(*renderer.static_mesh_draws, {position, orientation, {scale,scale,scale}, ref});
 }
 
 update_renderer :: (thread_local_renderer: *Renderer) -> bool {
@@ -36,9 +40,10 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
 
     if !is_window_open(window) || is_window_minimized(window) then return false;
 
-    if !validate(vkWaitForFences(logical.obj, 1, *current_frame.fence, VK_TRUE, NANOSECONDS_PER_SECOND), "timed out waiting for the render fence") then return false;
+    frame_fences := VkFence.[current_frame.render_fence, current_frame.present_fence];
+    if !validate(vkWaitForFences(logical.obj, frame_fences.count, frame_fences.data, VK_TRUE, NANOSECONDS_PER_SECOND), "timed out waiting for frame fences") then return false;
 
-    if !validate(vkResetFences(logical.obj, 1, *current_frame.fence), "failed to reset the render fence") then return false;
+    if !validate(vkResetFences(logical.obj, frame_fences.count, frame_fences.data), "failed to reset frame fences") then return false;
 
     if should_recreate_swapchain && !validate(create_swapchain_and_attachments(), "failed to recreate the swapchain when it was expected") then return false;
 
@@ -111,7 +116,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         mesh_sections  := make_dynamic_array(Mesh_Section_Shader_Data, static_mesh_draws.count*4,, temp);
 
         instances_begin_index: int = 0;
-        instances_count:       int = 0;
+        instances_count:       int = 1;
         instances_ref_index:   int = static_mesh_draws[0].ref.index;
 
         instance_count_total:  s32;
@@ -126,9 +131,6 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
             transform.* *= scale;           
 
             if it == static_mesh_draws.count-1 || instances_ref_index != draw.ref.index {
-                if it == 0 {
-                    instances_count += 1;
-                }
                 if instances_count > 0 {
                     draws_of_one_mesh: []Static_Mesh_Draw;
                     draws_of_one_mesh.data  = static_mesh_draws.data + instances_begin_index;
@@ -218,11 +220,11 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     );
     submit_info := roll_submit_info(*submit_command_info, *wait_info, *signal_info, );
 
-    if !validate(vkQueueSubmit2(graphics_queue, 1, *submit_info, null), "failed to submit draw commands to the graphics queue") then return false;
+    if !validate(vkQueueSubmit2(graphics_queue, 1, *submit_info, current_frame.render_fence), "failed to submit draw commands to the graphics queue") then return false;
 
     present_fence_info := VkSwapchainPresentFenceInfoEXT.{
         swapchainCount = 1,
-        pFences=*current_frame.fence,
+        pFences=*current_frame.present_fence,
     };
 
     present_info := VkPresentInfoKHR.{

@@ -32,7 +32,7 @@ struct Material {
     int albedo_tex;
     int normal_tex;
     int emissive_tex;
-    int orm_tex;             
+    int orm_tex;
 };
 
 #define MAX_MATERIALS 1024
@@ -46,5 +46,9 @@ void main() {
     Material mat = material_block.materials[in_material_id]; 
     vec2 uvs[2] = vec2[2](in_uv_0, in_uv_1);
 
-    color = texture(textures[nonuniformEXT(mat.albedo_tex)], uvs[mat.albedo_uv]) * mat.albedo_factor * in_color;
+    if (mat.albedo_tex != -1) {
+        color = texture(textures[nonuniformEXT(mat.albedo_tex)], uvs[mat.albedo_uv]) * mat.albedo_factor * in_color;
+    } else {
+        color = mat.albedo_factor * in_color;
+    }
 }

@@ -376,7 +376,8 @@ Graphics_Frame :: struct {
     command_buffer: VkCommandBuffer;
     image_available_semaphore: VkSemaphore;
     image_rendered_semaphore: VkSemaphore;
-    fence: VkFence;
+    render_fence: VkFence;
+    present_fence: VkFence;
 
     per_frame_uniform_buffer: GPU_Buffer;
     per_frame_uniform_descriptor_set: VkDescriptorSet;

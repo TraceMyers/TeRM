@@ -1,3 +1,13 @@
+# =====================================================================
+# TRM Mesh Exporter
+# Usage: blender --background --python convert_mesh.py -- <input> <output.trm>
+# optional arg: can repeatedly use --exclude <node name> to exclude a node in the mesh from being exported
+# =====================================================================
+# leverage blender to convert other mesh file formats to the term mesh file format
+# for format specs / ai tool codegen instructions, see end of file
+
+# supported extensions of input files: 
+# gltf, glb, fbx, obj, dae, stl, ply, usd, usda, usdc, usdz, abc
 
 import sys
 import importlib
@@ -41,16 +51,6 @@ import bmesh
 import numpy as np
 import png
 import io
-
-# =====================================================================
-# TRM Mesh Exporter
-# Usage: blender --background --python convert_mesh.py -- <input> <output.trm>
-# =====================================================================
-# leverage blender to convert other mesh file formats to the term mesh file format
-# for format specs / ai tool codegen instructions, find the end of the python code
-
-# supported extensions of input files: 
-# gltf, glb, fbx, obj, dae, stl, ply, usd, usda, usdc, usdz, abc
 
 
 HEADER_SIZE = 56

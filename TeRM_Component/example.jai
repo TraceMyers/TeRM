@@ -9,11 +9,11 @@ Entity_Move :: struct {
     velocity:     Vector3;
     ground_accel: float;
     air_accel:    float;
-    flags:        enum {};
+    flags:        enum_flags {};
 }
 
 // need an id type to uniquely identify an entity in order to communicate with the module.
-// it can be whatever you want. here's a maybe not so great 64 bit id.
+// it can be whatever you want. here's a (maybe overcomplicated) 64 bit id.
 
 Entity_Ref :: struct {
     id: u32;    

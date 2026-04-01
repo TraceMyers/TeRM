@@ -21,16 +21,20 @@
                 break;
             }
         }
-        return tprint("spirv/%.spv", new_name);
+        return sprint("spirv/%.spv", new_name);
     }
 
     visitor :: (info: *File_Visit_Info, files: *Shader_Files) {
         if info.short_name == "header.glsl" {
-            files.header = copy_string(info.full_name);
+            files.header = copy_string(info.full_name,, temp);
         } else if ends_with(info.short_name, "vert") {
-            array_add(*files.shaders, {copy_string(info.full_name), to_output_path(info.short_name), "vert"});
+            input_path := copy_string(info.full_name,, temp);
+            output_path := to_output_path(info.short_name,, temp);
+            array_add(*files.shaders, {input_path, output_path, "vert"});
         } else if ends_with(info.short_name, "frag") {
-            array_add(*files.shaders, {copy_string(info.full_name), to_output_path(info.short_name), "frag"});
+            input_path := copy_string(info.full_name,, temp);
+            output_path := to_output_path(info.short_name,, temp);
+            array_add(*files.shaders, {input_path, output_path, "frag"});
         }
     }
 

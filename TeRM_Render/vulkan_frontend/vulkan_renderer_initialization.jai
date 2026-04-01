@@ -86,7 +86,7 @@ init_renderer_unique_data :: (thread_local_renderer: *Renderer) -> bool {
 
 #scope_file
 
-// copies the shader source code and compile.bat file from this module into the user's project
+// copies the shader source code and compile_shaders.jai file from this module into the user's project
 // directory, creates a folder for compiled spirv, and runs a compile script so the shader
 // data is ready for loading later. this really only needs to run once assuming no more shaders
 // are added to the module, but behavior is on by default because it populates important data 
@@ -143,6 +143,7 @@ populate_shader_data :: () -> bool {
         render_log("tried to compile shaders in % using the compile.bat in there, but failed with exit code %", dest_path, result.exit_code);
         return false;
     }
+    print("\n");
 
     render_log("%, so the default shader datas were copied from % to % and the shaders were compiled. this is on by default for ease of use, but it can be turned off now.", spiel, source_path, dest_path);
     return true;

@@ -22,11 +22,11 @@ trm_log :: (fmt: string, args: ..Any, log_location := false, caller_loc := #call
 #scope_file
 
 report_impl :: (
-    fmt: string, 
-    args: ..Any, 
-    log_context: string, 
-    log_location: bool, 
-    caller_loc: Source_Code_Location, 
+    fmt: string,
+    args: ..Any,
+    log_context: string,
+    log_location: bool,
+    caller_loc: Source_Code_Location,
     header: string,
     add_newline := true
 ) {

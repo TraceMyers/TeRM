@@ -1,9 +1,3 @@
-// todo: when more APIs are added, can figure out the generic versions rather than the 
-// vk versions of these things. some of that is already started (e.g. Physical_Device_Properties);
-
-// probably should be using arena buffers a lot. dramatically simplifies allocation for per-frame 
-// and especially variably sized stuff.
-
 MIN_DEPTH :: 0.0;
 MAX_DEPTH :: 1.0;
 VK_API_VERSION_1_3 :: #run VK_MAKE_VERSION(1, 3, 0);
@@ -59,15 +53,6 @@ Renderer :: struct {
         camera_info: Camera_Info;
         camera_position: Vector3;
         camera_orientation: Quaternion;
-        
-        // scratch space (or more scratchy than the rest)
-        corrugated_cardboard_path: string;
-        corrugated_cardboard_image: *GPU_Image;
-
-        light_glow_image_path: string;
-        light_glow_image: *GPU_Image;
-
-        // allocator stuff
 
         max_texture_count: int;
 
@@ -93,36 +78,37 @@ Renderer :: struct {
         opaque_mesh_pipeline_layout: VkPipelineLayout;
         opaque_mesh_pipeline: VkPipeline;
 
-        texture_references: []Texture_Ref;
-        mesh_references: []Mesh_Ref;
-
-        meshes: [..]Mesh;
-        materials: Pool(Material);
+        opaque_skinned_mesh_pipeline: VkPipeline;
 
         particle_draws: [..]Billboard_Instance;
-        // todo: could probably do this the same way as Billboard_Instance and it'd be simpler.
-        // but I'd have to move transform into the mesh draw instance
-        static_mesh_draws: [..]Static_Mesh_Draw;
+        static_mesh_draws: [..]Mesh_Draw;
+        skinned_mesh_draws: [..]Mesh_Draw;
 
         debug_switch: bool;
-
-        billboard_vertices := Static_Mesh_Vertex.[
-            {position={-0.5, -0.5, 0}, uv_0={0, 0}},
-            {position={ 0.5, -0.5, 0}, uv_0={1, 0}},
-            {position={ 0.5,  0.5, 0}, uv_0={1, 1}},
-            {position={-0.5, -0.5, 0}, uv_0={0, 0}},
-            {position={ 0.5,  0.5, 0}, uv_0={1, 1}},
-            {position={-0.5,  0.5, 0}, uv_0={0, 1}},
-        ];
-
-        sampler_table: Linear_Table(u32, VkSampler);
     };
 
+    texture_references: []Texture_Ref;
+    mesh_references: []Mesh_Ref;
+
+    meshes: [..]Mesh;
+    materials: Pool(Material);
+
+    billboard_vertices := Static_Mesh_Vertex.[
+        {position={-0.5, -0.5, 0}, uv_0={0, 0}},
+        {position={ 0.5, -0.5, 0}, uv_0={1, 0}},
+        {position={ 0.5,  0.5, 0}, uv_0={1, 1}},
+        {position={-0.5, -0.5, 0}, uv_0={0, 0}},
+        {position={ 0.5,  0.5, 0}, uv_0={1, 1}},
+        {position={-0.5,  0.5, 0}, uv_0={0, 1}},
+    ];
+
+    sampler_table: Linear_Table(u32, VkSampler);
     shader_table: Linear_Table(string, VkShaderModule);
 }
 
 MAX_MATERIALS :: 1024;
-MAX_MESHES   :: 128_000;
+MAX_STATIC_MESHES :: 128_000;
+MAX_SKINNED_MESHES :: 64_000;
 
 GPU_Material :: struct {
     albedo_factor: Vector4;
@@ -145,22 +131,14 @@ GPU_Material :: struct {
     orm_tex: s32;
 };
 
-//  mesh 1
-//          mesh instance                0, 1, 2
-//          draw (section) 0 
-//              (inst 0, inst 1, inst 2)
-//          draw (section) 1 
-//              (inst 0, inst 1, inst 2)
-//  mesh 2
-//          mesh instance                3, 4, 5
-//          draw (section) 2 
-//              (inst 0, inst 1, inst 2)
-//          draw (section) 3 
-//              (inst 0, inst 1, inst 2)
-
 Mesh_Instance_Shader_Data :: struct {
     transform: Matrix4;
 }
+
+Skinned_Mesh_Instance_Shader_Data :: struct {
+    transform: Matrix4;
+    joint_transform_offset: s32;
+};
 
 // this is on the per-draw level
 Mesh_Section_Shader_Data :: struct {
@@ -169,7 +147,7 @@ Mesh_Section_Shader_Data :: struct {
     material: s32;
 }
 
-Static_Mesh_Draw :: struct {
+Mesh_Draw :: struct {
     position: Vector3;
     orientation: Quaternion;
     scale: Vector3;
@@ -192,7 +170,6 @@ Mesh_Ref :: struct {
     path: string;
     index: int;
 }
-
 
 Render_Init_Options :: struct {
     populate_shader_data_in_working_directory := true;
@@ -260,6 +237,7 @@ GPU_Heap_Type :: enum u8 {
     DEVICE_LOCAL_BUFFER;
     HOST_VISIBLE_BUFFER;
     VERTEX_BUFFER;
+    SKINNED_VERTEX_BUFFER;
     INDEX_BUFFER; // if this isn't the last buffer type, update is_buffer_type
     DEVICE_LOCAL_IMAGE; // if this isn't the first image type, update is_buffer_type
     HOST_VISIBLE_IMAGE;
@@ -367,7 +345,6 @@ Swapchain :: struct {
     image_views: []VkImageView;
 }
 
-
 get_current_frame :: () -> *Graphics_Frame {
     using context.renderer;
     return *frames[rendered_frame_count % frames.count];
@@ -381,8 +358,8 @@ Graphics_Frame :: struct {
     render_fence: VkFence;
     present_fence: VkFence;
 
-    per_frame_uniform_buffer: GPU_Buffer;
     per_frame_uniform_descriptor_set: VkDescriptorSet;
+    per_frame_uniform_buffer: GPU_Buffer;
 
     billboard_instance_buffer_descriptor_set: VkDescriptorSet;
     billboard_instance_buffer: GPU_Buffer;
@@ -393,8 +370,17 @@ Graphics_Frame :: struct {
     mesh_sections_shader_data_descriptor_set: VkDescriptorSet;
     mesh_sections_shader_data: GPU_Buffer;
 
+    skinned_mesh_instances_shader_data_descriptor_set: VkDescriptorSet;
+    skinned_mesh_instances_shader_data: GPU_Buffer;
+
+    skinned_mesh_sections_shader_data_descriptor_set: VkDescriptorSet;
+    skinned_mesh_sections_shader_data: GPU_Buffer;
+
     opaque_mesh_draw_commands_descriptor_set: VkDescriptorSet;
     opaque_mesh_draw_commands: GPU_Buffer;
+
+    opaque_skinned_mesh_draw_commands_descriptor_set: VkDescriptorSet;
+    opaque_skinned_mesh_draw_commands: GPU_Buffer;
 
     temp_allocators: [GPU_HEAP_TYPE_COUNT]GPU_Linear_Allocator;
 }
@@ -439,6 +425,7 @@ Mesh_Import_Types :: struct {
 #load "vulkan_renderer_initialization.jai";
 #load "vulkan_system_information.jai";
 #load "vulkan_renderer_update.jai";
+#load "vulkan_draw_interface.jai";
 
 #scope_module
 
@@ -450,6 +437,7 @@ Mesh_Import_Types :: struct {
 #load "../vulkan_backend/vulkan_pipelines.jai";
 #load "../vulkan_backend/vulkan_shaders.jai";
 #load "../vulkan_backend/vulkan_linear_allocator.jai";
+#load "../vulkan_backend/vulkan_draw.jai";
 
 #import "Window_Creation";
 #import "Basic";

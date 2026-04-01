@@ -265,18 +265,41 @@ struct_member_vertex_input_binding_format :: (info: *Type_Info_Struct_Member, de
         assert(array_type_info.array_count > 0 && array_type_info.array_type == .FIXED);
         if array_type_info.element_type.type == {
         case .INTEGER;
-            // $todo: rest of this
             int_element_type := array_type_info.element_type.(*Type_Info_Integer);
-            assert(int_element_type.runtime_size == 2 && int_element_type.signed);
+            assert(int_element_type.runtime_size == 2);
             if array_type_info.array_count == {
             case 2;
-                return .R16G16_SINT;
+                if int_element_type.signed {
+                    return .R16G16_SINT;
+                } else {
+                    return .R16G16_UINT;
+                }
             case 3;
-                return .R16G16B16_SINT;
+                if int_element_type.signed {
+                    return .R16G16B16_SINT;
+                } else {
+                    return .R16G16B16_UINT;
+                }
             case 4;
-                return .R16G16B16A16_SINT;
+                if int_element_type.signed {
+                    return .R16G16B16A16_SINT;
+                } else {
+                    return .R16G16B16A16_UINT;
+                }
             }
         case .FLOAT;
+            float_element_type := cast(*Type_Info_Float) array_type_info.element_type;
+            assert(float_element_type.runtime_size == 4);
+            if array_type_info.array_count == {
+            case 2;
+                return .R32G32_SFLOAT;
+            case 3;
+                return .R32G32B32_SFLOAT;
+            case 4;
+                return .R32G32B32A32_SFLOAT;
+            case;
+                assert(false);
+            }
         }
     }
     return format;
@@ -344,6 +367,9 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0x
 
         if heap.type == {
         case .VERTEX_BUFFER;
+            access_flags = .VERTEX_ATTRIBUTE_READ_BIT;
+            pipeline_stage_flags = .VERTEX_INPUT_BIT;
+        case .SKINNED_VERTEX_BUFFER;
             access_flags = .VERTEX_ATTRIBUTE_READ_BIT;
             pipeline_stage_flags = .VERTEX_INPUT_BIT;
         case .INDEX_BUFFER;
@@ -496,8 +522,13 @@ internal_create_ubo_or_ssbo :: (pool: VkDescriptorPool, set: *VkDescriptorSet, b
     vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
 }
 
-create_gpu_vertex_buffer :: (buffer: *GPU_Buffer, vertices: []$T) {
-    buffer.* = gpu_linear_allocate(.VERTEX_BUFFER, size_of(T) * vertices.count, .VERTEX_BUFFER_BIT);
+create_gpu_vertex_buffer :: (buffer: *GPU_Buffer, vertices: []Static_Mesh_Vertex) {
+    buffer.* = gpu_linear_allocate(.VERTEX_BUFFER, size_of(Static_Mesh_Vertex) * vertices.count, .VERTEX_BUFFER_BIT);
+    copy_to_gpu_buffer(buffer, vertices);
+}
+
+create_gpu_skinned_vertex_buffer :: (buffer: *GPU_Buffer, vertices: []Skinned_Mesh_Vertex) {
+    buffer.* = gpu_linear_allocate(.SKINNED_VERTEX_BUFFER, size_of(Skinned_Mesh_Vertex) * vertices.count, .VERTEX_BUFFER_BIT);
     copy_to_gpu_buffer(buffer, vertices);
 }
 
@@ -528,6 +559,12 @@ create_gpu_buffer :: (size: int, usage_flags: VkBufferUsageFlags, memory_flags: 
 
 get_vbo :: () -> VkBuffer {
     vb_allocator := *context.renderer.linear_allocators[GPU_Heap_Type.VERTEX_BUFFER];
+    heap := *context.renderer.gpu_heap_pool[vb_allocator.heaps[0]];
+    return heap.buffer;
+}
+
+get_skinned_vbo :: () -> VkBuffer {
+    vb_allocator := *context.renderer.linear_allocators[GPU_Heap_Type.SKINNED_VERTEX_BUFFER];
     heap := *context.renderer.gpu_heap_pool[vb_allocator.heaps[0]];
     return heap.buffer;
 }

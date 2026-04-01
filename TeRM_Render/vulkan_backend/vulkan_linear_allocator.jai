@@ -92,7 +92,7 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type,
         heap = *gpu_heap_pool[frontier_heap_index];
         assert(heap.is_valid);
 
-        if heap_type == .VERTEX_BUFFER || heap_type == .INDEX_BUFFER {
+        if heap_type == .VERTEX_BUFFER || heap_type == .INDEX_BUFFER || heap_type == .SKINNED_VERTEX_BUFFER {
             // vertices and indices should be packed without align padding
             aligned_frontier_offset = allocator.frontier_offset;
         } else {
@@ -116,7 +116,7 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type,
         target_heap_size: int;
         buffer_usage: VkBufferUsageFlags;
 
-        if heap_type == .VERTEX_BUFFER {
+        if heap_type == .VERTEX_BUFFER || heap_type == .SKINNED_VERTEX_BUFFER {
             target_heap_size = VERTEX_BUFFER_SIZE;
             buffer_usage = .VERTEX_BUFFER_BIT | .TRANSFER_DST_BIT;
             // there can be only one vertex buffer, because all draws use one buffer for draw simplicity

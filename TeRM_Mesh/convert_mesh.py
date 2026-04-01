@@ -53,6 +53,18 @@ import png
 import io
 
 
+def action_fcurves(action):
+    """Return fcurves from an Action, compatible with Blender 4.4+ layered actions."""
+    if hasattr(action, 'fcurves'):
+        return action_fcurves(action)
+    curves = []
+    for layer in action.layers:
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                curves.extend(bag.fcurves)
+    return curves
+
+
 HEADER_SIZE = 56
 SECTION_FILE_SIZE = 164
 ANIM_FILE_SIZE = 16
@@ -534,13 +546,13 @@ def extract_anims(arm, bufs):
     for action in actions:
         arm.animation_data.action = action
         frames = sorted({round(kf.co[0])
-                         for fc in action.fcurves
+                         for fc in action_fcurves(action)
                          for kf in fc.keyframe_points})
         if not frames:
             continue
         timestamps = [f / fps for f in frames]
         interp = (0 if any(kf.interpolation == 'CONSTANT'
-                           for fc in action.fcurves
+                           for fc in action_fcurves(action)
                            for kf in fc.keyframe_points) else 1)
 
         xforms = []

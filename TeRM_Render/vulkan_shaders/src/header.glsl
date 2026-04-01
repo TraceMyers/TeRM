@@ -47,6 +47,11 @@ struct Mesh_Section_Shader_Data {
     int material;
 };
 
+struct Skinned_Mesh_Instance_Shader_Data {
+    mat4 transform;
+    int joint_transform_offset;
+};
+
 struct Mesh_Instance_Shader_Data {
     mat4 transform;
 };

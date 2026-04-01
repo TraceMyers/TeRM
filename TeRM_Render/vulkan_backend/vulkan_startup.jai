@@ -222,7 +222,7 @@ determine_physical_device_queue_family_capabilities :: (physical: *Physical_Devi
     queue_family_properties := vkGetPhysicalDeviceQueueFamilyProperties(physical.obj,,temp);
     if !validate(queue_family_properties.count > 0, "physical device queue family properties count is 0") then return false;
 
-    GRAPHICS_AND_COMPUTE : VkQueueFlagBits : (.GRAPHICS_BIT | .COMPUTE_BIT);
+    max_support_score: float;
 
     for family : queue_family_properties {
         using physical.queue_family_indices;
@@ -230,26 +230,47 @@ determine_physical_device_queue_family_capabilities :: (physical: *Physical_Devi
         present_support: VkBool32;
         vkGetPhysicalDeviceSurfaceSupportKHR(physical.obj, xx it_index, context.renderer.surface, *present_support);
 
-        // just try to get them all on the same queue for now. maybe forever?
-        if present_support {
-            if (family.queueFlags & GRAPHICS_AND_COMPUTE) == GRAPHICS_AND_COMPUTE {
-                present_index  = xx it_index;
+        // just try to get them all on the same queue.
+        score := 0.0;
+        if family.queueFlags & .GRAPHICS_BIT {
+            if graphics_index == -1 {
                 graphics_index = xx it_index;
-                compute_index  = xx it_index;
-            } else if present_index == -1 {
-                present_index = xx it_index;
-            } 
-        }
-        if family.queueFlags & .GRAPHICS_BIT && graphics_index == -1 {
-            graphics_index = xx it_index;
-        }
-        if family.queueFlags & .COMPUTE_BIT && compute_index == -1 {
-            compute_index = xx it_index;
+            }
+            score += 2;
         }
         if family.queueFlags & .TRANSFER_BIT {
-            if transfer_index == -1 || (family.queueFlags & .GRAPHICS_BIT) != 0 {
+            if transfer_index == -1 {
                 transfer_index = xx it_index;
             }
+            score += ifx family.queueFlags & .GRAPHICS_BIT then 2 else 1;
+        }
+        if family.queueFlags & .COMPUTE_BIT {
+            if compute_index == -1 {
+                compute_index = xx it_index;
+            }
+            score += 1;
+        }
+        if present_support {
+            if present_index == -1 {
+                present_index = xx it_index;
+            }
+            score += 1;
+        }
+
+        if score > max_support_score {
+            if family.queueFlags & .GRAPHICS_BIT {
+                graphics_index = xx it_index;
+            }
+            if family.queueFlags & .TRANSFER_BIT {
+                transfer_index = xx it_index;
+            }
+            if family.queueFlags & .COMPUTE_BIT {
+                compute_index = xx it_index;
+            }
+            if present_support {
+                present_index = xx it_index;
+            }
+            max_support_score = score;
         }
     }
     return true;
@@ -521,6 +542,15 @@ create_default_pipelines :: () -> bool {
         build_info.name = "opaque mesh pipeline";
         opaque_mesh_pipeline = build_pipeline(*build_info);
     }
+    {
+        build_info: Graphics_Pipeline_Build_Info;
+        build_info.pipeline_layout = opaque_mesh_pipeline_layout;
+        make_default_vertex_fragment_pipeline_build_info(
+            *build_info, "skinned_mesh_vert", "mesh_frag", Skinned_Mesh_Vertex
+        );
+        build_info.name = "skinned opaque mesh pipeline";
+        opaque_skinned_mesh_pipeline = build_pipeline(*build_info);
+    }
     
     render_log("created default pipelines");
     return true;
@@ -532,7 +562,6 @@ create_default_pipeline_layouts :: () -> bool {
     // 0 = textures
     // 1 = materials
     // 2 = per frame uniform
-
     {
         // 3 = billboard instances
         descriptor_set_layouts := VkDescriptorSetLayout.[
@@ -551,7 +580,6 @@ create_default_pipeline_layouts :: () -> bool {
         }
     }
     {
-
         // 3 = mesh transforms
         // 4 = mesh instances
         descriptor_set_layouts := VkDescriptorSetLayout.[
@@ -662,14 +690,28 @@ create_descriptors :: () -> bool {
             descriptor_pool, 
             *frame.mesh_instances_shader_data_descriptor_set, 
             *frame.mesh_instances_shader_data, 
-            size_of(Mesh_Instance_Shader_Data) * MAX_MESHES
+            size_of(Mesh_Instance_Shader_Data) * MAX_STATIC_MESHES
+        );
+
+        create_gpu_storage_buffer(
+            descriptor_pool, 
+            *frame.skinned_mesh_instances_shader_data_descriptor_set, 
+            *frame.skinned_mesh_instances_shader_data, 
+            size_of(Mesh_Instance_Shader_Data) * MAX_SKINNED_MESHES
         );
 
         create_gpu_storage_buffer(
             descriptor_pool, 
             *frame.mesh_sections_shader_data_descriptor_set, 
             *frame.mesh_sections_shader_data, 
-            size_of(Mesh_Section_Shader_Data) * MAX_MESHES * 4
+            size_of(Mesh_Section_Shader_Data) * MAX_STATIC_MESHES * 8
+        );
+
+        create_gpu_storage_buffer(
+            descriptor_pool, 
+            *frame.skinned_mesh_sections_shader_data_descriptor_set, 
+            *frame.skinned_mesh_sections_shader_data, 
+            size_of(Mesh_Section_Shader_Data) * MAX_SKINNED_MESHES * 8
         );
 
         max_billboard_instance_count := 100_000;
@@ -685,6 +727,13 @@ create_descriptors :: () -> bool {
             descriptor_pool,
             *frame.opaque_mesh_draw_commands_descriptor_set,
             *frame.opaque_mesh_draw_commands,
+            size_of(VkDrawIndexedIndirectCommand) * max_draw_command_count
+        );
+
+        create_gpu_storage_buffer(
+            descriptor_pool,
+            *frame.opaque_skinned_mesh_draw_commands_descriptor_set,
+            *frame.opaque_skinned_mesh_draw_commands,
             size_of(VkDrawIndexedIndirectCommand) * max_draw_command_count
         );
     }
@@ -786,6 +835,9 @@ load_assets :: () -> bool {
                 buf.gpu_allocation = -1;
             }
 
+            found_static_mesh_section: bool;
+            found_skinned_mesh_section: bool;
+
             // todo: free vertices & indices?
             for *section : mesh_in_array.sections {
                 {
@@ -809,16 +861,16 @@ load_assets :: () -> bool {
                     using section.vertices;
                     if type == .STATIC {
                         assert(cpu_allocation.static.count == count);
+                        // all sections must be either static or skinned, for simplicity. renderer requires it.
+                        assert(!found_skinned_mesh_section); 
                         create_gpu_vertex_buffer(*gpu_allocation, cpu_allocation.static);
+                        found_static_mesh_section = true;
                     } else {
                         assert(cpu_allocation.skinned.count == count);
-                        type = .STATIC;
-                        temp_static_buffer := make_static_array(Static_Mesh_Vertex, count,, temp);
-                        for 0..cpu_allocation.skinned.count-1 {
-                            temp_static_buffer[it] = cpu_allocation.skinned[it].base;
-                        }
-                        // create_gpu_vertex_buffer(*gpu_allocation, cpu_allocation.skinned);
-                        create_gpu_vertex_buffer(*gpu_allocation, temp_static_buffer);
+                        // all sections must be either static or skinned, for simplicity. renderer requires it.
+                        assert(!found_static_mesh_section);
+                        create_gpu_skinned_vertex_buffer(*gpu_allocation, cpu_allocation.skinned);
+                        found_skinned_mesh_section = true;
                     }
                 }
 

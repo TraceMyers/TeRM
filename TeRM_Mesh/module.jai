@@ -183,18 +183,27 @@ load_mesh :: (path: string) -> Mesh, bool {
 }
 
 Static_Mesh_Vertex :: struct {
-    position:   Vector3;
-    normal:     Vector3;
-    tangent:    Vector4;
-    uv_0:       Vector2;
-    uv_1:       Vector2;
-    color:      Color4f;
+    position: Vector3;
+    normal:   Vector3;
+    tangent:  Vector4;
+    uv_0:     Vector2;
+    uv_1:     Vector2;
+    color:    Color4f;
 }
 
+// having a using #as Static_Mesh_Vertex field would make sense, but I like using a vertex
+// input binding format reader proc rather than handmaking the bindings, and it's easier
+// to do that when the type is composed of up to one layer of non-primitive types. 
+// (vertex type -> Vector3 -> float rather than vertex type -> other vertex type -> Vector3 -> float)
 Skinned_Mesh_Vertex :: struct {
-    using #as base: Static_Mesh_Vertex;
-    joints:  [4]u16;
-    weights: [4]float32;
+    position: Vector3;
+    normal:   Vector3;
+    tangent:  Vector4;
+    uv_0:     Vector2;
+    uv_1:     Vector2;
+    color:    Color4f;
+    joints:   [4]u16;
+    weights:  [4]float32;
 }
 
 Mesh_Index_Buffer :: struct {
@@ -407,7 +416,8 @@ read_array :: inline (array: []$T, file: string, location: *int, count: int) {
 }
 
 read_mesh_skinned_vertex :: inline (vert: *Skinned_Mesh_Vertex, file: string, location: *int) {
-    vert.base = read_mesh_static_vertex(file, location);
+    static := cast(*Static_Mesh_Vertex) vert;
+    static.* = read_mesh_static_vertex(file, location);
     read_array(vert.joints, file, location, 4);
     read_array(vert.weights, file, location, 4);
 }

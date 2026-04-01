@@ -118,55 +118,68 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         instances_begin_index: int = 0;
         instances_count:       int = 1;
         instances_ref_index:   int = static_mesh_draws[0].ref.index;
+        next_ref_index:        int = -1;
 
         instance_count_total:  s32;
 
-        for 0..static_mesh_draws.count-1 {
-            draw := *static_mesh_draws[it];
+        flush_draws: bool;
 
-            transform   := *mesh_instances[it].transform;
-            transform.*  = make_translation_matrix4(draw.position);
-            transform.*  = rotate(transform.*, draw.orientation);
-            scale := make_scale_matrix4(draw.scale);
-            transform.* *= scale;           
+        for 1..static_mesh_draws.count {
+            prev_draw  := *static_mesh_draws[it-1];
+            prev_transform   := *mesh_instances[it-1].transform;
+            prev_transform.*  = make_translation_matrix4(prev_draw.position);
+            prev_transform.*  = rotate(prev_transform.*, prev_draw.orientation);
+            scale := make_scale_matrix4(prev_draw.scale);
+            prev_transform.* *= scale;
 
-            if it == static_mesh_draws.count-1 || instances_ref_index != draw.ref.index {
-                if instances_count > 0 {
-                    draws_of_one_mesh: []Static_Mesh_Draw;
-                    draws_of_one_mesh.data  = static_mesh_draws.data + instances_begin_index;
-                    draws_of_one_mesh.count = instances_count;
+            if it == static_mesh_draws.count {
+                flush_draws = true;
+            } else {
+                cur_draw := *static_mesh_draws[it];
+                if instances_ref_index != cur_draw.ref.index {
+                    flush_draws = true;
+                    next_ref_index = cur_draw.ref.index;
+                }
+            }
 
-                    if draws_of_one_mesh.count > 1 {
-                        // sort opaque instances in front-to-back order to take advantage of the depth buffer
-                        quick_sort(draws_of_one_mesh, draw => distance_squared(draw.position, context.renderer.camera_position));
-                    }
-                    
-                    mesh := *meshes[draw.ref.index];
+            if flush_draws {
+                assert(instances_count > 0);
 
-                    for section : mesh.sections {
-                        array_add(*mesh_sections, Mesh_Section_Shader_Data.{
-                            cast(s32) instance_count_total, 
-                            cast(s32) instances_count, 
-                            cast(s32) section.material.user_data
-                        });
-                        array_add(*mesh_draw_commands, {
-                            indexCount    = xx section.indices.count,
-                            instanceCount = xx instances_count,
-                            firstIndex    = xx (section.indices.gpu_allocation.source_heap_offset / size_of(u32)),
-                            vertexOffset  = xx (section.vertices.gpu_allocation.source_heap_offset / size_of(Static_Mesh_Vertex)),
-                            firstInstance = 0
-                        });
-                    }
+                draws_of_one_mesh: []Static_Mesh_Draw;
+                draws_of_one_mesh.data  = static_mesh_draws.data + instances_begin_index;
+                draws_of_one_mesh.count = instances_count;
 
-                    instance_count_total += cast(s32) instances_count;
+                if draws_of_one_mesh.count > 1 {
+                    // sort opaque instances in front-to-back order to take advantage of the depth buffer
+                    quick_sort(draws_of_one_mesh, draw => distance_squared(draw.position, context.renderer.camera_position));
+                }
+                
+                mesh := *meshes[instances_ref_index];
+
+                for section : mesh.sections {
+                    array_add(*mesh_sections, Mesh_Section_Shader_Data.{
+                        cast(s32) instance_count_total, 
+                        cast(s32) instances_count, 
+                        cast(s32) section.material.user_data
+                    });
+                    array_add(*mesh_draw_commands, {
+                        indexCount    = xx section.indices.count,
+                        instanceCount = xx instances_count,
+                        firstIndex    = xx (section.indices.gpu_allocation.source_heap_offset / size_of(u32)),
+                        vertexOffset  = xx (section.vertices.gpu_allocation.source_heap_offset / size_of(Static_Mesh_Vertex)),
+                        firstInstance = 0
+                    });
                 }
 
-                instances_ref_index = draw.ref.index;
+                instance_count_total += cast(s32) instances_count;
+
+                instances_ref_index = next_ref_index;
                 instances_begin_index = it;
-                instances_count = 1;
-            } else {
-                instances_count += 1;
+                instances_count = 0;
+                flush_draws = false;
             }
+
+            instances_count += 1;
         }
 
         copy_to_gpu_buffer(*current_frame.mesh_instances_shader_data, mesh_instances);

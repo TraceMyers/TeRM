@@ -29,6 +29,9 @@ Renderer :: struct {
         engine_name := "TeRM/Render";
         engine_version := TERM_RENDERER_VERSION;
 
+        global_shader_time: float32;
+        global_shader_delta_time: float32;
+
         window: Window_Type;
 
         vk_instance: VkInstance;
@@ -63,7 +66,6 @@ Renderer :: struct {
 
         light_glow_image_path: string;
         light_glow_image: *GPU_Image;
-
 
         // allocator stuff
 

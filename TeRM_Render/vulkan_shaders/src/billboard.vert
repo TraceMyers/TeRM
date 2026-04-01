@@ -1,5 +1,3 @@
-#version 450
-
 layout(location=0) in vec3 in_position;
 layout(location=1) in vec3 in_normal;
 layout(location=2) in vec4 in_tangent;
@@ -10,26 +8,6 @@ layout(location=5) in vec4 in_color;
 layout(location=0) out      vec2 out_uv;
 layout(location=1) out      vec4 out_tint;
 layout(location=2) out flat uint out_texture_index;
-
-struct Billboard_Instance {
-    vec3 position;      float _pad0;
-    vec4 tint;
-    vec2 scale;
-    vec2 uv_offset;
-    vec2 uv_scale;  
-    uint texture_index; float _pad1;
-};
-
-layout(set=2, binding=0) uniform Per_Frame_Uniform_Buffer {
-    mat4  view;
-    mat4  view_projection;
-    vec3  camera_position; float _pad0;
-    vec3  camera_forward;  float _pad1;
-    vec3  camera_up;       float _pad2;
-    vec3  camera_right;    float _pad3;
-    float time;
-    float delta_time;
-} frame;
 
 // std430 makes it so arrays of data are packed correctly rather
 // than having each element aligned to the struct's alignment.

@@ -1,8 +1,3 @@
-#version 460
-#extension GL_EXT_nonuniform_qualifier   : require
-#extension GL_EXT_scalar_block_layout    : require
-#extension GL_ARB_shader_draw_parameters : enable
-
 layout(location=0) in mat3 in_tbn;
 // 1,2 = mat cols
 layout(location=3) in      vec2 in_uv_0;
@@ -11,36 +6,6 @@ layout(location=5) in      vec4 in_color;
 layout(location=6) in flat int  in_material_id;
 
 layout(location=0) out vec4 color;
-
-layout(set=0, binding=0) uniform sampler2D textures[];
-
-struct Material {
-    vec4 albedo_factor;
-    vec4 emissive_factor;
-    float metallic_factor;
-    float roughness_factor;
-
-    float alpha_cutoff;
-
-    int albedo_uv;
-    int metallic_uv;
-    int roughness_uv;
-    int normal_uv;
-    int occlusion_uv;
-    int emissive_uv;
-
-    int albedo_tex;
-    int normal_tex;
-    int emissive_tex;
-    int orm_tex;
-};
-
-#define MAX_MATERIALS 1024
-
-layout(set=1, binding=0, scalar) readonly buffer Material_Block {
-    Material materials[];
-} material_block;
-
 
 void main() {
     Material mat = material_block.materials[in_material_id]; 
@@ -51,4 +16,22 @@ void main() {
     } else {
         color = mat.albedo_factor * in_color;
     }
+
+    vec3 map_normal;
+
+    if (mat.normal_tex != -1) {
+        map_normal = texture(textures[nonuniformEXT(mat.normal_tex)], uvs[mat.normal_uv]).rgb * 2.0 - 1.0;
+    } else {
+        map_normal = vec3(0,0,1);
+    }
+
+    vec3 world_normal = normalize(in_tbn * map_normal);
+
+    vec3 light_dir = normalize(vec3(-0.5,0.7,-0.5));
+
+    float ambient_light = 0.4;
+    float normal_dot_light = max(dot(light_dir, -world_normal), 0);
+    float light_value = normal_dot_light * (1.0 - ambient_light) + ambient_light;
+
+    color.rgb *= light_value;
 }

@@ -76,8 +76,8 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         per_frame_uniform.camera_forward  = get_fore_direction(*camera_orientation);
         per_frame_uniform.camera_up       = get_up_direction(*camera_orientation);
         per_frame_uniform.camera_right    = get_right_direction(*camera_orientation);
-        per_frame_uniform.time            = 0;
-        per_frame_uniform.delta_time      = 1.0 / 120.0;
+        per_frame_uniform.time            = global_shader_time;
+        per_frame_uniform.delta_time      = global_shader_delta_time;
 
         copy_to_gpu_buffer(*current_frame.per_frame_uniform_buffer, *per_frame_uniform);
     }
@@ -113,7 +113,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         vkCmdBindPipeline(cmd, .GRAPHICS, opaque_mesh_pipeline);
 
         mesh_instances := make_static_array(Mesh_Instance_Shader_Data, static_mesh_draws.count,, temp);
-        mesh_sections  := make_dynamic_array(Mesh_Section_Shader_Data, static_mesh_draws.count*4,, temp);
+        mesh_sections  := make_dynamic_array(Mesh_Section_Shader_Data, static_mesh_draws.count*8,, temp);
 
         instances_begin_index: int = 0;
         instances_count:       int = 1;

@@ -9,7 +9,7 @@
 
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------- :Bump_Allocator
-// bump/arena with no resize. because sometimes less features is a feature
+// bump/arena, no auto resize
 
 BUMP_ALLOCATOR_DEFAULT_HEAP_SIZE : s32 : 16 * 1024 * 1024; // 16MB
 
@@ -923,7 +923,7 @@ make_dynamic_array :: inline ($T: Type, reserve_count := 0) -> [..]T {
     return array;
 }
 
-// tiny serializer implementation for Super_Allocator stuff
+// tiny dual-head serializer implementation for Super_Allocator stuff
 // -----------------------------------------------------------------------------------
 
 write_bytes :: (record: *[..]u8, record_head: *s64, bytes: *u8, byte_count: s64, align : s8 = 1) {
@@ -995,24 +995,6 @@ did_small_chunk_count_warning := false;
 align_up :: inline (value: int, align: int) -> int {
     return (value + align - 1) & ~(align - 1);
 }
-
-// todo: crash
-
-// D:/dev/libraries/TeRM/TeRM_Allocation.jai:815,9: Assertion failed: invalid id for allocation 0
-
-// Stack trace:
-// D:/dev/build_tools/jai-beta-2-026/jai/modules/Runtime_Support.jai:103: runtime_support_assertion_failed
-// D:/dev/build_tools/jai-beta-2-026/jai/modules/Basic/module.jai:87: assert_helper
-// D:/dev/libraries/TeRM/TeRM_Allocation.jai:815: gp_free
-// D:/dev/libraries/TeRM/TeRM_Allocation.jai:690: gp_allocator_proc
-// D:/dev/build_tools/jai-beta-2-026/jai/modules/Basic/module.jai:127: realloc
-// D:/dev/build_tools/jai-beta-2-026/jai/modules/Basic/Array.jai:94: array_add
-// D:/dev/libraries/TeRM/TeRM_Component/manage.jai:114: allocate_components
-// D:/dev/games/imsim/src/entity/entity_storage.jai:76: spawn_entities
-// D:/dev/games/imsim/src/graphics/particle_system.jai:10: spawn_particle_system
-// D:/dev/games/imsim/src/input/input.jai:71: input_tick
-// D:/dev/games/imsim/src/main.jai:25: main
-// A breakpoint was hit, but no debugger is attached.
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

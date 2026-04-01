@@ -818,7 +818,7 @@ submit_commands :: (cmd: VkCommandBuffer, fence: VkFence, queue: VkQueue, wait_s
 
     if !validate(vkQueueSubmit2(queue, 1, *submit_info, fence), "failed to submit commands to a queue") then return false;
 
-    if !validate(vkWaitForFences(logical.obj, 1, *fence, VK_TRUE, 9_999_999), "failed to wait for a fence") then return false;
+    if !validate(vkWaitForFences(logical.obj, 1, *fence, VK_TRUE, NANOSECONDS_PER_SECOND), "failed to wait for a fence") then return false;
 
     if !validate(vkResetFences(logical.obj, 1, *fence), "failed to reset a fence") then return false;
 

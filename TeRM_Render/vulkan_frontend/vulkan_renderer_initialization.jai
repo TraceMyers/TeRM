@@ -136,7 +136,9 @@ populate_shader_data :: () -> bool {
     }
 
     set_working_directory(dest_path);
-    result := run_command(".\\compile.bat");
+
+    // assumes jai compiler is in your environment variables, used for shader compilation
+    result := run_command("jai", "compile_shaders.jai");
     if result.exit_code != 0 {
         render_log("tried to compile shaders in % using the compile.bat in there, but failed with exit code %", dest_path, result.exit_code);
         return false;

@@ -1,7 +1,3 @@
-#version 460
-#extension GL_EXT_nonuniform_qualifier   : require
-#extension GL_EXT_scalar_block_layout    : require
-
 layout(location=0) in vec3 in_position;
 layout(location=1) in vec3 in_normal;
 layout(location=2) in vec4 in_tangent;
@@ -16,30 +12,9 @@ layout(location=4) out      vec2 out_uv_1;
 layout(location=5) out      vec4 out_color;
 layout(location=6) out flat int  out_material_id;
 
-layout(set=2, binding=0) uniform Per_Frame_Uniform_Buffer {
-    mat4  view;
-    mat4  view_projection;
-    vec3  camera_position; float _pad0;
-    vec3  camera_forward;  float _pad1;
-    vec3  camera_up;       float _pad2;
-    vec3  camera_right;    float _pad3;
-    float time;
-    float delta_time;
-} frame;
-
-struct Mesh_Instance_Shader_Data {
-    mat4 transform;
-};
-
 layout(set=3, binding=0, scalar) readonly buffer Mesh_Instance_Data {
     Mesh_Instance_Shader_Data array[];
 } mesh_instances;
-
-struct Mesh_Section_Shader_Data {
-    int mesh_instance_offset;
-    int mesh_instance_count;
-    int material;
-};
 
 layout(set=4, binding=0, scalar) readonly buffer Mesh_Section_Data {
     Mesh_Section_Shader_Data array[];

@@ -6,6 +6,7 @@
 
 // -- sections --
 // Constants
+// Transform
 // Direction & Orientation
 // Smoothing
 // Clamp
@@ -78,6 +79,18 @@ VectorTypes :: Type.[Vector2, Vector3, Vector4, Vector2d, Quaternion];  // Used 
 Vector2Types :: Type.[Vector2, Vector2i, Vector2d];
 Vector3Types :: Type.[Vector3, Vector3i];
 VectorAndFloatTypes :: Type.[Vector2, Vector3, Vector4, Vector2d, Quaternion, float32, float64];  // Used for type restriction in normalize().
+
+// -----------------------------------------------------------------------------------
+// ------------------------------------------------------------------------ :Transform
+
+make_transform_matrix :: (position: Vector3, orientation: Quaternion, scale: Vector3) -> Matrix4 {
+    matrix: Matrix4;
+    matrix = make_translation_matrix4(position);
+    matrix = rotate(matrix, orientation);
+    scale_mat := make_scale_matrix4(scale);
+    matrix *= scale_mat;
+    return matrix;
+}
 
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------- :Direction & Orientation

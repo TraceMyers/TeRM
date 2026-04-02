@@ -512,12 +512,13 @@ def extract_joints(arm, bufs):
         return []
     bones = list(arm.data.bones)
     bi = {b.name: i for i, b in enumerate(bones)}
+    world = arm.matrix_world
     joints = []
     for b in bones:
         par = bi[b.parent.name] if b.parent else -1
-        inv = mat4_columns(b.matrix_local.inverted())
+        inv = mat4_columns((world @ b.matrix_local).inverted())
         lm = (b.parent.matrix_local.inverted() @ b.matrix_local
-               if b.parent else b.matrix_local)
+               if b.parent else world @ b.matrix_local)
         loc, rot, scl = lm.decompose()
         joints.append(dict(
             name_buf=bufs.string(b.name), parent=par, inv_bind=inv,
@@ -556,13 +557,14 @@ def extract_anims(arm, bufs):
                            for kf in fc.keyframe_points) else 1)
 
         xforms = []
+        world = arm.matrix_world
         for fr in frames:
             bpy.context.scene.frame_set(int(fr))
             bpy.context.view_layer.update()
             for bone in bones:
                 pb = arm.pose.bones[bone.name]
                 lm = (pb.parent.matrix.inverted() @ pb.matrix
-                       if pb.parent else pb.matrix)
+                       if pb.parent else world @ pb.matrix)
                 loc, rot, scl = lm.decompose()
                 xforms.append((loc.x, loc.y, loc.z,
                                 rot.x, rot.y, rot.z, rot.w,

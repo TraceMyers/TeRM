@@ -308,17 +308,21 @@ Skeleton :: struct {
     animations: []Skeletal_Animation;
 }
 
+// todo: no frame rate encoded. 
+// todo: when/how is interpolate set in the exporter?
+// todo: this export method is just flattening it rather than keyframing. super inefficient.
 Skeletal_Animation :: struct {
-    name:          string;
-    interpolate:   bool;  // if true, translation and scale = lerp, rotation = slerp; otherwise, teleport
-    timestamps:    []float32;
-    transforms:    []Joint_Transform; // joint_count * timestamps.count
+    name:              string;
+    interpolate:       bool;  // if true, translation and scale = lerp, rotation = slerp; otherwise, teleport
+    timestamps:        []float32;
+    transforms:        []Joint_Transform; // joint_count * timestamps.count
 }
 
 Skeletal_Pose :: struct {
     skeleton:        *Skeleton;
+    allocation:      *u8;
     local_joints:    []Joint_Transform;
-    world_joints:    []Matrix4;    // local accumulated up the hierarchy
+    model_joints:    []Matrix4;    // local accumulated up the hierarchy
     skinning_joints: []Matrix4;    // world * inverse_bind_pose, uploaded to gpu
 }
 
@@ -561,7 +565,10 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
             read_mesh_skinned_vertex(v, file, *pos);
         }
     case .JOINT_TRANSFORM;
-        bytes = xx,force make_static_array(Joint_Transform, count);
+        assert(size_of_one_item == size_of(Joint_Transform));
+        bytes = xx,force ifx self_allocation
+            then allocate_self_array(Joint_Transform, count)
+            else make_static_array(Joint_Transform, count);
         transforms := cast,force([]Joint_Transform) bytes;
         for *t : transforms {
             read_joint_transform(t, file, *pos);
@@ -573,6 +580,8 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
     return bytes, type;
 }
 
+#load "animation.jai";
+
 #import "Basic";
 #import "File";
 #import "Math";
@@ -582,6 +591,7 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
 #import "TeRM/TeRM_Scope";
 #import "TeRM/TeRM_Metaprogram";
 #import "TeRM/TeRM_Array";
+#import "TeRM/TeRM_Math";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

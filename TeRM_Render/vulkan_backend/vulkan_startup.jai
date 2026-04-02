@@ -884,6 +884,10 @@ load_assets :: () -> bool {
                 section.material.user_data = xx allocate_material(*section.material);
             }
 
+            if found_skinned_mesh_section {
+
+            }
+
             ref.index = xx (meshes.count - 1);
             render_log("succeeded loading mesh at %", ref.path);
         } else {

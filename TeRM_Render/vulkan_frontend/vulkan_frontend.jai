@@ -78,6 +78,7 @@ Renderer :: struct {
         opaque_mesh_pipeline_layout: VkPipelineLayout;
         opaque_mesh_pipeline: VkPipeline;
 
+        opaque_skinned_mesh_pipeline_layout: VkPipelineLayout;
         opaque_skinned_mesh_pipeline: VkPipeline;
 
         particle_draws: [..]Billboard_Instance;
@@ -109,6 +110,7 @@ Renderer :: struct {
 MAX_MATERIALS :: 1024;
 MAX_STATIC_MESHES :: 128_000;
 MAX_SKINNED_MESHES :: 64_000;
+MAX_SKINNING_JOINTS :: MAX_SKINNED_MESHES * 8;
 
 GPU_Material :: struct {
     albedo_factor: Vector4;
@@ -137,7 +139,7 @@ Mesh_Instance_Shader_Data :: struct {
 
 Skinned_Mesh_Instance_Shader_Data :: struct {
     transform: Matrix4;
-    joint_transform_offset: s32;
+    joint_offset: s32;
 };
 
 // this is on the per-draw level
@@ -147,12 +149,19 @@ Mesh_Section_Shader_Data :: struct {
     material: s32;
 }
 
-Mesh_Draw :: struct {
+Static_Mesh_Draw :: struct {
     position: Vector3;
     orientation: Quaternion;
     scale: Vector3;
     ref: Mesh_Ref;
 }
+
+Mesh_Draw :: struct {
+    using static_draw: Static_Mesh_Draw;
+    animation_index: s32   = -1;
+    animation_time:  float = 0;
+}
+Skinned_Mesh_Draw :: Mesh_Draw;
 
 Particle_Draw :: struct {
     position: Vector3;
@@ -228,10 +237,10 @@ Graphics_API_Version :: struct {
     patch: u32;
 }
 
-DEFAULT_BUFFER_HEAP_SIZE : int : 32  * 1024 * 1024;
+DEFAULT_BUFFER_HEAP_SIZE : int :  16 * 1024 * 1024;
 DEFAULT_IMAGE_HEAP_SIZE  : int : 128 * 1024 * 1024;
-VERTEX_BUFFER_SIZE       : int : 96 * 1024 * 1024;
-INDEX_BUFFER_SIZE        : int : 32 * 1024 * 1024;
+VERTEX_BUFFER_SIZE       : int :  96 * 1024 * 1024;
+INDEX_BUFFER_SIZE        : int :  32 * 1024 * 1024;
 
 GPU_Heap_Type :: enum u8 {
     DEVICE_LOCAL_BUFFER;
@@ -375,6 +384,9 @@ Graphics_Frame :: struct {
 
     skinned_mesh_sections_shader_data_descriptor_set: VkDescriptorSet;
     skinned_mesh_sections_shader_data: GPU_Buffer;
+
+    skinning_joints_buffer_descriptor_set: VkDescriptorSet;
+    skinning_joints_buffer: GPU_Buffer;
 
     opaque_mesh_draw_commands_descriptor_set: VkDescriptorSet;
     opaque_mesh_draw_commands: GPU_Buffer;

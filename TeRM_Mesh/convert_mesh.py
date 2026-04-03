@@ -56,7 +56,7 @@ import io
 def action_fcurves(action):
     """Return fcurves from an Action, compatible with Blender 4.4+ layered actions."""
     if hasattr(action, 'fcurves'):
-        return action_fcurves(action)
+        return action.fcurves
     curves = []
     for layer in action.layers:
         for strip in layer.strips:
@@ -81,9 +81,9 @@ def pad4(data):
     return data + b'\x00' * ((4 - r) % 4) if r else data
 
 
-def mat4_columns(m):
-    """Blender Matrix -> 16 floats in column-major order."""
-    return [m[r][c] for c in range(4) for r in range(4)]
+def mat4_rows(m):
+    """Blender Matrix -> 16 floats in row-major order (matches Jai Matrix4 layout)."""
+    return [m[r][c] for r in range(4) for c in range(4)]
 
 
 # ---- Buffer management ----
@@ -424,6 +424,13 @@ def loop_color(mesh, li):
 # ---- Mesh section extraction ----
 
 def extract_sections(mesh_obj, arm_obj, bufs):
+    # Set armature to rest pose so the evaluated mesh gives bind-pose
+    # vertex positions (not deformed by the current animation frame).
+    if arm_obj:
+        old_pose_position = arm_obj.data.pose_position
+        arm_obj.data.pose_position = 'REST'
+        bpy.context.view_layer.update()
+
     dg = bpy.context.evaluated_depsgraph_get()
     eo = mesh_obj.evaluated_get(dg)
     me = eo.to_mesh()
@@ -502,6 +509,11 @@ def extract_sections(mesh_obj, arm_obj, bufs):
                              mat=process_mat(mat, me.uv_layers, bufs)))
 
     eo.to_mesh_clear()
+
+    if arm_obj:
+        arm_obj.data.pose_position = old_pose_position
+        bpy.context.view_layer.update()
+
     return sections
 
 
@@ -516,7 +528,7 @@ def extract_joints(arm, bufs):
     joints = []
     for b in bones:
         par = bi[b.parent.name] if b.parent else -1
-        inv = mat4_columns((world @ b.matrix_local).inverted())
+        inv = mat4_rows((world @ b.matrix_local).inverted())
         lm = (b.parent.matrix_local.inverted() @ b.matrix_local
                if b.parent else world @ b.matrix_local)
         loc, rot, scl = lm.decompose()

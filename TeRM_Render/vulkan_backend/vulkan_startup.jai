@@ -544,7 +544,7 @@ create_default_pipelines :: () -> bool {
     }
     {
         build_info: Graphics_Pipeline_Build_Info;
-        build_info.pipeline_layout = opaque_mesh_pipeline_layout;
+        build_info.pipeline_layout = opaque_skinned_mesh_pipeline_layout;
         make_default_vertex_fragment_pipeline_build_info(
             *build_info, "skinned_mesh_vert", "mesh_frag", Skinned_Mesh_Vertex
         );
@@ -596,6 +596,28 @@ create_default_pipeline_layouts :: () -> bool {
         };
 
         if !validate(vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *opaque_mesh_pipeline_layout), "failed to create mesh pipeline layout") {
+            return false;
+        }
+    }
+    {
+        // 3 = mesh transforms
+        // 4 = mesh instances
+        // 5 = skinning joints
+        descriptor_set_layouts := VkDescriptorSetLayout.[
+            textures_descriptor_set_layout,
+            storage_buffer_descriptor_set_layout,
+            uniform_buffer_descriptor_set_layout,
+            storage_buffer_descriptor_set_layout,
+            storage_buffer_descriptor_set_layout,
+            storage_buffer_descriptor_set_layout
+        ];
+
+        create_pipeline_layout := VkPipelineLayoutCreateInfo.{
+            setLayoutCount = xx descriptor_set_layouts.count,
+            pSetLayouts = descriptor_set_layouts.data
+        };
+
+        if !validate(vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *opaque_skinned_mesh_pipeline_layout), "failed to create skinned mesh pipeline layout") {
             return false;
         }
     }
@@ -714,6 +736,13 @@ create_descriptors :: () -> bool {
             size_of(Mesh_Section_Shader_Data) * MAX_SKINNED_MESHES * 8
         );
 
+        create_gpu_storage_buffer(
+            descriptor_pool,
+            *frame.skinning_joints_buffer_descriptor_set,
+            *frame.skinning_joints_buffer,
+            size_of(Matrix4) * MAX_SKINNING_JOINTS
+        );
+
         max_billboard_instance_count := 100_000;
         create_gpu_storage_buffer(
             descriptor_pool, 
@@ -809,10 +838,18 @@ load_assets :: () -> bool {
 
     upload_texture :: (using tex: *Texture, mesh: *Mesh) {
         if local_buffer != -1 {
-            sampler := get_or_add_sampler(min_filter, mag_filter, horizontal_wrap, vertical_wrap);
             buffer := *mesh.texture_buffers[local_buffer];
+
+            // todo: texture buffer sharing with filtering per-texture
+            if buffer.gpu_allocation != -1 {
+                global_buffer = buffer.gpu_allocation;
+                return;
+            }
+
+            sampler := get_or_add_sampler(min_filter, mag_filter, horizontal_wrap, vertical_wrap);
+
             // assuming all textures are unique -> adding one buffer per texture
-            assert(buffer.gpu_allocation == -1);
+            // assert(buffer.gpu_allocation == -1);
 
             buffer.gpu_allocation = add_gpu_image_for_sampling(buffer.cpu_allocation.data, buffer.width, buffer.height, sampler).pool_index;
             global_buffer = buffer.gpu_allocation;
@@ -869,6 +906,22 @@ load_assets :: () -> bool {
                         assert(cpu_allocation.skinned.count == count);
                         // all sections must be either static or skinned, for simplicity. renderer requires it.
                         assert(!found_static_mesh_section);
+
+                        // forcing normalization of skinning weights
+                        for *vertex : cpu_allocation.skinned {
+                            sum := 0.0;
+                            for *weight : vertex.weights {
+                                weight.* = max(weight.*, 0);
+                                sum += weight.*;
+                            }
+                            if sum > 0 {
+                                inv_sum := 1.0 / sum;
+                                for *weight : vertex.weights {
+                                    weight.* *= inv_sum;
+                                }
+                            }
+                        }
+
                         create_gpu_skinned_vertex_buffer(*gpu_allocation, cpu_allocation.skinned);
                         found_skinned_mesh_section = true;
                     }
@@ -882,10 +935,6 @@ load_assets :: () -> bool {
                 // todo: the material is stored twice. this is annoying. fix it!
                 // also index type misalignment
                 section.material.user_data = xx allocate_material(*section.material);
-            }
-
-            if found_skinned_mesh_section {
-
             }
 
             ref.index = xx (meshes.count - 1);

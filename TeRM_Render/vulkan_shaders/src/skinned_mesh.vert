@@ -22,14 +22,35 @@ layout(set=4, binding=0, scalar) readonly buffer Mesh_Section_Data {
     Mesh_Section_Shader_Data array[];
 } mesh_sections;
 
+layout(set=5, binding=0, scalar) readonly buffer Joint_Data {
+    mat4 array[];
+} skinning_joints;
+
 void main() {
     Mesh_Section_Shader_Data mesh_section = mesh_sections.array[gl_DrawID];
     int mesh_instance_index = mesh_section.mesh_instance_offset + gl_InstanceIndex;
     Skinned_Mesh_Instance_Shader_Data mesh_inst = mesh_instances.array[mesh_instance_index];
 
+    vec4 homogenous_position = vec4(in_position, 1.0);
+    int joint_offset = mesh_inst.joint_transform_offset;
+
+    mat4 skinning_mat_a = skinning_joints.array[in_joints[0] + joint_offset];
+    vec4 skinned_position_a = (homogenous_position * skinning_mat_a) * in_weights[0];
+
+    mat4 skinning_mat_b = skinning_joints.array[in_joints[1] + joint_offset];
+    vec4 skinned_position_b = (homogenous_position * skinning_mat_b) * in_weights[1];
+
+    mat4 skinning_mat_c = skinning_joints.array[in_joints[2] + joint_offset];
+    vec4 skinned_position_c = (homogenous_position * skinning_mat_c) * in_weights[2];
+
+    mat4 skinning_mat_d = skinning_joints.array[in_joints[3] + joint_offset];
+    vec4 skinned_position_d = (homogenous_position * skinning_mat_d) * in_weights[3];
+
+    vec4 skinned_position = skinned_position_a + skinned_position_b + skinned_position_c + skinned_position_d;
+
     mat4 model = mesh_inst.transform;
 
-    gl_Position = vec4(in_position, 1.0) * model * frame.view_projection;
+    gl_Position = skinned_position * model * frame.view_projection;
 
     // generating the orthonormal axes of this triangle in world space
     vec3 T = normalize(vec3(vec4(in_tangent.xyz, 0.0) * model));

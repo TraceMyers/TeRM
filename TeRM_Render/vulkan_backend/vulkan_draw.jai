@@ -26,6 +26,8 @@ draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, draws: []M
         gpu_sections_descriptor_set := *current_frame.skinned_mesh_sections_shader_data_descriptor_set;
         gpu_instances_shader_data := *current_frame.skinned_mesh_instances_shader_data;
         gpu_sections_shader_data := *current_frame.skinned_mesh_sections_shader_data;
+        gpu_skinning_joints := *current_frame.skinning_joints_buffer;
+        gpu_skinning_joints_descriptor_set := *current_frame.skinning_joints_buffer_descriptor_set;
         gpu_draw_commands := *current_frame.opaque_skinned_mesh_draw_commands;
         pipeline := opaque_skinned_mesh_pipeline;
         vbo := get_skinned_vbo();
@@ -55,6 +57,10 @@ draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, draws: []M
             cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 4, 1, gpu_sections_descriptor_set, 0, null
         );
 
+        #if skinned_meshes {
+            vkCmdBindDescriptorSets(cmd, .GRAPHICS, opaque_skinned_mesh_pipeline_layout, 5, 1, gpu_skinning_joints_descriptor_set, 0, null);
+        }
+
         vkCmdBindIndexBuffer(cmd, get_ibo(), 0, .UINT32);
         vbo_offset: u64;
         vkCmdBindVertexBuffers(cmd, 0, 1, *vbo, *vbo_offset);
@@ -62,6 +68,9 @@ draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, draws: []M
 
         mesh_instances := make_static_array(instance_type, draws.count,, temp);
         mesh_sections  := make_dynamic_array(Mesh_Section_Shader_Data, draws.count*8,, temp);
+        #if skinned_meshes {
+            skinning_joints := make_dynamic_array(Matrix4, draws.count*96,, temp);
+        }
 
         instances_begin_index: int = 0;
         instances_count:       int = 1;
@@ -74,11 +83,27 @@ draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, draws: []M
 
         for 1..draws.count {
             prev_draw  := *draws[it-1];
+
             prev_transform   := *mesh_instances[it-1].transform;
             prev_transform.*  = make_translation_matrix4(prev_draw.position);
             prev_transform.*  = rotate(prev_transform.*, prev_draw.orientation);
             scale := make_scale_matrix4(prev_draw.scale);
             prev_transform.* *= scale;
+
+            #if skinned_meshes {
+                mesh_instances[it-1].joint_offset = xx skinning_joints.count;
+
+                mesh      := *meshes[prev_draw.ref.index];
+                skeleton  := *mesh.skeleton;
+                assert(skeleton.joints.count > 0);
+
+                // todo: only calculate pose when it wants to update.
+                // for that, need an animation instance type.
+                pose: Skeletal_Pose;
+                make_pose(*pose, skeleton, prev_draw.animation_index, prev_draw.animation_time,, temp);
+
+                array_append(*skinning_joints, pose.skinning_joints);
+            }
 
             if it == draws.count {
                 flush_draws = true;
@@ -133,6 +158,10 @@ draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, draws: []M
         copy_to_gpu_buffer(gpu_instances_shader_data, mesh_instances);
         copy_to_gpu_buffer(gpu_sections_shader_data,  mesh_sections);
         copy_to_gpu_buffer(gpu_draw_commands, mesh_draw_commands);
+
+        #if skinned_meshes {
+            copy_to_gpu_buffer(gpu_skinning_joints, skinning_joints);
+        }
 
         draw_command_buffer := gpu_heap_pool[gpu_draw_commands.source_heap].buffer;
 

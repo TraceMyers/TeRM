@@ -44,6 +44,11 @@ load_mesh :: (path: string) -> Mesh, bool {
         pos = mesh_sections_header.offset_to_block;
 
         for *section : mesh.sections {
+            section_name_pos := read_s32(file, *pos);
+            section_name, section_name_type := alloc_or_look_up_buffer(file, section_name_pos, true);
+            assert(section_name_type == .BYTE, "incorrect section type: %", section_name_type);
+            section.name = string.{section_name.count, section_name.data};
+
             ibuf_pos := read_s32(file, *pos);
             index_buffer, index_buffer_type := alloc_or_look_up_buffer(file, ibuf_pos);
 
@@ -168,6 +173,7 @@ load_mesh :: (path: string) -> Mesh, bool {
 
     // layer 2
     for *section : mesh.sections {
+        move_pointer(xx *section.name.data, old_allocation, new_allocation);
         move_pointer(xx *section.material.name.data, old_allocation, new_allocation);
     }
     for *joint : mesh.skeleton.joints {
@@ -247,6 +253,7 @@ Mesh :: struct {
 }
 
 Mesh_Section :: struct {
+    name: string;
     indices:  Mesh_Index_Buffer;
     vertices: Mesh_Vertex_Buffer;
     material: Material;

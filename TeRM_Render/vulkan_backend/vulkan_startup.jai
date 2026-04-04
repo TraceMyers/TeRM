@@ -836,7 +836,7 @@ initialize_allocators :: () -> bool {
 load_assets :: () -> bool {
     using context.renderer;
 
-    upload_texture :: (using tex: *Texture, mesh: *Mesh) {
+    upload_texture :: (using tex: *Texture, mesh: *Mesh, counter: *int) {
         if local_buffer != -1 {
             buffer := *mesh.texture_buffers[local_buffer];
 
@@ -845,6 +845,8 @@ load_assets :: () -> bool {
                 global_buffer = buffer.gpu_allocation;
                 return;
             }
+
+            counter.* += 1;
 
             sampler := get_or_add_sampler(min_filter, mag_filter, horizontal_wrap, vertical_wrap);
 
@@ -871,6 +873,8 @@ load_assets :: () -> bool {
             for *buf : mesh_in_array.texture_buffers {
                 buf.gpu_allocation = -1;
             }
+
+            texture_counter: int;
 
             found_static_mesh_section: bool;
             found_skinned_mesh_section: bool;
@@ -927,10 +931,18 @@ load_assets :: () -> bool {
                     }
                 }
 
-                upload_texture(*section.material.albedo_texture, mesh_in_array);
-                upload_texture(*section.material.normal_texture, mesh_in_array);
-                upload_texture(*section.material.emissive_texture, mesh_in_array);
-                upload_texture(*section.material.orm_texture, mesh_in_array);
+                upload_texture(*section.material.albedo_texture, mesh_in_array, *texture_counter);
+                upload_texture(*section.material.normal_texture, mesh_in_array, *texture_counter);
+                upload_texture(*section.material.emissive_texture, mesh_in_array, *texture_counter);
+                upload_texture(*section.material.orm_texture, mesh_in_array, *texture_counter);
+
+                // log("material: %", section.material.name);
+                // log("albedo index: %", section.material.albedo_uv);
+                // log("metallic index: %", section.material.metallic_uv);
+                // log("roughness index: %", section.material.roughness_uv);
+                // log("normal index: %", section.material.normal_uv);
+                // log("occlusion index: %", section.material.occlusion_uv);
+                // log("emissive index: %", section.material.emissive_uv);
 
                 // todo: the material is stored twice. this is annoying. fix it!
                 // also index type misalignment

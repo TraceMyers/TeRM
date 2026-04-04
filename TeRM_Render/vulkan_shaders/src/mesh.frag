@@ -17,6 +17,12 @@ void main() {
         color = mat.albedo_factor * in_color;
     }
 
+    // todo: alt non-opaque/masked shader with parametric cutoff and pipeline has blending. use only
+    // on sections that call for it
+    if (color.a < 0.5) {
+        discard;
+    }
+
     vec3 map_normal;
 
     if (mat.normal_tex != -1) {

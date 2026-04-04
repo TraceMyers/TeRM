@@ -66,7 +66,7 @@ def action_fcurves(action):
 
 
 HEADER_SIZE = 56
-SECTION_FILE_SIZE = 164
+SECTION_FILE_SIZE = 168
 ANIM_FILE_SIZE = 16
 JOINT_FILE_SIZE = 112
 
@@ -300,7 +300,7 @@ def merge_orm(occ, rough, met, bufs):
 def process_mat(mat, uv_layers, bufs):
     r = dict(
         name_buf=bufs.string(mat.name if mat else "default"),
-        alpha_mode=0, uv=[0] * 6, alpha_cutoff=0.0,
+        alpha_mode=0, uv=[0] * 6, alpha_cutoff=0.5,
         albedo_f=[1.0, 0.0, 1.0, 1.0], met_f=0.0, rough_f=0.5,
         emit_f=[0.0, 0.0, 0.0, 1.0],
         albedo_t=(-1, 0, 0, 2, 2), normal_t=(-1, 0, 0, 2, 2),
@@ -321,6 +321,7 @@ def process_mat(mat, uv_layers, bufs):
             r['alpha_cutoff'] = getattr(mat, 'alpha_threshold', 0.5)
         else:
             r['alpha_mode'] = 2
+            r['alpha_cutoff'] = 0.0
 
     # Albedo
     bc_in = bsdf.inputs.get('Base Color')
@@ -505,7 +506,7 @@ def extract_sections(mesh_obj, arm_obj, bufs):
         ib = (bufs.idx16(idxs) if len(verts) <= 65535
               else bufs.idx32(idxs))
         mat = me.materials[mi] if mi < len(me.materials) else None
-        sections.append(dict(ib=ib, vb=vb,
+        sections.append(dict(name_buf=bufs.string(mesh_obj.name), ib=ib, vb=vb,
                              mat=process_mat(mat, me.uv_layers, bufs)))
 
     eo.to_mesh_clear()
@@ -616,8 +617,9 @@ def write_trm(path, sections, joints, anims, bufs):
         # Mesh sections
         for s in sections:
             m = s['mat']
-            f.write(struct.pack('<iii',
-                                bo[s['ib']], bo[s['vb']], bo[m['name_buf']]))
+            f.write(struct.pack('<iiii',
+                                bo[s['name_buf']], bo[s['ib']], bo[s['vb']],
+                                bo[m['name_buf']]))
             f.write(struct.pack('<i', m['alpha_mode']))
             for u in m['uv']:
                 f.write(struct.pack('<i', u))
@@ -852,6 +854,7 @@ if __name__ == '__main__':
 
 # a 'mesh section' looks like this:
 
+# offset to buffer data for name
 # offset to buffer data for indices
 # offset to buffer data for vertices
 # offset to buffer data for material name

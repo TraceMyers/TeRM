@@ -26,8 +26,14 @@ draw_skinned_mesh :: inline (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
     array_add(*renderer.skinned_mesh_draws, draw);
 }
 
-draw_skinned_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, animation_index : s32 = -1, animation_time: float32 = 0) {
+draw_skinned_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, blends: []Skeletal_Animation_Blend) {
+    assert(blends.count <= Mesh_Draw.blends.count);
     mesh := *renderer.meshes[ref.index];
     assert(mesh.skeleton.joints.count != 0);
-    array_add(*renderer.skinned_mesh_draws, {static_draw={position, orientation, {scale,scale,scale}, ref}, animation_index=animation_index, animation_time=animation_time});
+    new_draw := array_add(*renderer.skinned_mesh_draws);
+    new_draw.* = {static_draw={position, orientation, {scale,scale,scale}, ref}};
+    for blends {
+        new_draw.blends[it_index] = blends[it_index];
+    }
+    new_draw.blend_count = xx blends.count;
 }

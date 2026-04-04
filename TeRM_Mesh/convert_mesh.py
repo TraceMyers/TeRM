@@ -6,8 +6,8 @@
 # leverage blender to convert other mesh file formats to the term mesh file format
 # for format specs / ai tool codegen instructions, see end of file
 
-# supported extensions of input files: 
-# gltf, glb, fbx, obj, dae, stl, ply, usd, usda, usdc, usdz, abc
+# supported extensions of input files:
+# blend, gltf, glb, fbx, obj, dae, stl, ply, usd, usda, usdc, usdz, abc
 
 import sys
 import importlib
@@ -554,6 +554,17 @@ def extract_anims(arm, bufs):
         for strip in track.strips:
             if strip.action:
                 actions.add(strip.action)
+    # Also pick up any actions in the file that target this armature's bones,
+    # e.g. from .blend files where actions are stored with fake users but not
+    # pushed to NLA tracks.
+    bone_prefix = 'pose.bones["'
+    for act in bpy.data.actions:
+        if act in actions:
+            continue
+        for fc in action_fcurves(act):
+            if fc.data_path.startswith(bone_prefix):
+                actions.add(act)
+                break
     orig_action = arm.animation_data.action
     anims = []
 
@@ -676,12 +687,15 @@ def main():
     if not out.lower().endswith('.trm'):
         fatal("Output must have .trm extension")
 
-    bpy.ops.wm.read_homefile(use_empty=True)
-    # Ensure scene is truly empty — some Blender versions/configs
-    # don't respect use_empty=True, leaving default objects behind.
-    for obj in list(bpy.data.objects):
-        bpy.data.objects.remove(obj, do_unlink=True)
-    do_import(inp)
+    if os.path.splitext(inp)[1].lower() == '.blend':
+        bpy.ops.wm.open_mainfile(filepath=os.path.abspath(inp))
+    else:
+        bpy.ops.wm.read_homefile(use_empty=True)
+        # Ensure scene is truly empty — some Blender versions/configs
+        # don't respect use_empty=True, leaving default objects behind.
+        for obj in list(bpy.data.objects):
+            bpy.data.objects.remove(obj, do_unlink=True)
+        do_import(inp)
 
     mesh_objs, arm_obj = find_objects()
 

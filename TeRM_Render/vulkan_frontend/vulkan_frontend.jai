@@ -156,10 +156,17 @@ Static_Mesh_Draw :: struct {
     ref: Mesh_Ref;
 }
 
+get_animation_blends :: inline (draw: *Mesh_Draw) -> []Skeletal_Animation_Blend {
+    blends: []Skeletal_Animation_Blend = ---; 
+    blends.data  = draw.blends.data;
+    blends.count = draw.blend_count;
+    return blends;
+}
+
 Mesh_Draw :: struct {
     using static_draw: Static_Mesh_Draw;
-    animation_index: s32   = -1;
-    animation_time:  float = 0;
+    blends: [3]Skeletal_Animation_Blend;
+    blend_count: s32;
 }
 Skinned_Mesh_Draw :: Mesh_Draw;
 

@@ -100,7 +100,7 @@ draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, draws: []M
                 // todo: only calculate pose when it wants to update.
                 // for that, need an animation instance type.
                 pose: Skeletal_Pose;
-                make_pose(*pose, skeleton, prev_draw.animation_index, prev_draw.animation_time,, temp);
+                make_pose(*pose, skeleton, get_animation_blends(prev_draw),, temp);
 
                 array_append(*skinning_joints, pose.skinning_joints);
             }

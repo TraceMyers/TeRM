@@ -101,7 +101,7 @@ to_color4b :: inline (hex_color_code: u32) -> Color4b {
     byte_color.g = ((hex_color_code & 0x00ff00) >>  8).(u8);
     byte_color.b = ((hex_color_code & 0x0000ff) >>  0).(u8);
     byte_color.a = 255;
-    return byte_color;   
+    return byte_color;
 }
 
 to_color4f :: inline (hex_color_code: u32) -> Color4f {

@@ -90,7 +90,7 @@ begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
         // resolveImageLayout: VkImageLayout;
         loadOp = .CLEAR,
         storeOp = .STORE,
-        clearValue = {color={_float32=COLOR4F_BRIGHT_PURPLE.array}}
+        clearValue = {color={_float32=COLOR4F_BLACK.array}}
     };
 
     depth_attachment := VkRenderingAttachmentInfo.{
@@ -535,6 +535,13 @@ create_gpu_skinned_vertex_buffer :: (buffer: *GPU_Buffer, vertices: []Skinned_Me
 create_gpu_index_buffer :: (buffer: *GPU_Buffer, indices: []u32) {
     buffer.* = gpu_linear_allocate(.INDEX_BUFFER, size_of(u32) * indices.count, .INDEX_BUFFER_BIT);
     copy_to_gpu_buffer(buffer, indices);
+}
+
+bind_vertex_buffer :: (cmd: VkCommandBuffer, gpu_buffer: GPU_Buffer) {
+    heap   := *context.renderer.gpu_heap_pool[gpu_buffer.source_heap];
+    vk_buffer := heap.buffer;
+    offset_u64 : u64 = xx gpu_buffer.source_heap_offset;
+    vkCmdBindVertexBuffers(cmd, 0, 1, *vk_buffer, *offset_u64);
 }
 
 create_gpu_buffer :: (size: int, usage_flags: VkBufferUsageFlags, memory_flags: VkMemoryPropertyFlags) -> GPU_Buffer {

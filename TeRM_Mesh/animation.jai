@@ -105,6 +105,7 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
                 local_joint.rotation = rotation * anim.blend_alpha;
             } else {
                 rotation_sign := dot(local_joint.rotation, rotation);
+                // making sure rotation blends don't take the long way around
                 if rotation_sign < 0 {
                     local_joint.rotation -= rotation * anim.blend_alpha;
                 } else {

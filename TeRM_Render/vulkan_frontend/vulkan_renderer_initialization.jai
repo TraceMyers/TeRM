@@ -54,7 +54,7 @@ HERE,
         if !populate_shader_data() then return false;
     }
 
-    pool_init(*gpu_heap_pool, 32,                true);
+    pool_init(*gpu_heap_pool, MAX_GPU_HEAPS,     true);
     pool_init(*image_pool,    max_texture_count, true);
     pool_init(*materials,     MAX_MATERIALS,     true);
     

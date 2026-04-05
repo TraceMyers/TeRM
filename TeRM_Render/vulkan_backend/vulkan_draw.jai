@@ -2,19 +2,67 @@
 draw_billboard_particles :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame) {
     using context.renderer;
 
-    if particle_draws.count > 0 {
-        quick_sort(particle_draws, draw => -distance_squared(draw.position, context.renderer.camera_position));
+    if particle_draws.count == 0 {
+        return;
+    }
 
-        copy_to_gpu_buffer(*current_frame.billboard_instance_buffer, particle_draws);
-        vkCmdBindDescriptorSets(cmd, .GRAPHICS, billboard_pipeline_layout, 3, 1, *current_frame.billboard_instance_buffer_descriptor_set, 0, null);
+    quick_sort(particle_draws, draw => -distance_squared(draw.position, context.renderer.camera_position));
 
-        vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
-        heap   := *gpu_heap_pool[billboard_vertex_buffer.source_heap];
-        buffer := heap.buffer;
-        offset := billboard_vertex_buffer.source_heap_offset;
-        offset_u64 : u64 = xx billboard_vertex_buffer.source_heap_offset;
-        vkCmdBindVertexBuffers(cmd, 0, 1, *buffer, *offset_u64);
-        vkCmdDraw(cmd, xx billboard_vertices.count, xx particle_draws.count, 0, 0); 
+    copy_to_gpu_buffer(*current_frame.billboard_instance_buffer, particle_draws);
+    vkCmdBindDescriptorSets(cmd, .GRAPHICS, billboard_pipeline_layout, 3, 1, *current_frame.billboard_instance_buffer_descriptor_set, 0, null);
+
+    vkCmdBindPipeline(cmd, .GRAPHICS, billboard_pipeline);
+    bind_vertex_buffer(cmd, billboard_vertex_buffer);
+    vkCmdDraw(cmd, xx billboard_vertices.count, xx particle_draws.count, 0, 0); 
+}
+
+draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame) {
+    using context.renderer;
+
+    if line_draws.count == 0 {
+        return;
+    }
+
+    auto_release_temp();
+
+    vkCmdBindDescriptorSets(cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 3, 1, *current_frame.skinned_mesh_instances_shader_data_descriptor_set, 0, null);
+    vkCmdBindDescriptorSets(cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 4, 1, *current_frame.skinned_mesh_sections_shader_data_descriptor_set, 0, null);
+
+    vkCmdBindPipeline(cmd, .GRAPHICS, opaque_line_pipeline);
+
+    quick_sort(line_draws, draw => draw.width);
+
+    draw_batch := make_dynamic_array(Static_Mesh_Vertex, line_draws.count*2,, temp);
+    batch_width := line_draws[0].width;
+    flush_draws: bool;
+
+    array_add(*draw_batch, {position=line_draws[0].a, color=to_color4f(line_draws[0].color)});
+    array_add(*draw_batch, {position=line_draws[0].b, color=to_color4f(line_draws[0].color)});
+
+    for 1..line_draws.count {
+        if it == line_draws.count || line_draws[it].width != batch_width {
+            flush_draws = true;
+        }
+
+        if flush_draws {
+            vkCmdSetLineWidth(cmd, batch_width);
+            
+            temp_vertices := gpu_linear_allocate(.VERTEX_BUFFER, size_of(Static_Mesh_Vertex) * draw_batch.count, .VERTEX_BUFFER_BIT, true);
+            copy_to_gpu_buffer(*temp_vertices, draw_batch);
+            bind_vertex_buffer(cmd, temp_vertices);
+            vkCmdDraw(cmd, xx draw_batch.count, 1, 0, 0);
+
+            if it == line_draws.count {
+                break;
+            }
+
+            batch_width = line_draws[it].width;
+            array_reset_keeping_memory(*draw_batch);
+            flush_draws = false;
+        }
+
+        array_add(*draw_batch, {position=line_draws[it].a, color=to_color4f(line_draws[it].color)});
+        array_add(*draw_batch, {position=line_draws[it].b, color=to_color4f(line_draws[it].color)});
     }
 }
 
@@ -29,7 +77,13 @@ draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, draws: []M
         gpu_skinning_joints := *current_frame.skinning_joints_buffer;
         gpu_skinning_joints_descriptor_set := *current_frame.skinning_joints_buffer_descriptor_set;
         gpu_draw_commands := *current_frame.opaque_skinned_mesh_draw_commands;
-        pipeline := opaque_skinned_mesh_pipeline;
+        // TODO: only made this transparent for skinning example video
+        pipeline: VkPipeline;
+        if debug_switch {
+            pipeline = transparent_skinned_mesh_pipeline;
+        } else {
+            pipeline = opaque_skinned_mesh_pipeline;
+        }
         vbo := get_skinned_vbo();
         instance_type :: Skinned_Mesh_Instance_Shader_Data;
         vertex_type :: Skinned_Mesh_Vertex;

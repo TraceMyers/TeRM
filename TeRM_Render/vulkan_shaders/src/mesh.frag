@@ -19,9 +19,9 @@ void main() {
 
     // todo: alt non-opaque/masked shader with parametric cutoff and pipeline has blending. use only
     // on sections that call for it
-    if (color.a < 0.5) {
-        discard;
-    }
+    // if (color.a < 0.5) {
+    //     discard;
+    // }
 
     vec3 map_normal;
 

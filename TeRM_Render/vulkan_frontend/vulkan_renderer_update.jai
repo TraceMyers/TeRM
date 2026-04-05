@@ -17,8 +17,9 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     defer array_reset_keeping_memory(*particle_draws);
     defer array_reset_keeping_memory(*static_mesh_draws);
     defer array_reset_keeping_memory(*skinned_mesh_draws);
+    defer array_reset_keeping_memory(*line_draws);
     defer for 0..GPU_HEAP_TYPE_COUNT-1 {
-        gpu_linear_allocator_reset(*current_frame.temp_allocators[it], true);
+        gpu_linear_allocator_reset(*current_frame.temp_allocators[it]);
     }
 
     if !is_window_open(window) || is_window_minimized(window) then return false;
@@ -80,6 +81,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     draw_meshes(cmd, current_frame, static_mesh_draws);
     draw_meshes(cmd, current_frame, skinned_mesh_draws, true);
     draw_billboard_particles(cmd, current_frame);
+    draw_lines(cmd, current_frame);
 
     vkCmdEndRendering(cmd);
 

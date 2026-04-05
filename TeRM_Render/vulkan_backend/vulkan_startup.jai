@@ -539,8 +539,15 @@ create_default_pipelines :: () -> bool {
         make_default_vertex_fragment_pipeline_build_info(
             *build_info, "mesh_vert", "mesh_frag", Static_Mesh_Vertex
         );
+
         build_info.name = "opaque mesh pipeline";
         opaque_mesh_pipeline = build_pipeline(*build_info);
+
+        build_info.name = "transparent mesh pipeline";
+        build_info.depth_stencil.create.depthWriteEnable = VK_FALSE;
+        build_info.color_blend.attachment.blendEnable = VK_TRUE;
+        transparent_mesh_pipeline = build_pipeline(*build_info);
+
     }
     {
         build_info: Graphics_Pipeline_Build_Info;
@@ -548,8 +555,34 @@ create_default_pipelines :: () -> bool {
         make_default_vertex_fragment_pipeline_build_info(
             *build_info, "skinned_mesh_vert", "mesh_frag", Skinned_Mesh_Vertex
         );
-        build_info.name = "skinned opaque mesh pipeline";
+
+        build_info.name = "opaque skinned mesh pipeline";
         opaque_skinned_mesh_pipeline = build_pipeline(*build_info);
+
+        build_info.name = "transparent skinned mesh pipeline";
+        build_info.depth_stencil.create.depthWriteEnable = VK_FALSE;
+        build_info.color_blend.attachment.blendEnable = VK_TRUE;
+        build_info.rasterization.create.cullMode = .FRONT_BIT;
+        transparent_skinned_mesh_pipeline = build_pipeline(*build_info);
+    }
+    {
+        build_info: Graphics_Pipeline_Build_Info;
+        build_info.pipeline_layout = opaque_mesh_pipeline_layout;
+        make_default_vertex_fragment_pipeline_build_info(
+            *build_info, "simple_mesh_vert", "simple_mesh_frag", Static_Mesh_Vertex
+        );
+
+        dynamic_states := VkDynamicState.[.VIEWPORT, .SCISSOR, .LINE_WIDTH]; 
+
+        build_info.name = "opaque line pipeline";
+        build_info.input_assembly.create.topology = .LINE_LIST;
+        build_info.depth_stencil.create.depthTestEnable = VK_FALSE;
+        build_info.depth_stencil.create.depthWriteEnable = VK_FALSE;
+        build_info.dynamic_state.create = {
+            dynamicStateCount = xx dynamic_states.count,
+            pDynamicStates    = dynamic_states.data
+        };
+        opaque_line_pipeline = build_pipeline(*build_info);
     }
     
     render_log("created default pipelines");
@@ -913,6 +946,7 @@ load_assets :: () -> bool {
 
                         // forcing normalization of skinning weights
                         for *vertex : cpu_allocation.skinned {
+                            vertex.color.a = 0.5;
                             sum := 0.0;
                             for *weight : vertex.weights {
                                 weight.* = max(weight.*, 0);

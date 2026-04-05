@@ -20,13 +20,13 @@ draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector
     array_add(*renderer.static_mesh_draws, {static_draw={position, orientation, {scale,scale,scale}, ref}});
 }
 
-draw_skinned_mesh :: inline (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
+draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
     mesh := *renderer.meshes[draw.ref.index];
     assert(mesh.skeleton.joints.count != 0);
     array_add(*renderer.skinned_mesh_draws, draw);
 }
 
-draw_skinned_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, blends: []Skeletal_Animation_Blend) {
+draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, blends: []Skeletal_Animation_Blend) {
     assert(blends.count <= Mesh_Draw.blends.count);
     mesh := *renderer.meshes[ref.index];
     assert(mesh.skeleton.joints.count != 0);
@@ -36,4 +36,8 @@ draw_skinned_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vecto
         new_draw.blends[it_index] = blends[it_index];
     }
     new_draw.blend_count = xx blends.count;
+}
+
+draw_line :: inline (renderer: *Renderer, begin: Vector3, end: Vector3, color: Color4b, width := 1.0) {
+    array_add(*renderer.line_draws, {begin, end, color, width});
 }

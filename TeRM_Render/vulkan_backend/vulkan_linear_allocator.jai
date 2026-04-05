@@ -165,7 +165,7 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type,
 }
 
 // assumes keeping memory. will add a parameter for not if needed
-gpu_linear_allocator_reset :: (allocator: *GPU_Linear_Allocator, temp: bool) {
+gpu_linear_allocator_reset :: (allocator: *GPU_Linear_Allocator) {
     allocator.frontier = 0;
     allocator.frontier_offset = 0;
 }

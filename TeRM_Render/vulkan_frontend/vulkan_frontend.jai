@@ -81,9 +81,16 @@ Renderer :: struct {
         opaque_skinned_mesh_pipeline_layout: VkPipelineLayout;
         opaque_skinned_mesh_pipeline: VkPipeline;
 
+        transparent_mesh_pipeline: VkPipeline;
+        transparent_skinned_mesh_pipeline: VkPipeline;
+        
+        opaque_line_pipeline: VkPipeline;
+        // transparent_line_pipeline: VkPipeline;
+
         particle_draws: [..]Billboard_Instance;
         static_mesh_draws: [..]Mesh_Draw;
         skinned_mesh_draws: [..]Mesh_Draw;
+        line_draws: [..]Line_Draw;
 
         debug_switch: bool;
     };
@@ -111,6 +118,7 @@ MAX_MATERIALS :: 1024;
 MAX_STATIC_MESHES :: 128_000;
 MAX_SKINNED_MESHES :: 64_000;
 MAX_SKINNING_JOINTS :: MAX_SKINNED_MESHES * 8;
+MAX_GPU_HEAPS :: 128;
 
 GPU_Material :: struct {
     albedo_factor: Vector4;
@@ -169,6 +177,13 @@ Mesh_Draw :: struct {
     blend_count: s32;
 }
 Skinned_Mesh_Draw :: Mesh_Draw;
+
+Line_Draw :: struct {
+    a: Vector3;
+    b: Vector3;
+    color: Color4b;
+    width: float;
+}
 
 Particle_Draw :: struct {
     position: Vector3;

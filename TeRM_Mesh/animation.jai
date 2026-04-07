@@ -1,3 +1,5 @@
+MAX_BLENDED_ANIMATIONS_PER_POSE :: 3;
+
 Skeletal_Animation_Blend :: struct {
     animation_index: s32;
     animation_time: float;
@@ -55,7 +57,7 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
 
     next_frame_index: int;
 
-    per_anim: [3]Per_Animation_Data;
+    per_anim: [MAX_BLENDED_ANIMATIONS_PER_POSE]Per_Animation_Data;
     assert(blends.count <= per_anim.count);
 
     for blend : blends {

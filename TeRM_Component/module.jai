@@ -1,220 +1,236 @@
-// todo: write docs
+// a way to store pointers to compact data meant to be iterated over in-order.
+// pass a list of Component_Handler_Declarations to generate the boilerplate procedures
+// as well as the meta-procedures for all entity types to create and destroy all of their components.
+// assumes all entity types cast to a base type. e.g. using #as base: Entity_Base; field in all entities,
+// also assumes you have a runtime type enum mirroring the compile time type.
+// where said type is the type referred to in id_to_entity and entity_to_id.
 
-#module_parameters(
-    user_types : $I/interface Type_Provider_Default = Type_Provider_Default
-) {
-    Type_Provider_Default :: struct {
-        Component_Definition_Type   :: void;
-        Component_Name_Type         :: void;
-        Component_Kind_Type         :: void;
-        Entity_ID_Type              :: void;
-        Component_Index_Type        :: void;
-        component_type_array        :: void;
-        component_definitions       :: void;
-        entity_to_entity_id         :: void;
-        entity_id_to_sentinel       :: void;
-    }
+// example implementation:
+
+// #insert #run generate_component_handlers(
+//    My_Entity_Base,
+//    My_Entity_Type_Enum,
+//    "my_entity_to_id_proc",
+//    "my_id_to_entity_proc",
+//    "my_entity_to_type_enum"
+//    {
+//        My_Entity_Type_Enum.PLAYER_CHARACTER,
+//        Skeletal_Mesh_Instance,
+//        "context.world.skeletal_mesh_instances",
+//        "context.world.skeletal_mesh_instance_ids",
+//        "skeletal_mesh"
+//    },
+//    {
+//        My_Entity_Type_Enum.MONSTER,
+//        Skeletal_Mesh_Instance,
+//        "context.world.skeletal_mesh_instances",
+//        "context.world.skeletal_mesh_instance_ids",
+//        "skeletal_mesh"
+//    },
+//    {
+//        My_Entity_Type_Enum.PARTICLE,
+//        Particle_Transform,
+//        "context.world.particle_transforms",
+//        "context.world.particle_transform_ids",
+//        "transform"
+//    }
+// );
+
+Component_Handler_Declaration :: struct($enum_type: Type) {
+    entity_type: enum_type;
+    component_type: Type;
+    component_array: string; 
+    id_array: string; 
+    path_to_component: string;
 }
 
-#add_context user_component_storage: *Component_Storage;
+generate_component_handlers :: (
+    $entity_base_type: Type,
+    $entity_enum_type: Type,
+    entity_to_id: string, 
+    id_to_entity: string,
+    entity_to_type_enum: string,
+    handlers: ..Component_Handler_Declaration(entity_enum_type)
+) -> string {
+    auto_release_temp();
 
-#load "component.jai";
-#load "collection.jai";
-#load "manage.jai";
-
-initialize_component_module :: (storage: *Component_Storage) {
-    context.user_component_storage = storage;
-    #insert -> string {
-        builder: String_Builder;
-        for 0..enum_highest_value(Component_ID) {
-            print(*builder, 
-#string HERE
-    {
-        array := cast,force(*Component_Array(Component_ID.%)) *context.user_component_storage.arrays[%];
-        array.type_initializer = xx initializer_of(array.component_type);
-    }
-HERE,
-                cast(Component_ID) it, it
-            );
-        }
-        return builder_to_string(*builder);
-    }
-}
-
-component_id_to_type :: inline (id: Component_ID) -> Type {
-    component_name := component_definitions[id].name;
-    return component_types[component_name];
-}
-
-component_id_to_name :: inline (id: Component_ID) -> Component_Name {
-    return component_definitions[id].name;
-}
-
-component_id_to_kind :: inline (id: Component_ID) -> Component_Kind {
-    return component_definitions[id].kind;
-}
-
-component_name_and_kind_to_id :: (name: Component_Name, kind: Component_Kind) -> Component_ID {
-    for def, di : component_definitions {
-        if def.name == name && def.kind == kind {
-            return cast(Component_ID) di;
-        }
-    }
-    return 0xffff; 
-}
-
-get_component_ids :: (kind: Component_Kind) -> []Component_ID {
-    ids := make_dynamic_array(Component_ID, enum_highest_value(Component_ID)+1);
-    for def : component_definitions {
-        if def.kind == kind {
-            array_add(*ids, xx it_index);
-        }
-    }
-    return ids;
-}
-
-get_component_ids :: (name: Component_Name) -> []Component_ID {
-    ids := make_dynamic_array(Component_ID, enum_highest_value(Component_ID)+1);
-    for def : component_definitions {
-        if def.name == name {
-            array_add(*ids, xx it_index);
-        }
-    }
-    return ids;
-}
-
-// represents all data storage for this module. you declare (an) instance(s)
-// anywhere in your program. if you are, say, moving back and forth
-// between worlds with persistent entity data, you would just do this
-// when changing worlds:
-// context.user_component_storage = *world.component_storage;
-Component_Storage :: struct {
-    /* example layout with 3 components:
-
-    character_position_components: Component_Array(.CHARACTER_POSITION);
-    character_velocity_components: Component_Array(.CHARACTER_VELOCITY);
-    monster_position_components:   Component_Array(.MONSTER_POSITION);
-
-    #overlay(character_position_components) arrays: [3]Component_Array_Base; */
-
-    #insert -> string {
-        builder: String_Builder;
-        first_array_name: string;
-
-        // generate all of the typed component arrays
-        for def, di : component_definitions {
-            array_name: string;
-            if def.array_name_override.count != 0 {
-                array_name = def.array_name_override;
-            } else {
-                kind_lower := to_lower(tprint("%", def.kind));
-                name_lower := to_lower(tprint("%", def.name));
-                array_name = tprint("%_%_components", kind_lower, name_lower);
-            }
-            if di == 0 {
-                first_array_name = array_name;
-            }
-            print(*builder, "%: Component_Array(xx %);\n", array_name, di);
-        }
-
-        // while the user program's kind <-> entity mapping doesn't need to be one-to-one
-        // the naming scheme assumes that is true, because it makes the code more readable.
-        // in practice, the user may put multiple component sentinels, each with different kinds,
-        // on one struct, and call that struct an Entity. and, that's fine, but in the language
-        // of this module, an entity is an object of a certain kind, which has certain components.
-        print(*builder, "entity_ids: [%][..]Entity_ID;\n", enum_highest_value(Component_Kind) + 1);
-
-        // per kind, store an array of all entities that have pointers on them. if all entities in the kind
-        // have pointers, the entity_id[kind] array is used instead, and ids_of_entities_with_pointers[kind]
-        // will go unused.
-        print(*builder, "ids_of_entities_with_pointers: [%][..]Entity_ID;\n", enum_highest_value(Component_Kind) + 1);
-
-        // generate the array of untyped component arrays, for using the component arrays
-        // in type agnostic situations.
-        print(*builder, "#overlay(%) arrays: [%]Component_Array_Base;", first_array_name, component_definitions.count);
-
-        return builder_to_string(*builder);
-    }
-}
-
-Component_Array_Base :: struct {
-    untyped_array: [..]u8;
-    id:   Component_ID;
-    name: Component_Name;
-    kind: Component_Kind;
-    type_size: s16;
-    type_initializer: (*void) -> () #no_context;
-}
-
-Component_Array :: struct($in_id: Component_ID) {
-    component_type :: #run component_id_to_type(in_id);
-    component_initializer :: initializer_of(component_type);
-    using #as base := Component_Array_Base.{
-        id   = in_id,
-        name = #run component_definitions[in_id].name,
-        kind = #run component_definitions[in_id].kind,
-        type_size = #run size_of(component_type)
-    };
-    #overlay(base.untyped_array) array: [..]#run component_type;
-}
-
-Component_ID :: enum u16 {
-    #insert -> string {
-        builder: String_Builder;
-        for def : component_definitions {
-            if def.id_name_override.count != 0 {
-                print(*builder, "%;\n", def.id_name_override);
-            } else {
-                print(*builder, "%_%;\n", def.kind, def.name);
-            }
-        }
-        return builder_to_string(*builder);
-    }
-}
-
-#import "Basic";
-#import "Math";
-
-#import "TeRM/TeRM_String";
-#import "TeRM/TeRM_Array";
-#import "TeRM/TeRM_FlagArray";
-#import "TeRM/TeRM_Metaprogram";
-
-COMPONENT_IDS_PER_KIND : [COMPONENT_KIND_COUNT][]Component_ID : #insert -> string {
     builder: String_Builder;
-    print(*builder, ".[\n");
-    for 0..COMPONENT_KIND_COUNT-1 {
-        ids := get_component_ids(cast(Component_Kind) it);
-        print(*builder, ".[");
-        for ids {
-            print(*builder, ".%,\n", it);
-        }
-        print(*builder, "],\n");
+    builder.allocator = temp;
+
+    entity_types_lower := make_dynamic_array(string, 1024,, temp);
+    unique_entity_types := make_dynamic_array(string, 1024,, temp); [..]string;
+    all_type_strings := make_dynamic_array(string, 1024,, temp); [..]string;
+
+    for handlers {
+        type_str := tprint("%", it.entity_type);
+        array_add(*entity_types_lower, to_lower(type_str,, temp));
+        array_add(*all_type_strings, type_str);
+        array_add_if_unique(*unique_entity_types, type_str);
+
+        print(*builder,
+#string HERE
+create_%_% :: (entity: *%) {
+    create_array_component(
+        entity,
+        *%,
+        *%,
+        path_to_component="%",
+        %,
+        %
+    );
+
+}
+
+destroy_%_% :: (entity: *%) {
+    destroy_array_component(
+        entity,
+        *%,
+        *%,
+        path_to_component="%",
+        %,
+        %
+    );
+}
+
+HERE,
+            entity_types_lower[it_index], it.component_type, entity_base_type, it.component_array, it.id_array, it.path_to_component,
+            entity_to_id, id_to_entity,
+            entity_types_lower[it_index], it.component_type, entity_base_type, it.component_array, it.id_array, it.path_to_component,
+            entity_to_id, id_to_entity,
+        );
     }
-    print(*builder, "];\n");
-    return builder_to_string(*builder);
-};
 
-#scope_module
+    print(*builder, 
+#string HERE
+create_array_components :: (entity: *%) {
+    type_enum := %(entity);
+    if type_enum == {
+HERE, 
+        entity_base_type, entity_to_type_enum
+    );
 
-#assert((cast(*Type_Info) user_types.Component_Index_Type).type == .INTEGER);
+    for type : unique_entity_types {
+        print(*builder, "        case .%;\n", type);
+        for handlers {
+            if all_type_strings[it_index] == type {
+                print(*builder, "            create_%_%(entity);\n", entity_types_lower[it_index], it.component_type);
+            }
+        }
+    }
 
-COMPONENT_KIND_COUNT :: #run #run enum_highest_value(user_types.Component_Kind_Type) + 1;
+    print(*builder,
+#string HERE
+    }
+}
 
-store_ids_to_entities_with_pointers: [COMPONENT_KIND_COUNT] enum u8 {
-    DO_NOT_STORE;
-    USE_ENTITY_IDS_ARRAY;
-    USE_IDS_OF_ENTITIES_WITH_POINTERS_ARRAY;
-};
+HERE);
 
-Component_Kind            :: user_types.Component_Kind_Type;
-Component_Name            :: user_types.Component_Name_Type;
-Entity_ID                 :: user_types.Entity_ID_Type;
-Component_Index           :: user_types.Component_Index_Type;
-component_definitions     :: user_types.component_definitions;
-component_types           :: user_types.component_type_array;
-entity_to_entity_id       :: user_types.entity_to_entity_id;
-entity_id_to_sentinel     :: user_types.entity_id_to_sentinel;
 
-// Copyright (c) 2026 Trace Myers
-// Licensed under the MIT License. See LICENSE file in the project root for license information.
+    print(*builder, 
+#string HERE
+destroy_array_components :: (entity: *%) {
+    type_enum := %(entity);
+    if type_enum == {
+HERE, 
+        entity_base_type, entity_to_type_enum
+    );
+
+    for type : unique_entity_types {
+        print(*builder, "        case .%;\n", type);
+        for handlers {
+            if all_type_strings[it_index] == type {
+                print(*builder, "            destroy_%_%(entity);\n", entity_types_lower[it_index], it.component_type);
+            }
+        }
+    }
+
+    print(*builder,
+#string HERE
+    }
+}
+
+HERE);
+
+    out_str := builder_to_string(*builder);
+    print("%", out_str);
+    return out_str;
+}
+
+#scope_file
+
+create_array_component :: (
+    entity: *$entity_type, 
+    components: *[..]$component_type, 
+    ids: *[..]$id_type, 
+    $path_to_component: string, 
+    $entity_to_id: (*entity_type) -> id_type, 
+    $id_to_entity: (id_type) -> *entity_type
+) -> *component_type {
+    assert(components.count == ids.count);
+
+    old_array_pointer := components.data;
+    #insert #run tprint("entity.% = array_add(components);", path_to_component);
+
+    if old_array_pointer != components.data {
+        fix_pointers(entity_type, components, ids, path_to_component, id_to_entity);
+    }
+    array_add(ids, inline entity_to_id(entity));
+    #insert #run tprint("return entity.%", path_to_component);
+}
+
+destroy_array_component :: (
+    entity: *$entity_type, 
+    components: *[..]$component_type, 
+    ids: *[..]$id_type, 
+    realloc_if_using_less_than_proportion := 0.35,
+    remove_free_proportion := 0.75,
+    minimum_allocated := 8,
+    $path_to_component: string, 
+    $entity_to_id: (*entity_type) -> id_type, 
+    id_to_entity: (id_type) -> entity_type
+) {
+    assert(components.count == ids.count);
+
+    #insert #run tprint("component := *entity.%;", path_To_component);
+    #insert #run tprint("entity.% = null;", path_to_component);
+
+    component_index := component - components.data;
+    entity_id := entity_to_id(entity);
+    assert(ids[component_index] == entity_id);
+    
+    if component_index != components.count - 1 {
+        final_entity := inline id_to_entity(ids[components.count-1]);
+        components[component_index] = components[components.count-1];
+        ids[component_index]        = ids[components.count-1];
+        #insert #run tprint("final_entity.% = *components[component_index];");
+    }
+
+    components.count -= 1;
+    ids.count        -= 1;
+
+    old_array_pointer := components.data;
+    array_shrink_if_small_enough(components, realloc_if_using_less_than_proportion, remove_free_proportion, minimum_allocated);
+    array_shrink_if_small_enough(ids, realloc_if_using_less_than_proportion, remove_free_proportion, minimum_allocated);
+
+    if old_array_pointer != components.data {
+        fix_pointers(entity_type, components, ids, path_to_component, id_to_entity); 
+    }
+}
+
+fix_pointers :: (
+    $entity_type: Type,
+    components: *[..]$component_type,
+    ids: *[..]$id_type,
+    $path_to_component: string,
+    $id_to_entity: (id_type) -> entity_type,
+) {
+    for id : ids.* {
+        entity := inline id_to_entity(id);
+        #insert #run tprint("entity.% = *components.*[it_index];", path_to_component);
+    }
+}
+
+
+#import "TeRM/TeRM_Array";
+#import "TeRM/TeRM_String";
+#import "Basic";

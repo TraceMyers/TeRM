@@ -101,7 +101,7 @@ array_shrink :: (array: *[..]$T, remove_free_proportion := 0.75) {
     array.allocated = keep_allocated;
 }
 
-array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion := 0.5, remove_free_proportion := 0.75, minimum_allocated := 8) -> bool {
+array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion := 0.35, remove_free_proportion := 0.75, minimum_allocated := 8) -> bool {
     if array.allocated == 0 {
         assert(array.data == null);
         assert(array.count == 0);

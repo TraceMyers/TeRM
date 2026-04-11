@@ -18,6 +18,13 @@ make_static_array :: inline ($T: Type, count := 0) -> []T {
     return array;
 }
 
+make_local_static_array :: inline ($T: Type, $max: int) -> []T #expand {
+    `_local_static_array_storage: [max]T;
+    array: []T;
+    array.data = `_local_static_array_storage.data;
+    return array;
+}
+
 array_element_index :: inline (array: []T, item: *$T) -> s64 {
     index := item - array.data;
     assert(index >= 0 && index < array.count);

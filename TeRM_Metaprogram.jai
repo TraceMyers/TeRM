@@ -52,6 +52,27 @@ align_of :: inline (info: *Type_Info) -> u8 {
     return 1;
 }
 
+get_struct_field :: (s: *$struct_type, $field_type: Type) -> *field_type {
+    field_offset : int : #run -> int {
+        tinfo := cast(*Type_Info) struct_type;
+        assert(tinfo.type == .STRUCT);
+        tinfo_struct := cast(*Type_Info_Struct) tinfo;
+
+        for member : tinfo_struct.members {
+            if ((*member.type).(*Type)).* == field_type {
+                return member.offset_in_bytes;
+            }
+        }
+        return -1;
+    }
+
+    #if field_offset == -1 {
+        return null;
+    } else {
+        field_ptr := cast(*field_type) ((cast(*u8) s) + field_offset);
+        return field_ptr;
+    }
+}
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------------- Enumarray
 
@@ -84,7 +105,7 @@ Enumarray_Create_Info :: struct {
 }
 
 generate_parallel_enum_and_array :: ($create_infos: ..Enumarray_Create_Info, enum_name: string, $enum_backing_type: Type, array_name: string, $array_item_type: Type, array_is_constant: bool) -> string {
-    generate_parallel_enum_and_array(..create_infos, enum_name, enum_backing_type, array_name, tprint("%", array_item_type), array_is_constant);
+    return generate_parallel_enum_and_array(..create_infos, enum_name, enum_backing_type, array_name, #run tprint("%", array_item_type), array_is_constant);
 }
 
 generate_parallel_enum_and_array :: ($create_infos: ..Enumarray_Create_Info, enum_name: string, $enum_backing_type: Type, array_name: string, $array_item_type_name: string, array_is_constant: bool) -> string {

@@ -4,6 +4,12 @@ Skeletal_Animation_Blend :: struct {
     animation_index: s32;
     animation_time: float;
     blend_alpha: float;
+    root_translation: Root_Translation;
+}
+
+Root_Translation :: struct {
+    mode: enum {FROM_ANIMATION; CONSTANT;};
+    constant: Vector3;
 }
 
 get_duration :: inline (animation: *Skeletal_Animation) -> float {
@@ -36,9 +42,8 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
     for blends {
         blend_alpha_sum += it.blend_alpha;
     }
+
     assert(abs(blend_alpha_sum - 1.0) < 0.001);
-
-
     assert(pose.allocation == null);
 
     allocation_size := (size_of(Joint_Transform) + (size_of(Matrix4) * 2)) * skeleton.joints.count;
@@ -100,8 +105,12 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
             rotation    := interp_rotate_with_alpha(prev_frame.rotation, next_frame.rotation, anim.anim_alpha);
             scale       := lerp(prev_frame.scale, next_frame.scale, anim.anim_alpha);
 
-            local_joint.translation += translation * anim.blend_alpha;
-            local_joint.scale       += scale * anim.blend_alpha;
+            if ji == 0 && it.root_translation.mode == .CONSTANT {
+                local_joint.translation += it.root_translation.constant * anim.blend_alpha;
+            } else {
+                local_joint.translation += translation * anim.blend_alpha;
+            }
+            local_joint.scale += scale * anim.blend_alpha;
 
             if it_index == 0 {
                 local_joint.rotation = rotation * anim.blend_alpha;

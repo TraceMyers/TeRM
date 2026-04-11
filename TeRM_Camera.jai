@@ -95,7 +95,7 @@ transform_to_clip_coordinates :: (using camera: Camera_Info, camera_center: Vect
 get_camera_ray_passing_through_mouse_pointer_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window: Window_Type) -> origin: Vector3, direction: Vector3, success: bool {
     cursor_pos_x, cursor_pos_y, success := get_mouse_pointer_position(window, false);
     if success {
-        origin, direction := get_camera_ray_passing_through_window_position(camera, camera_center, camera_orientation, viewport, {xx cursor_pos_x, xx cursor_pos_y}, window);
+        origin, direction := get_camera_ray_passing_through_window_position(camera, camera_center, camera_orientation, viewport, {xx cursor_pos_x, xx cursor_pos_y});
         return origin, direction, true;
     } else {
         return {}, {}, false;
@@ -105,7 +105,7 @@ get_camera_ray_passing_through_mouse_pointer_position :: (using camera: Camera_I
 // returns the ray passing through the camera's near plane at the given window position.
 // origin is camera center if projection is perspective. if orthographic, the origin
 // is the point on the camera plane at the given window position.
-get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window_pos: Vector2, window: Window_Type) -> origin: Vector3, direction: Vector3 {
+get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window_pos: Vector2) -> origin: Vector3, direction: Vector3 {
     norm_position := window_pos / viewport;
     norm_clip_rect_center := Vector2.{0.5,0.5};
     norm_center_diff := norm_position - norm_clip_rect_center;
@@ -140,6 +140,44 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
 
         origin := camera_center + world_clip_rect_diff.x * camera_axis_right + world_clip_rect_diff.y * camera_axis_up;
         return origin, camera_axis_fore;
+    }
+}
+
+// ray doesn't have to be normalized (?)
+get_window_position_from_camera_ray :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, ray: Vector3) -> window_pos: Vector2 {
+    WORLD_AXIS_FORE  :: Vector3.{0, 1, 0};
+    WORLD_AXIS_RIGHT :: Vector3.{1, 0, 0};
+
+    camera_axis_fore  := rotate(WORLD_AXIS_FORE, camera_orientation);
+    camera_axis_right := rotate(WORLD_AXIS_RIGHT, camera_orientation);
+    camera_axis_up    := normalize(cross(camera_axis_right, camera_axis_fore));
+
+    if camera.projection == .PERSPECTIVE {
+        hz_projection := project_point_onto_plane(camera_center + ray, camera_center, camera_axis_up); 
+        vt_projection := project_point_onto_plane(camera_center + ray, camera_center, camera_axis_right); 
+
+        toward_hz_projection := normalize(hz_projection - camera_center);
+        toward_vt_projection := normalize(vt_projection - camera_center);
+
+        x_sign := ifx dot(toward_hz_projection, camera_axis_right) > 0 then  1.0 else -1.0;
+        y_sign := ifx dot(toward_vt_projection, camera_axis_up)    > 0 then -1.0 else  1.0;
+
+        // todo : prob don't have to acos twice and tan twice...
+        hz_theta := acos(dot(toward_hz_projection, camera_axis_fore));
+        vt_theta := acos(dot(toward_vt_projection, camera_axis_fore));
+        w := near_plane * tan(hz_theta) * x_sign; 
+        h := near_plane * tan(vt_theta) * y_sign;
+
+        theta := (perspective_vertical_fov * 0.5) * (PI / 180.0);
+        clip_rect_half_height := near_plane * tan(theta); // tan(theta) = opp / adj
+        clip_rect_half_width := get_camera_aspect_ratio(camera, viewport) * clip_rect_half_height;
+
+        x_norm_pos := (w + clip_rect_half_width)  / (2 * clip_rect_half_width);
+        y_norm_pos := (h + clip_rect_half_height) / (2 * clip_rect_half_height);
+
+        return Vector2.{x_norm_pos, y_norm_pos} * viewport;
+    } else {
+        return {};
     }
 }
 

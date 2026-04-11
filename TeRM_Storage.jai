@@ -222,6 +222,10 @@ pool_acquire :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavi
     return index;
 }
 
+pool_release :: inline (pool: *Pool($T), item: *T, deinit_item_proc: (*T) = null, shrink_behavior := Pool_Resize_Behavior.DEFAULT) {
+    pool_release(pool, pool_get_index(pool, item), deinit_item_proc, shrink_behavior);
+}
+
 pool_release :: (using pool: *Pool($T), i: s64, deinit_item_proc: (*T) = null, shrink_behavior := Pool_Resize_Behavior.DEFAULT) {
     if deinit_item_proc then deinit_item_proc(*items[i]);
 
@@ -292,19 +296,21 @@ is_pool_item_in_use :: inline (using pool: *Pool($T), i: s64) -> bool {
     return in_use[i];
 }
 
-// for pool { ... }
+// for my_pool { ... }
 for_expansion :: (pool: Pool($T), body: Code, flags: For_Flags) #expand {
-    if pool.top >= 0 then for <=((flags & .REVERSE) != 0) item_index : 0..pool.top {
-        `it_index := item_index;
-        if !is_pool_item_in_use(*pool, item_index) {
-            continue;
+    if pool.top >= 0 {
+        for <=((flags & .REVERSE) != 0) item_index : 0..pool.top {
+            `it_index := item_index;
+            if !is_pool_item_in_use(*pool, item_index) {
+                continue;
+            }
+            #if (flags & .POINTER) {
+                `it := *pool.items[item_index];
+            } else {
+                `it := pool.items[item_index];
+            }
+            #insert body;
         }
-        #if (flags & .POINTER) {
-            `it := *pool.items[item_index];
-        } else {
-            `it := pool.items[item_index];
-        }
-        #insert body;
     }
 }
 
@@ -452,28 +458,30 @@ soa_item_count :: (soa: *Struct_Of_Arrays) -> int {
 // ----------------------------------------------------------------------- :Table_Base
 // table interface
 
-Table_Base :: struct($key_type: Type, $value_type: Type, $use_simple_key_hash: bool) {}
+// base types are same as types in the subtype, but need to be renamed, because both sets of constants
+// are defined on the subtype.
+Table_Base :: struct($base_key_type: Type, $base_value_type: Type, $base_use_simple_key_hash: bool) {}
 
-table_hash :: (table: *Table_Base, key: table.key_type) -> u32 {
-    KEY_IS_STRING :: #run table.key_type == string;
-    KEY_IS_ARRAY  :: #run table.key_type.(*Type_Info).type == .ARRAY;
-    KEY_IS_NUMBER :: #run table.key_type.(*Type_Info).type == .INTEGER || table.key_type.(*Type_Info).type == .FLOAT;
-    KEY_IS_SMALL_NUMBER :: #run KEY_IS_NUMBER && size_of(table.key_type) <= 4;
+table_hash :: (table: *Table_Base, key: table.base_key_type) -> u32 {
+    KEY_IS_STRING :: #run table.base_key_type == string;
+    KEY_IS_ARRAY  :: #run table.base_key_type.(*Type_Info).type == .ARRAY;
+    KEY_IS_NUMBER :: #run table.base_key_type.(*Type_Info).type == .INTEGER || table.base_key_type.(*Type_Info).type == .FLOAT;
+    KEY_IS_SMALL_NUMBER :: #run KEY_IS_NUMBER && size_of(table.base_key_type) <= 4;
 
     hash_input: string = ---;
 
     #if KEY_IS_SMALL_NUMBER {
         return (cast(*u32) *key).*;
-    } else #if KEY_IS_STRING && !table.use_simple_key_hash {
+    } else #if KEY_IS_STRING && !table.base_use_simple_key_hash {
         hash_input = key;
-    } else #if KEY_IS_ARRAY && !table.use_simple_key_hash {
-        tinfo_array := table.key_type.(*Type_Info_Array);
+    } else #if KEY_IS_ARRAY && !table.base_use_simple_key_hash {
+        tinfo_array := table.base_key_type.(*Type_Info_Array);
         element_type := (*tinfo_array.element_type).(*Type).*;
         hash_input.data  = xx key.data;
         hash_input.count = key.count * size_of(element_type);
     } else {
         hash_input.data  = xx *key;
-        hash_input.count = size_of(table.key_type);
+        hash_input.count = size_of(table.base_key_type);
     }
     return get_hash(hash_input);
 }
@@ -496,17 +504,21 @@ Linear_Table :: struct($key_type: Type, $value_type: Type, $use_simple_key_hash 
         value: value_type;
     }
     using #as base: Table_Base(key_type, value_type, use_simple_key_hash);
-    using #as soa: Struct_Of_Arrays(Item, "key_hashes", "values");
+    key_hashes: [..]u32;
+    values: [..]value_type;
 }
 
-table_init :: (table: *Linear_Table, reserve_count := 64) {
-    soa_set_allocator(table, context.allocator);
-    soa_reset(table);
-    soa_reserve(table, reserve_count);
+table_init :: (using table: *Linear_Table, reserve_count := 64) {
+    key_hashes.allocator = context.allocator;
+    values.allocator     = context.allocator;
+    array_reset(*key_hashes);
+    array_reset(*values);
+    array_reserve(*key_hashes, reserve_count);
+    array_reserve(*values, reserve_count);
 }
 
 table_count :: inline (table: *Linear_Table) -> int {
-    return soa_item_count(table);
+    return key_hashes.count;
 }
 
 // return true if the value was added
@@ -523,7 +535,8 @@ table_set :: (table: *Linear_Table, key: table.key_type, value: table.value_type
         }
     } else {
         #if edit_if == .ONLY_ADD || edit_if == .ADD_OR_CHANGE {
-            soa_add(table, {key_hash, value});
+            array_add(*table.key_hashes, key_hash);
+            array_add(*table.values, value);
             made_edit = true;
             added_item = true;
         }
@@ -555,7 +568,8 @@ table_remove_by_key_hash :: (table: *Linear_Table, key_hash: u32) -> bool {
     value := table_get_by_key_hash(table, key_hash);
     if value != null {
         index := value - table.values.data;
-        soa_unordered_remove_by_index(table, index);
+        array_unordered_remove_by_index(*table.key_hashes, index);
+        array_unordered_remove_by_index(*table.values, index);
         return true;
     } else {
         return false;
@@ -565,7 +579,8 @@ table_remove_by_key_hash :: (table: *Linear_Table, key_hash: u32) -> bool {
 table_remove_by_value :: (table: *Linear_Table, value: table.value_type) {
     for table.values {
         if it == value {
-            soa_unordered_remove_by_index(table, it_index);
+            array_unordered_remove_by_index(*table.key_hashes, it_index);
+            array_unordered_remove_by_index(*table.values, it_index);
             return true;
         }
     }

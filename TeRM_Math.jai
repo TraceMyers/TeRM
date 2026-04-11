@@ -286,6 +286,11 @@ make_quat :: inline (fore: Vector3, up: Vector3) -> Quaternion {
     return make_quat(fore, right, up);
 }
 
+make_quat_with_fore_and_right :: inline (fore: Vector3, right: Vector3) -> Quaternion {
+    up := normalize(cross(fore, -right)); 
+    return make_quat(fore, right, up);
+}
+
 set_orientation :: (out_orientation: *Quaternion, forward: Vector3, up: Vector3) {
     out_orientation.* = make_quat(forward, up);
 }

@@ -343,7 +343,7 @@ interp_rotate_with_time :: (origin: Quaternion, target: Quaternion, speed: float
     if abs(rot_dist) >= t {
         return target;
     } else {
-        return alpha_rotate(origin, target, rot_dist / t);
+        return interp_rotate_with_alpha(origin, target, rot_dist / t);
     }
 }
 

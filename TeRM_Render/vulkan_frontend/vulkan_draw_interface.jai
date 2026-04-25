@@ -11,33 +11,49 @@ draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
 draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
     mesh := *renderer.meshes[draw.ref.index];
     assert(mesh.skeleton.joints.count == 0);
-    array_add(*renderer.static_mesh_draws, {static_draw=draw});
+    array_add(*renderer.static_mesh_draws, draw);
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}) {
     mesh := *renderer.meshes[ref.index];
     assert(mesh.skeleton.joints.count == 0);
-    array_add(*renderer.static_mesh_draws, {static_draw={position, orientation, {scale,scale,scale}, ref}});
+    array_add(*renderer.static_mesh_draws, {position, orientation, {scale,scale,scale}, ref});
+}
+
+draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}) {
+    mesh := *renderer.meshes[ref.index];
+    assert(mesh.skeleton.joints.count == 0);
+    array_add(*renderer.static_mesh_draws, {position, orientation, scale, ref});
 }
 
 draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
     mesh := *renderer.meshes[draw.ref.index];
     assert(mesh.skeleton.joints.count != 0);
+    add_skinning_joints(renderer, *draw);
     array_add(*renderer.skinned_mesh_draws, draw);
 }
 
-draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, blends: []Skeletal_Animation_Blend) {
-    assert(blends.count <= Mesh_Draw.blends.count);
+draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pose: *Skeletal_Pose = null, scale := 1.0, orientation := Quaternion.{}) {
     mesh := *renderer.meshes[ref.index];
+
     assert(mesh.skeleton.joints.count != 0);
+
     new_draw := array_add(*renderer.skinned_mesh_draws);
-    new_draw.* = {static_draw={position, orientation, {scale,scale,scale}, ref}};
-    for blends {
-        new_draw.blends[it_index] = blends[it_index];
-    }
-    new_draw.blend_count = xx blends.count;
+    new_draw.* = {static_draw={position, orientation, {scale,scale,scale}, ref}, joint_data._interface.pose=pose};
+
+    add_skinning_joints(renderer, new_draw);
 }
 
 draw_line :: inline (renderer: *Renderer, begin: Vector3, end: Vector3, color: Color4b, width := 1.0) {
     array_add(*renderer.line_draws, {begin, end, color, width});
+}
+
+#scope_file
+
+add_skinning_joints :: (renderer: *Renderer, draw: *Skinned_Mesh_Draw) {
+    assert(draw.pose != null);
+    joint_offset := renderer.skinning_joints.count;
+    array_append(*renderer.skinning_joints, draw.pose.skinning_joints);
+    draw.pose = null;
+    draw.joint_offset = xx joint_offset;
 }

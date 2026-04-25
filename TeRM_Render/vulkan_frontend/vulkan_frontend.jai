@@ -6,6 +6,7 @@ TERM_RENDERER_VERSION :: #run VK_MAKE_VERSION(
 );
 DEPTH_FORMAT :: VkFormat.D24_UNORM_S8_UINT;
 INVALID_MEMORY_TYPE_INDEX : u32 : 0xffff_ffff;
+
 // Query these at startup from VkPhysicalDeviceLimits
 // limits.minUniformBufferOffsetAlignment   // often 64 or 256
 // limits.minStorageBufferOffsetAlignment   // often 16-64
@@ -22,6 +23,8 @@ Renderer :: struct {
         // please feel free to change this when you instantiate your renderer
         engine_name := "TeRM/Render";
         engine_version := TERM_RENDERER_VERSION;
+
+        msaa_samples := 1;
 
         global_shader_time: float32;
         global_shader_delta_time: float32;
@@ -43,6 +46,10 @@ Renderer :: struct {
         transfer_queue: VkQueue; // per thread?
 
         descriptor_pool: VkDescriptorPool;
+
+        imgui_context: ImGui.ImGuiContext;
+        imgui_descriptor_pool: VkDescriptorPool;
+        user_imgui_callback: ();
 
         rendered_frame_count: s32;
 
@@ -88,8 +95,9 @@ Renderer :: struct {
         // transparent_line_pipeline: VkPipeline;
 
         particle_draws: [..]Billboard_Instance;
-        static_mesh_draws: [..]Mesh_Draw;
-        skinned_mesh_draws: [..]Mesh_Draw;
+        static_mesh_draws: [..]Static_Mesh_Draw;
+        skinned_mesh_draws: [..]Skinned_Mesh_Draw;
+        skinning_joints: [..]Matrix4;
         line_draws: [..]Line_Draw;
 
         debug_switch: bool;
@@ -164,19 +172,28 @@ Static_Mesh_Draw :: struct {
     ref: Mesh_Ref;
 }
 
-get_animation_blends :: inline (draw: *Mesh_Draw) -> []Skeletal_Animation_Blend {
+
+Skinned_Mesh_Draw :: struct {
+    using static_draw: Static_Mesh_Draw;
+
+    using joint_data: union {
+        // set when using the draw interface
+        using _interface: struct {
+            pose: *Skeletal_Pose;
+        };
+        // for internal use, points into the renderer's skinning joints array.
+        using _internal: struct {
+            joint_offset: s32;
+        };
+    }
+}
+
+get_animation_blends :: inline (draw: *Skinned_Mesh_Draw) -> []Skeletal_Animation_Blend {
     blends: []Skeletal_Animation_Blend = ---; 
     blends.data  = draw.blends.data;
     blends.count = draw.blend_count;
     return blends;
 }
-
-Mesh_Draw :: struct {
-    using static_draw: Static_Mesh_Draw;
-    blends: [3]Skeletal_Animation_Blend;
-    blend_count: s32;
-}
-Skinned_Mesh_Draw :: Mesh_Draw;
 
 Line_Draw :: struct {
     a: Vector3;
@@ -197,13 +214,20 @@ Texture_Ref :: struct {
     using texture: Texture;
 }
 
+Skeletal_Animation_Playback_Info :: struct {
+    animation: s32;
+    speed: float;
+}
+
 Mesh_Ref :: struct {
     path: string;
     index: int;
+    playback: []Skeletal_Animation_Playback_Info;
 }
 
 Render_Init_Options :: struct {
     populate_shader_data_in_working_directory := true;
+    initialize_dev_gui := true;
     max_texture_count := 4096;
 }
 
@@ -460,6 +484,7 @@ Mesh_Import_Types :: struct {
 #load "vulkan_system_information.jai";
 #load "vulkan_renderer_update.jai";
 #load "vulkan_draw_interface.jai";
+#load "vulkan_dev_gui.jai";
 
 #scope_module
 
@@ -473,27 +498,6 @@ Mesh_Import_Types :: struct {
 #load "../vulkan_backend/vulkan_linear_allocator.jai";
 #load "../vulkan_backend/vulkan_draw.jai";
 
-#import "Window_Creation";
-#import "Basic";
-#import "Math";
-#import "File";
-#import "File_Utilities";
-#import "Process";
-#import "Sort";
-#import "stb_image";
-
-#import "TeRM/TeRM_Log";
-#import "TeRM/TeRM_Array";
-#import "TeRM/TeRM_String";
-#import "TeRM/TeRM_Storage";
-#import "TeRM/TeRM_Color";
-#import "TeRM/TeRM_File";
-#import "TeRM/TeRM_System";
-#import "TeRM/TeRM_Math";
-#import "TeRM/TeRM_Render/vulkan-jai";
-#import "TeRM/TeRM_Camera";
-#import "TeRM/TeRM_Metaprogram";
-#import "TeRM/TeRM_Mesh"(user_types = Mesh_Import_Types);
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

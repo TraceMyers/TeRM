@@ -35,6 +35,16 @@ make_transform_matrix :: inline (joint_transform: Joint_Transform) -> Matrix4 {
     return make_transform_matrix(joint_transform.translation, joint_transform.rotation, joint_transform.scale);
 }
 
+find_joint :: (skeleton: *Skeleton, name: string) -> int {
+    hash := get_hash(name);
+    for skeleton.joint_name_hashes {
+        if hash == it {
+            return it_index;
+        }
+    }
+    return -1;
+}
+
 make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Animation_Blend) {
     assert(blends.count > 0);
 
@@ -44,13 +54,14 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
     }
 
     assert(abs(blend_alpha_sum - 1.0) < 0.001);
-    assert(pose.allocation == null);
 
     allocation_size := (size_of(Joint_Transform) + (size_of(Matrix4) * 2)) * skeleton.joints.count;
     joint_count     := skeleton.joints.count;
     
-    pose.skeleton   = skeleton;
-    pose.allocation = alloc(allocation_size);
+    pose.skeleton = skeleton;
+    if pose.allocation == null {
+        pose.allocation = alloc(allocation_size);
+    }
     memset(pose.allocation, 0, allocation_size);
 
     pose.local_joints.data     = xx pose.allocation;

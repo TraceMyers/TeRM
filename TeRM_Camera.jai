@@ -110,13 +110,9 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
     norm_clip_rect_center := Vector2.{0.5,0.5};
     norm_center_diff := norm_position - norm_clip_rect_center;
 
-    WORLD_AXIS_FORE  :: Vector3.{0, 1, 0};
-    WORLD_AXIS_RIGHT :: Vector3.{1, 0, 0};
-    // WORLD_AXIS_UP    :: Vector3.{0, 0, 1};
     camera_axis_fore := rotate(WORLD_AXIS_FORE, camera_orientation);
     camera_axis_right := rotate(WORLD_AXIS_RIGHT, camera_orientation);
     camera_axis_up := normalize(cross(camera_axis_right, camera_axis_fore));
-    // camera_axis_up := rotate(WORLD_AXIS_UP, camera_orientation);
 
     if camera.projection == .PERSPECTIVE {
         theta := (perspective_vertical_fov * 0.5) * (PI / 180.0);
@@ -145,8 +141,6 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
 
 // ray doesn't have to be normalized (?)
 get_window_position_from_camera_ray :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, ray: Vector3) -> window_pos: Vector2 {
-    WORLD_AXIS_FORE  :: Vector3.{0, 1, 0};
-    WORLD_AXIS_RIGHT :: Vector3.{1, 0, 0};
 
     camera_axis_fore  := rotate(WORLD_AXIS_FORE, camera_orientation);
     camera_axis_right := rotate(WORLD_AXIS_RIGHT, camera_orientation);
@@ -177,11 +171,26 @@ get_window_position_from_camera_ray :: (using camera: Camera_Info, camera_center
 
         return Vector2.{x_norm_pos, y_norm_pos} * viewport;
     } else {
-        return {};
+        right_dist := dot(ray, camera_axis_right);
+        up_dist    := dot(ray, camera_axis_up);
+
+        aspect := get_camera_aspect_ratio(camera, viewport);
+        half_width := orthographic_scale * aspect;
+        half_height := orthographic_scale;
+
+        norm_x := (half_width + right_dist) / (2 * half_width);
+        norm_y := (half_height - up_dist) / (2 * half_height);
+
+        viewport_pos := viewport * Vector2.{norm_x, norm_y};
+
+        return viewport_pos;
     }
 }
 
 #scope_file
+
+WORLD_AXIS_FORE  :: Vector3.{0, 1, 0};
+WORLD_AXIS_RIGHT :: Vector3.{1, 0, 0};
 
 #import "Math";
 #import "Window_Creation";

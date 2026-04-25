@@ -92,6 +92,42 @@ make_transform_matrix :: (position: Vector3, orientation: Quaternion, scale: Vec
     return matrix;
 }
 
+decompose_transform_matrix :: (transform: *Matrix4, out_position: *Vector3, out_orientation: *Quaternion, out_scale: *Vector3) {
+    out_position.* = Vector3.{transform._14, transform._24, transform._34};
+
+    out_scale.x = length(transform.v[0].xyz);
+    out_scale.y = length(transform.v[1].xyz);
+    out_scale.z = length(transform.v[2].xyz);
+
+    right_axis := transform.v[0].xyz / out_scale.x;
+    fore_axis  := transform.v[1].xyz / out_scale.y;
+    up_axis    := transform.v[2].xyz / out_scale.z;
+    out_orientation.* = conjugate(make_quat(fore_axis, right_axis, up_axis));
+}
+
+splat :: inline (x: float, $vector_size: int) -> $T
+#modify {
+    T = void;
+    if vector_size == {
+    case 2;
+        T = Vector2;
+    case 3;
+        T = Vector3;
+    case 4;
+        T = Vector4;
+    }
+    return T != void;
+} {
+    #if vector_size == {
+    case 2;
+        return {x, x};
+    case 3;
+        return {x, x, x};
+    case 4;
+        return {x, x, x, x};
+    }
+}
+
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------- :Direction & Orientation
 
@@ -410,9 +446,9 @@ interp_sigmoid_with_alpha :: (alpha: float32, extent := 10.0, midpoint := 0.5) -
     sigmoid_input: float32 = ---;
     if midpoint != 0.5 {
         if alpha < midpoint {
-            sigmoid_input = respace(respaced_alpha, {0, midpoint}, {0, 0.5});
+            sigmoid_input = respace(alpha, {0, midpoint}, {0, 0.5});
         } else {
-            sigmoid_input = respace(respaced_alpha, {midpoint, 1}, {0.5, 1});
+            sigmoid_input = respace(alpha, {midpoint, 1}, {0.5, 1});
         }
     } else {
         sigmoid_input = alpha;

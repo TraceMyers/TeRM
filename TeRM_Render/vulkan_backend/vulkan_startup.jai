@@ -912,6 +912,19 @@ load_assets :: () -> bool {
             found_static_mesh_section: bool;
             found_skinned_mesh_section: bool;
 
+            for *anim, ai : mesh_in_array.skeleton.animations {
+                for ref.playback {
+                    if it.animation == ai {
+                        anim.speed = it.speed;
+                        break;
+                    }
+                }
+                if anim.speed == 0 {
+                    anim.speed = 1;
+                }
+                log("animation: %", anim.name);
+            }
+
             // todo: free vertices & indices?
             for *section : mesh_in_array.sections {
                 {

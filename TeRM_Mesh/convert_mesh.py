@@ -2,6 +2,9 @@
 # TRM Mesh Exporter
 # Usage: blender --background --python convert_mesh.py -- <input> <output.trm>
 # optional arg: you can repeatedly use --exclude <node name> to exclude that node
+# optional arg: you can repeatedly use --include <node name> to include only those nodes
+#               (mutually exclusive with --exclude)
+# optional arg: --static skips joint/animation extraction entirely
 # =====================================================================
 # leverage blender to convert other mesh file formats to the term mesh file format
 # for format specs / ai tool codegen instructions, see end of file
@@ -547,27 +550,48 @@ def extract_anims(arm, bufs):
     bones = list(arm.data.bones)
     fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
 
-    actions = set()
-    if arm.animation_data.action:
-        actions.add(arm.animation_data.action)
-    for track in (arm.animation_data.nla_tracks or []):
-        for strip in track.strips:
-            if strip.action:
-                actions.add(strip.action)
-    # Also pick up any actions in the file that target this armature's bones,
-    # e.g. from .blend files where actions are stored with fake users but not
-    # pushed to NLA tracks.
+    # bpy.data.actions iterates alphabetically, not in creation order, so we
+    # can't recover input order from it directly. combine_animations.py writes
+    # the canonical order to scene["term_anim_order"]; honor it when present.
+    actions = []
+    seen = set()
+    def add_action(a):
+        if a is not None and a not in seen:
+            seen.add(a)
+            actions.append(a)
+
     bone_prefix = 'pose.bones["'
+    ordered_names = bpy.context.scene.get("term_anim_order")
+    print(f"  [anim-order] term_anim_order scene prop: {ordered_names!r}")
+    print(f"  [anim-order] bpy.data.actions: {[a.name for a in bpy.data.actions]}")
+    if ordered_names is not None:
+        ordered_names = list(ordered_names)
+        for name in ordered_names:
+            act = bpy.data.actions.get(name)
+            if act is not None:
+                add_action(act)
+            else:
+                print(f"  [anim-order] WARNING: '{name}' listed in term_anim_order but not in bpy.data.actions")
+
+    # Pick up any remaining actions that drive this armature's bones but
+    # weren't listed in term_anim_order (e.g. blend files edited by hand).
     for act in bpy.data.actions:
-        if act in actions:
+        if act in seen:
             continue
         for fc in action_fcurves(act):
             if fc.data_path.startswith(bone_prefix):
-                actions.add(act)
+                add_action(act)
                 break
+    if arm.animation_data.action:
+        add_action(arm.animation_data.action)
+    for track in (arm.animation_data.nla_tracks or []):
+        for strip in track.strips:
+            if strip.action:
+                add_action(strip.action)
     orig_action = arm.animation_data.action
     anims = []
 
+    print(f"  [anim-order] final emit order: {[a.name for a in actions]}")
     for action in actions:
         arm.animation_data.action = action
         frames = sorted({round(kf.co[0])
@@ -670,34 +694,64 @@ def main():
         fatal("Usage: blender --background --python convert_mesh.py "
               "-- <input> <output.trm>")
     if len(args) < 2:
-        fatal("Expected at least 2 arguments: input_path output_path [--exclude name ...]")
+        fatal("Expected at least 2 arguments: input_path output_path "
+              "[--exclude name ... | --include name ...] [--static]")
 
     inp, out = os.path.abspath(args[0]), os.path.abspath(args[1])
     excludes = set()
+    includes = set()
+    static = False
     i = 2
     while i < len(args):
         if args[i] == '--exclude' and i + 1 < len(args):
             excludes.add(args[i + 1])
             i += 2
+        elif args[i] == '--include' and i + 1 < len(args):
+            includes.add(args[i + 1])
+            i += 2
+        elif args[i] == '--static':
+            static = True
+            i += 1
         else:
             fatal(f"Unknown argument: {args[i]}")
             i += 1
+    if excludes and includes:
+        fatal("--include and --exclude cannot be used together")
     if not os.path.isfile(inp):
         fatal(f"Input not found: {inp}")
     if not out.lower().endswith('.trm'):
         fatal("Output must have .trm extension")
 
+    bpy.ops.wm.read_homefile(use_empty=True)
+    # Ensure scene is truly empty — some Blender versions/configs
+    # don't respect use_empty=True, leaving default objects behind.
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
+
     if os.path.splitext(inp)[1].lower() == '.blend':
-        bpy.ops.wm.open_mainfile(filepath=os.path.abspath(inp))
+        # open_mainfile preserves the source file's saved depsgraph state, and in
+        # Blender 5.x that state can be "stuck" — frame_set stops re-evaluating
+        # the action, so every sampled frame returns the same pose. Appending
+        # into the fresh empty scene rebuilds the depsgraph from scratch.
+        with bpy.data.libraries.load(os.path.abspath(inp), link=False) as (src, dst):
+            dst.objects = list(src.objects)
+            dst.actions = list(src.actions)
+            dst.scenes  = list(src.scenes)
+        for obj in dst.objects:
+            if obj is not None:
+                bpy.context.scene.collection.objects.link(obj)
+        # term_anim_order is stored on the source scene; copy it forward so
+        # extract_anims can use it.
+        for src_scene in (dst.scenes or []):
+            if src_scene is not None and "term_anim_order" in src_scene:
+                bpy.context.scene["term_anim_order"] = list(src_scene["term_anim_order"])
+                break
     else:
-        bpy.ops.wm.read_homefile(use_empty=True)
-        # Ensure scene is truly empty — some Blender versions/configs
-        # don't respect use_empty=True, leaving default objects behind.
-        for obj in list(bpy.data.objects):
-            bpy.data.objects.remove(obj, do_unlink=True)
         do_import(inp)
 
     mesh_objs, arm_obj = find_objects()
+    if static:
+        arm_obj = None
 
     if excludes:
         before = len(mesh_objs)
@@ -705,6 +759,13 @@ def main():
         skipped = before - len(mesh_objs)
         if skipped:
             print(f"  Excluded {skipped} object(s): {excludes}")
+    elif includes:
+        before = len(mesh_objs)
+        mesh_objs = [o for o in mesh_objs if o.name in includes]
+        missing = includes - {o.name for o in mesh_objs}
+        if missing:
+            print(f"  WARNING: --include names not found in scene: {missing}")
+        print(f"  Included {len(mesh_objs)} of {before} object(s): {includes}")
 
     print(f"  Found {len(mesh_objs)} mesh objects:")
     for i, o in enumerate(mesh_objs):
@@ -727,8 +788,8 @@ def main():
         sections.extend(extract_sections(mesh_obj, arm_obj, bufs))
     if not sections:
         fatal("No geometry found")
-    joints = extract_joints(arm_obj, bufs)
-    anims = extract_anims(arm_obj, bufs)
+    joints = [] if static else extract_joints(arm_obj, bufs)
+    anims = [] if static else extract_anims(arm_obj, bufs)
     write_trm(out, sections, joints, anims, bufs)
 
     print(f"OK: {len(sections)} sections, {len(joints)} joints, "

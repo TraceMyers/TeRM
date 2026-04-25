@@ -11,11 +11,15 @@ TERM_RENDER_VERSION_MINOR : u32 : 1;
 #if API == {
 case "VULKAN";
     #load "vulkan_frontend/vulkan_frontend.jai";
-case "DIRECT3D";
-    #load "direct3d_frontend.jai";
+// case "DIRECT3D";
+//     #load "direct3d_frontend.jai";
 }
 
 #scope_module
+
+module_path :: () -> string {
+    return get_final_path(#filepath,, temp);
+}
 
 render_target_width: u32;
 render_target_height: u32;
@@ -31,6 +35,31 @@ scope_set_renderer :: (in_renderer: *Renderer) #expand {
 #if OS == .WINDOWS {
     Win32 :: #import "Windows";
 }
+
+#import "Window_Creation";
+#import "Basic";
+#import "Math";
+#import "File";
+#import "File_Utilities";
+#import "Process";
+#import "Sort";
+#import "stb_image";
+#import "Input";
+
+#import "TeRM/TeRM_Scope";
+#import "TeRM/TeRM_Log";
+#import "TeRM/TeRM_Array";
+#import "TeRM/TeRM_String";
+#import "TeRM/TeRM_Storage";
+#import "TeRM/TeRM_Color";
+#import "TeRM/TeRM_File";
+#import "TeRM/TeRM_System";
+#import "TeRM/TeRM_Math";
+#import "TeRM/TeRM_Render/vulkan-jai";
+ImGui :: #import "TeRM/TeRM_Render/ImGui_VulkanWin32";
+#import "TeRM/TeRM_Camera";
+#import "TeRM/TeRM_Metaprogram";
+#import "TeRM/TeRM_Mesh"(user_types = Mesh_Import_Types);
 
 NANOSECONDS_PER_MILLISECOND :: 1_000_000;
 NANOSECONDS_PER_SECOND :: 1_000_000_000;

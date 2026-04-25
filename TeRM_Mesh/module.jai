@@ -115,8 +115,10 @@ load_mesh :: (path: string) -> Mesh, bool {
         mesh.skeleton.joints = allocate_self_array(Joint, joints_header.item_count);
         pos = joints_header.offset_to_block;
 
-        for *joint : mesh.skeleton.joints {
+        mesh.skeleton.joint_name_hashes = allocate_self_array(u32, mesh.skeleton.joints.count);
+        for *joint, ji : mesh.skeleton.joints {
             read_joint(joint, file, *pos);
+            mesh.skeleton.joint_name_hashes[ji] = get_hash(joint.name);
         }
     }
 
@@ -170,6 +172,7 @@ load_mesh :: (path: string) -> Mesh, bool {
     move_pointer(xx *mesh.texture_buffers.data, old_allocation, new_allocation);
     move_pointer(xx *mesh.skeleton.joints.data, old_allocation, new_allocation);
     move_pointer(xx *mesh.skeleton.animations.data, old_allocation, new_allocation);
+    move_pointer(xx *mesh.skeleton.joint_name_hashes.data, old_allocation, new_allocation);
 
     // layer 2
     for *section : mesh.sections {
@@ -313,6 +316,7 @@ Joint_Transform :: struct {
 Skeleton :: struct {
     joints:     []Joint;
     animations: []Skeletal_Animation;
+    joint_name_hashes: []u32;
 }
 
 // todo: no frame rate encoded. 
@@ -320,9 +324,10 @@ Skeleton :: struct {
 // todo: this export method is just flattening it rather than keyframing. super inefficient.
 Skeletal_Animation :: struct {
     name:              string;
-    interpolate:       bool;  // if true, translation and scale = lerp, rotation = slerp; otherwise, teleport
     timestamps:        []float32;
     transforms:        []Joint_Transform; // joint_count * timestamps.count
+    interpolate:       bool;  // if true, translation and scale = lerp, rotation = slerp; otherwise, teleport
+    speed := 1.0;
 }
 
 Skeletal_Pose :: struct {
@@ -592,6 +597,7 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
 #import "Basic";
 #import "File";
 #import "Math";
+#import "Hash";
 #import "stb_image";
 #import "TeRM/TeRM_Color";
 #import "TeRM/TeRM_Allocation";

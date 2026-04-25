@@ -3,9 +3,18 @@ init_first_renderer :: (first_renderer: *Renderer, options: Render_Init_Options,
     render_target_width = render_width;
     render_target_height = render_height;
     first_renderer.max_texture_count = options.max_texture_count;
+
     success := init_renderer_shared_data(first_renderer, options);
     if !success then return false;
-    return init_renderer_unique_data(first_renderer);
+
+    success = init_renderer_unique_data(first_renderer);
+    if !success then return false;
+
+    if options.initialize_dev_gui {
+        init_dev_gui(first_renderer);
+    }
+
+    return true;
 }
 
 // if you are doing the multithreading + one renderer per thread style,
@@ -104,9 +113,9 @@ populate_shader_data :: () -> bool {
     project_working_directory := get_working_directory();
     defer set_working_directory(project_working_directory);
 
-    path_of_this_file := #filepath;
+    path_of_this_file := get_final_path(#filepath,, temp);
     term_render_path  := move_path_back_one_directory(path_of_this_file);
-    term_shaders_path := tprint("%/vulkan_shaders", term_render_path);
+    term_shaders_path := tprint("%\\vulkan_shaders", term_render_path);
 
     fully_exists, _:= how_much_of_path_exists_on_the_local_filesystem(parse_path(term_shaders_path,, temp));
 
@@ -147,6 +156,59 @@ populate_shader_data :: () -> bool {
 
     render_log("%, so the default shader datas were copied from % to % and the shaders were compiled. this is on by default for ease of use, but it can be turned off now.", spiel, source_path, dest_path);
     return true;
+}
+
+init_dev_gui :: (using renderer: *Renderer) {
+    pool_sizes := VkDescriptorPoolSize.[
+        .{.SAMPLER,                   1000},
+        .{.COMBINED_IMAGE_SAMPLER,    1000},
+        .{.SAMPLED_IMAGE,             1000},
+        .{.STORAGE_IMAGE,             1000},
+        .{.UNIFORM_TEXEL_BUFFER,      1000},
+        .{.STORAGE_TEXEL_BUFFER,      1000},
+        .{.UNIFORM_BUFFER,            1000},
+        .{.STORAGE_BUFFER,            1000},
+        .{.UNIFORM_BUFFER_DYNAMIC,    1000},
+        .{.STORAGE_BUFFER_DYNAMIC,    1000},
+        .{.INPUT_ATTACHMENT,          1000}
+    ];
+
+    pool_info := VkDescriptorPoolCreateInfo.{
+        flags = .FREE_DESCRIPTOR_SET_BIT,
+        maxSets = 1000,
+        poolSizeCount = xx pool_sizes.count,
+        pPoolSizes = pool_sizes.data
+    };
+
+    assert(vkCreateDescriptorPool(logical.obj, *pool_info, null, *imgui_descriptor_pool) == .SUCCESS, "failed to create the descriptor pool for imgui");
+
+    imgui_context = ImGui.CreateContext();
+
+    dev_gui_set_theme_paper_and_ink();
+
+    assert(ImGui.ImplWin32_Init(window), "failed to initialize imgui win32 implementation");
+
+    init_info := ImGui.ImplVulkan_InitInfo.{
+        ApiVersion = API_VERSION,
+        Instance = vk_instance,  
+        PhysicalDevice = physical.obj,
+        Device = logical.obj,
+        Queue = graphics_queue,
+        DescriptorPool = imgui_descriptor_pool,
+        MinImageCount = 3,
+        ImageCount = 3,
+        UseDynamicRendering = true,
+        PipelineRenderingCreateInfo = .{
+            colorAttachmentCount    = 1,
+            pColorAttachmentFormats = *swapchain.format.format,
+            depthAttachmentFormat   = depth_buffer.format,
+            stencilAttachmentFormat = depth_buffer.format
+        },
+        MSAASamples=xx msaa_samples
+    };
+
+    assert(ImGui.ImplVulkan_Init(*init_info), "failed to initialize imgui vulkan implementation");
+    assert(ImGui.ImplVulkan_CreateFontsTexture(), "failed to create the fonts texture for imgui-vulkan");
 }
 
 // Copyright (c) 2026 Trace Myers

@@ -165,6 +165,11 @@ def main():
             primary_armature.animation_data.action = action
             first_action = False
 
+    # Record the canonical animation order on the scene. bpy.data.actions
+    # iterates alphabetically, so convert_mesh.py can't recover input order
+    # from the action collection alone.
+    bpy.context.scene["term_anim_order"] = list(all_actions.keys())
+
     # Clean up orphan data
     for mesh in bpy.data.meshes:
         if mesh.users == 0:

@@ -265,6 +265,30 @@ for_expansion :: (exchange: *String_Exchange, body: Code, flags: For_Flags) #exp
     }
 }
 
+float_text_center_align :: (str: string, put_period_at_position: int, target_width: int) -> string {
+    for str {
+        if it_index >= put_period_at_position {
+            break;
+        } else if it == #char "." {
+            leading_space_count := put_period_at_position - it_index - 1;
+            trailing_space_count := max(target_width - (str.count + leading_space_count), 0);
+            new_str := alloc_string(leading_space_count + str.count + trailing_space_count,, temp);
+            for 0..leading_space_count-1 {
+                new_str[it] = #char " ";
+            }
+            memcpy(new_str.data + leading_space_count, str.data, str.count);
+            if trailing_space_count > 0 {
+                begin_trailing_spaces := leading_space_count + str.count;
+                for begin_trailing_spaces..begin_trailing_spaces+trailing_space_count-1 {
+                    new_str[it] = #char " ";
+                }
+            }
+            return new_str;
+        }
+    }
+    return copy_string(str,, temp);
+}
+
 #scope_file
 
 #import "Basic";

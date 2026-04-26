@@ -27,6 +27,12 @@ Color3f :: struct {
 #overlay(r) array: [3]float32 = ---;
 }
 
+Color_HSL :: struct {
+    hue: float32;
+    saturation := 1.0;
+    lightness := 0.5;
+}
+
 Color4f :: struct {
     r: float32;
     g: float32;
@@ -130,17 +136,198 @@ random_color4f :: inline (r_bounds := Vector2.{0.3, 0.95}, g_bounds := Vector2.{
     return float_color;
 }
 
-brighten :: (color: Color3f, alpha := 0.2) -> Color3f {
-    assert(alpha >= 0 && alpha <= 1);
+lerp_to_grey :: inline (color: Color3f, grey_value: float, alpha: float) -> Color3f {
     out_color: Color3f = ---;
-    out_color.r = min(color.r + (1.0 - color.r) * alpha, 1.0);
-    out_color.g = min(color.g + (1.0 - color.g) * alpha, 1.0);
-    out_color.b = min(color.b + (1.0 - color.b) * alpha, 1.0);
+    out_color.r = lerp(color.r, grey_value, alpha);
+    out_color.g = lerp(color.g, grey_value, alpha);
+    out_color.b = lerp(color.b, grey_value, alpha);
     return out_color;
+}
+
+lighten :: inline (color: Color3f, alpha: float32) -> Color3f {
+    return lerp_to_grey(color, 1, alpha);
+}
+
+darken :: inline (color: Color3f, alpha: float32) -> Color3f {
+    return lerp_to_grey(color, 0, alpha);
+}
+
+scale_lightness :: (color: Color3f, alpha: float32) -> Color3f {
+    grey_value := color_to_grey(color); 
+    grey_value *= alpha;
+    // color := grey_to_color(grey_value);
+    color.r = clamp(color.r, 0, 1);
+    color.g = clamp(color.g, 0, 1);
+    color.b = clamp(color.b, 0, 1);
+    return color;
+}
+
+// 1. finding max headroom with a division is silly
+// 2. this definitely increases brightness
+// 3. increasing saturation is a matter of moving values away from grey, but some things must increase and some must decrease to keep the same grey.
+scale_saturation :: inline (color: Color3f, scale: float32) -> Color3f {
+    assert(scale >= 0);
+
+    min_saturation := color_to_grey(color);
+    grey_value := min_saturation.r;
+
+    if scale <= 1 {
+        return lerp_to_grey(color, grey_value, 1-scale);
+    }
+
+    max_saturation := color;
+
+    Color_Channel :: struct {
+        input: float;
+        max_saturation: *float;
+        min_saturation: *float;
+        grey_factor: float;
+    }
+
+    min_channel: Color_Channel;
+    mid_channel: Color_Channel;
+    max_channel: Color_Channel;
+
+    r_channel := Color_Channel.{color.r, *max_saturation.r, *min_saturation.r, GREY_FACTORS.r};
+    g_channel := Color_Channel.{color.g, *max_saturation.g, *min_saturation.g, GREY_FACTORS.g};
+    b_channel := Color_Channel.{color.b, *max_saturation.b, *min_saturation.b, GREY_FACTORS.b};
+
+    if color.r < color.g {
+        if color.r < color.b {
+            max_channel = g_channel;
+            mid_channel = b_channel;
+            min_channel = r_channel;
+        } else {
+            max_channel = g_channel;
+            mid_channel = r_channel;
+            min_channel = b_channel;
+        }
+    } else if color.g < color.b {
+        if color.r > color.b {
+            max_channel = r_channel;
+            mid_channel = b_channel;
+        } else {
+            max_channel = b_channel;
+            mid_channel = r_channel;
+        }
+        min_channel = g_channel;
+    } else {
+        max_channel = r_channel;
+        mid_channel = g_channel;
+        min_channel = b_channel;
+    }
+
+    min_channel.max_saturation.* = 0;
+    max_channel.max_saturation.* = 1;
+    grey_remainder := grey_value - max_channel.grey_factor;
+    mid_channel.max_saturation.* = grey_remainder / mid_channel.grey_factor;
+
+    // this distance represents a scale of 1
+    max_min_dist := max_channel.input - max_channel.min_saturation.*;
+    mid_min_dist := mid_channel.input - mid_channel.min_saturation.*;
+
+    max_max_dist := max_channel.max_saturation.* - max_channel.input;
+    mid_max_dist := mid_channel.max_saturation.* - mid_channel.input;
+
+    max_max_scale := abs(max_max_dist / max_min_dist);
+    mid_max_scale := abs(mid_max_dist / mid_min_dist);
+
+    max_scale := min(max_max_scale, mid_max_scale);
+
+    if scale >= max_scale {
+        return max_saturation;
+    } else {
+        norm_saturation_alpha := (scale - 1) / (max_scale - 1);
+        return {
+            lerp(color.r, max_saturation.r, norm_saturation_alpha),
+            lerp(color.g, max_saturation.g, norm_saturation_alpha),
+            lerp(color.b, max_saturation.b, norm_saturation_alpha),
+        };
+    }
+}
+// scale_saturation :: inline (color: Color3f, alpha: float32) -> Color3f {
+//     grey_value := color_to_grey(color);
+//     if alpha > 1 {
+//         max_headroom: float32; // i love to see style.
+//         grey_relative_scalars := Color3f.{1,1,1};
+//         if color.r != 0 {
+//             max_headroom = (1 - color.r) / color.r;
+//             grey_relative_scalars = {1, GREY_FACTORS.g / GREY_FACTORS.r, GREY_FACTORS.b / GREY_FACTORS.r};
+//         }
+//         if color.g != 0 {
+//             headroom_g := (1 - color.g) / color.g;
+//             if headroom_g > max_headroom {
+//                 max_headroom = headroom_g;
+//                 grey_relative_scalars = {GREY_FACTORS.r / GREY_FACTORS.g, 1, GREY_FACTORS.b / GREY_FACTORS.g};
+//             }
+//         }
+//         if color.b != 0 {
+//             headroom_b := (1 - color.b) / color.b;
+//             if headroom_b > max_headroom {
+//                 max_headroom = headroom_b;
+//                 grey_relative_scalars = {GREY_FACTORS.r / GREY_FACTORS.b, GREY_FACTORS.g / GREY_FACTORS.b, 1};
+//             }
+//         }
+//         out_color := color;
+//         if max_headroom > 0 {
+//             use_alpha := min(alpha - 1, max_headroom);
+//             out_color.r = clamp(color.r + color.r * use_alpha * grey_relative_scalars.r, 0, 1);
+//             out_color.g = clamp(color.g + color.g * use_alpha * grey_relative_scalars.g, 0, 1);
+//             out_color.b = clamp(color.b + color.b * use_alpha * grey_relative_scalars.b, 0, 1);
+//         }
+//         return out_color;
+//     }
+//     return color;
+// }
+
+color_to_grey :: inline (color: Color3f) -> Color3f {
+    grey := get_grey_value(color);
+    return {grey, grey, grey};
+}
+
+get_grey_value :: inline (color: Color3f) -> float32 {
+    return GREY_FACTORS.r * color.r + GREY_FACTORS.g * color.g + GREY_FACTORS.b * color.b;
+}
+
+GREY_FACTORS :: Color3f.{0.2126, 0.7152, 0.0722};
+
+
+hsl_to_rgb :: (hsl: Color_HSL) -> Color3f {
+    rgb: Color3f = ---;
+    ONE_THIRD :: 1.0 / 3.0;
+    ONE_SIXTH :: 1.0 / 6.0;
+
+    rgb.r = respace(abs(0.5 - hsl.hue),           {ONE_SIXTH, ONE_THIRD}, {0, 1});
+    rgb.g = respace(abs(ONE_THIRD - hsl.hue),     {ONE_SIXTH, ONE_THIRD}, {1, 0});
+    rgb.b = respace(abs(ONE_THIRD * 2 - hsl.hue), {ONE_SIXTH, ONE_THIRD}, {1, 0});
+
+    grey_value := get_grey_value(rgb);
+    grey_alpha := clamp(1 - hsl.saturation, 0.0, 1.0);
+    rgb.r = lerp(rgb.r, grey_value, grey_alpha);
+    rgb.g = lerp(rgb.g, grey_value, grey_alpha);
+    rgb.b = lerp(rgb.b, grey_value, grey_alpha);
+
+    if hsl.lightness > 0.5 {
+        white_alpha := clamp((hsl.lightness - 0.5) * 2, 0.0, 1.0); 
+        rgb = lighten(rgb, white_alpha);
+    } else if hsl.lightness < 0.5 {
+        black_alpha := clamp((0.5 - hsl.lightness) * 2, 0.0, 1.0); 
+        rgb = darken(rgb, black_alpha);
+    }
+
+    return rgb;
+}
+
+rgb_to_hsl :: (rgb: Color3f) -> Color_HSL {
+    hsl: Color_HSL = ---;
+
+
+    return hsl;
 }
 
 #scope_file
 
+#import "Basic";
 #import "Random";
 #import "Math";
 #import "TeRM/TeRM_Math";

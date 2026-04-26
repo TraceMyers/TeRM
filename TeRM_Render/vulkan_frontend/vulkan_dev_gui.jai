@@ -95,7 +95,8 @@ dev_gui_set_theme_paper_and_ink :: () {
     font_config.PixelSnapH = false;
 
     io := ImGui.GetIO();
-    io.Fonts.AddFontFromFileTTF(io.Fonts, "fonts/PkgTTC-IosevkaAile-33.2.9/IosevkaAile-Regular.ttc", 14.0, null, io.Fonts.GetGlyphRangesDefault(io.Fonts));
+    // io.Fonts.AddFontFromFileTTF(io.Fonts, "fonts/PkgTTC-IosevkaAile-33.2.9/IosevkaAile-Regular.ttc", 14.0, null, io.Fonts.GetGlyphRangesDefault(io.Fonts));
+    io.Fonts.AddFontFromFileTTF(io.Fonts, "fonts/RobotoMono-SemiBold.ttf", 16.0, null, io.Fonts.GetGlyphRangesDefault(io.Fonts));
 
     io.Fonts.Build(io.Fonts);
 }

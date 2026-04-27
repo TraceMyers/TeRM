@@ -8,6 +8,8 @@ COLOR4F_BRIGHT_PURPLE :: Color4f.{0.65, 0.1, 0.82, 1};
 
 GREY_FACTORS :: Color3f.{0.2126, 0.7152, 0.0722};
 
+FLOAT_RGB_TYPES :: Type.[Color3f, Color4f];
+
 HSY_Component :: enum {
     HUE; 
     SATURATION;
@@ -37,7 +39,9 @@ Color3f :: struct {
 Color_HSY :: struct {
     hue: float32;
     saturation := 1.0;
-    luminance := 0.5;
+    // note that unlike lightness (midpoint=0.5), luminance's midpoint depends on the hue.
+    luminance := 0.0;
+    alpha := 1.0; // mirrors rgba's 'a', so that converting rgba -> hsy -> rgba isn't throwing away the alpha value
 }
 
 Color4f :: struct {
@@ -131,7 +135,7 @@ lerp :: inline (begin: Color4f, end: Color4f, t: float) -> Color4f {
     };
 }
 
-random_color4f :: inline (r_bounds := Vector2.{0.3, 0.95}, g_bounds := Vector2.{0.3, 0.95}, b_bounds := Vector2.{0.3, 0.95}, a := 1.0, random_state : *Random_State = null) -> Color4f {
+get_random_color :: inline (r_bounds := Vector2.{0.3, 0.95}, g_bounds := Vector2.{0.3, 0.95}, b_bounds := Vector2.{0.3, 0.95}, a := 1.0, random_state : *Random_State = null) -> Color4f {
     if random_state == null {
         random_state = *context.random_state;
     }
@@ -143,32 +147,57 @@ random_color4f :: inline (r_bounds := Vector2.{0.3, 0.95}, g_bounds := Vector2.{
     return float_color;
 }
 
-lerp_to_grey :: inline (color: Color3f, grey_value: float, alpha: float) -> Color3f {
-    out_color: Color3f = ---;
-    out_color.r = lerp(color.r, grey_value, alpha);
-    out_color.g = lerp(color.g, grey_value, alpha);
-    out_color.b = lerp(color.b, grey_value, alpha);
+lerp_to_grey :: inline (color: $T/FLOAT_RGB_TYPES, grey_value: float, alpha: float) -> T {
+    out_color := T.{
+        r = lerp(color.r, grey_value, alpha),
+        g = lerp(color.g, grey_value, alpha),
+        b = lerp(color.b, grey_value, alpha)
+    };
+    #if T == Color4f then out_color.a = color.a;
     return out_color;
 }
 
-get_grey_value :: inline (color: Color3f) -> float32 {
+get_grey_value :: inline (color: $T/FLOAT_RGB_TYPES) -> float32 {
     return GREY_FACTORS.r * color.r + GREY_FACTORS.g * color.g + GREY_FACTORS.b * color.b;
 }
 
-to_grey :: inline (color: Color3f) -> Color3f {
+to_grey :: inline (color: $T/FLOAT_RGB_TYPES) -> T {
     grey := get_grey_value(color);
-    return {grey, grey, grey};
+    out_color := T.{r=grey, g=grey, b=grey};
+    #if T == Color4f then out_color.a = color.a;
+    return out_color;
 }
 
-lighten :: inline (color: Color3f, alpha: float32) -> Color3f {
+lighten :: inline (color: $T/FLOAT_RGB_TYPES, alpha: float32) -> T {
     return lerp_to_grey(color, 1, alpha);
 }
 
-darken :: inline (color: Color3f, alpha: float32) -> Color3f {
+darken :: inline (color: $T/FLOAT_RGB_TYPES, alpha: float32) -> T {
     return lerp_to_grey(color, 0, alpha);
 }
 
-scale_saturation :: inline (color: Color3f, scale: float32, try_preserve_aspect := HSY_Component.HUE) -> Color3f {
+// HSY also doubles as HSL with these helper procedures
+
+// 0.5 -> middle luminance of the hue
+set_lightness :: (hsy: *Color_HSY, lightness := 0.5) {
+    mid_grey := get_grey_value(hue_to_rgb(hsy.hue));
+    if lightness >= 0.5 {
+        hsy.luminance = respace(lightness, {0.5, 1}, {mid_grey, 1});
+    } else {
+        hsy.luminance = respace(lightness, {0, 0.5}, {0, mid_grey});
+    }
+}
+
+get_lightness :: (hsy: Color_HSY) -> float32 {
+    mid_grey := get_grey_value(hue_to_rgb(hsy.hue));
+    if hsy.luminance > mid_grey {
+        return respace(hsy.luminance, {mid_grey, 1}, {0.5, 1});
+    } else {
+        return respace(hsy.luminance, {0, mid_grey}, {0, 0.5});
+    }
+}
+
+scale_saturation :: inline (color: $T/FLOAT_RGB_TYPES, scale: float32, try_preserve_aspect := HSY_Component.HUE) -> T {
     assert(scale >= 0);
     assert(try_preserve_accuracy_of != .SATURATION);
 
@@ -185,11 +214,13 @@ scale_saturation :: inline (color: Color3f, scale: float32, try_preserve_aspect 
         return max_saturation;
     } else {
         norm_saturation_alpha := (scale - 1) / (max_saturation_scale - 1);
-        return {
-            lerp(color.r, max_saturation.r, norm_saturation_alpha),
-            lerp(color.g, max_saturation.g, norm_saturation_alpha),
-            lerp(color.b, max_saturation.b, norm_saturation_alpha),
+        out_color := T.{
+            r = lerp(color.r, max_saturation.r, norm_saturation_alpha),
+            g = lerp(color.g, max_saturation.g, norm_saturation_alpha),
+            b = lerp(color.b, max_saturation.b, norm_saturation_alpha),
         };
+        #if T == Color4f then out_color.a = color.a;
+        return out_color;
     }
 }
 
@@ -200,7 +231,7 @@ to_min_saturation :: to_grey;
 // 'saturation_scale' is the distance from the current color to max saturation, relative
 // to the distance from the min saturation to the color. e.g. if the color is equidistant
 // between min and max saturation, saturation_scale would be 1.
-to_max_saturation :: (color: Color3f, try_preserve_aspect := HSY_Component.HUE) -> max_saturation: Color3f, saturation_scale: float32 {
+to_max_saturation :: (color: $T/FLOAT_RGB_TYPES, try_preserve_aspect := HSY_Component.HUE) -> max_saturation: T, saturation_scale: float32 {
     assert(try_preserve_accuracy_of != .SATURATION);
 
     min_saturation := to_min_saturation(color);
@@ -256,7 +287,7 @@ to_max_saturation :: (color: Color3f, try_preserve_aspect := HSY_Component.HUE) 
     min_channel.max_saturation.* = 0;
 
     if max_channel.max_saturation.* <= 0 {
-        return {}, 1;
+        return color, 1;
     }
 
     if try_preserve_accuracy_of == .HUE {
@@ -290,99 +321,97 @@ to_max_saturation :: (color: Color3f, try_preserve_aspect := HSY_Component.HUE) 
 
     max_saturation_scale := min(max_max_scale, mid_max_scale);
 
+    #if T == Color4f then max_saturation.a = color.a;
     return max_saturation, max_saturation_scale;
 }
 
 // sets default luminance to the mid grey for the hue
-hue_to_hsy :: inline (hue: float32, saturation := 1.0) -> Color_HSY {
-    hsy: Color_HSY = ---;
-    hsy.hue = hue;
-    hsy.saturation = saturation;
-    hsy.luminance = get_grey_value(hue_to_rgb(hue));
-    return hsy;
+hue_to_hsy :: inline (hue: float32, saturation := 1.0, alpha := 1.0) -> Color_HSY {
+    return Color_HSY.{
+        hue         = hue,
+        saturation  = saturation,
+        luminance   = get_grey_value(hue_to_rgb(hue)),
+        alpha       = alpha
+    };
 }
 
-hue_to_rgb :: (hue: float32) -> Color3f {
-    rgb: Color3f = ---;
-    rgb.r = respace(abs(0.5 - hue),           {ONE_SIXTH, ONE_THIRD}, {0, 1});
-    rgb.g = respace(abs(ONE_THIRD - hue),     {ONE_SIXTH, ONE_THIRD}, {1, 0});
-    rgb.b = respace(abs(ONE_THIRD * 2 - hue), {ONE_SIXTH, ONE_THIRD}, {1, 0});
-    return rgb;
+hue_to_rgb :: (hue: float32, alpha := 1.0, $T := Color4f) -> T {
+    assert(T == Color3f || T == Color4f);
+    color := T.{
+        r = respace(abs(0.5 - hue),           {ONE_SIXTH, ONE_THIRD}, {0, 1}),
+        g = respace(abs(ONE_THIRD - hue),     {ONE_SIXTH, ONE_THIRD}, {1, 0}),
+        b = respace(abs(ONE_THIRD * 2 - hue), {ONE_SIXTH, ONE_THIRD}, {1, 0})
+    };
+    #if T == Color4f then color.a = alpha;
+    return color;
 }
 
-hsy_to_rgb :: (hsy: Color_HSY) -> Color3f {
-    rgb := hue_to_rgb(hsy.hue);
+hsy_to_rgb :: (hsy: Color_HSY, $T := Color4f) -> T {
+    assert(T == Color3f || T == Color4f);
+    rgb := hue_to_rgb(hsy.hue, T=T);
 
     max_saturated_luminance := get_grey_value(rgb);
-    grey := Color3f.{max_saturated_luminance, max_saturated_luminance, max_saturated_luminance};
     
-    luma_shifted_rgb: Color3f = ---;
-
+    luma_shifted_rgb: T = ---;
     if max_saturated_luminance <= hsy.luminance {
-        alpha := clamp(1 - max_saturated_luminance / hsy.luminance, 0, 1);
-        luma_shifted_rgb.r = lerp(rgb.r, 1, alpha);
-        luma_shifted_rgb.g = lerp(rgb.g, 1, alpha);
-        luma_shifted_rgb.b = lerp(rgb.b, 1, alpha);
+        white_alpha := respace(hsy.luminance, {max_saturated_luminance, 1}, {0, 1});
+        luma_shifted_rgb.r = lerp(rgb.r, 1, white_alpha);
+        luma_shifted_rgb.g = lerp(rgb.g, 1, white_alpha);
+        luma_shifted_rgb.b = lerp(rgb.b, 1, white_alpha);
     } else {
-        alpha := clamp((max_saturated_luminance - hsy.luminance) / (1 - hsy.luminance), 0, 1);
-        luma_shifted_rgb.r = lerp(rgb.r, 0, alpha);
-        luma_shifted_rgb.g = lerp(rgb.g, 0, alpha);
-        luma_shifted_rgb.b = lerp(rgb.b, 0, alpha);
+        black_alpha := respace(hsy.luminance, {0, max_saturated_luminance}, {1, 0});
+        luma_shifted_rgb.r = lerp(rgb.r, 0, black_alpha);
+        luma_shifted_rgb.g = lerp(rgb.g, 0, black_alpha);
+        luma_shifted_rgb.b = lerp(rgb.b, 0, black_alpha);
     }
 
     grey_alpha := clamp(1 - hsy.saturation, 0.0, 1.0);
-    rgb.r = lerp(luma_shifted_rgb.r, grey.r, grey_alpha);
-    rgb.g = lerp(luma_shifted_rgb.g, grey.g, grey_alpha);
-    rgb.b = lerp(luma_shifted_rgb.b, grey.b, grey_alpha);
+    rgb.r = lerp(luma_shifted_rgb.r, max_saturated_luminance, grey_alpha);
+    rgb.g = lerp(luma_shifted_rgb.g, max_saturated_luminance, grey_alpha);
+    rgb.b = lerp(luma_shifted_rgb.b, max_saturated_luminance, grey_alpha);
+    #if T == Color4f then rgb.a = hsy.alpha;
 
     return rgb;
 }
 
-rgb_to_hsy :: (rgb: Color3f) -> Color_HSY {
+rgb_to_hsy :: (rgb: $T/FLOAT_RGB_TYPES) -> Color_HSY {
     hsy: Color_HSY = ---;
     
-    // min_saturated := to_min_saturation(rgb);
-    // // hsl = {hue=?, sat=1, light=0.5} is the reference value for a color
-    // max_saturated := to_max_saturation(rgb);
+    min_saturated := to_min_saturation(rgb);
+    // the reference color has saturation=1
+    max_saturated := to_max_saturation(rgb);
 
-    // color_grey_value     := get_grey_value(color);
-    // // this represents 0.5 lightness, because the most saturated version of a color is halfway between
-    // // black and white.
-    // reference_grey_value := get_grey_value(max_saturated);
-
-    // if color_grey_value > reference_grey_value {
-    //     hsl.lightness = respace(color_grey_value, {reference_grey_value, 1}, {0.5, 1});
-    // } else {
-    //     hsl.lightness = respace(color_grey_value, {0, reference_grey_value}, {0, 0.5});
-    // }
+    hsy.luminance = get_grey_value(color);
+    // this represents 0.5 lightness, because the most saturated version of a color is halfway between
+    // black and white.
+    max_saturated_luminance := get_grey_value(max_saturated);
 
     // // use channel that the hue is closest to as the pivot and lerp along the edge of the circle toward the
     // // other nonzero channel.
-    // if max_saturated.r == 1 {
-    //     if max_saturated.g > 0 { // rg
-    //         hsl.hue = 0 + max_saturated.g * ONE_SIXTH;
-    //     } else { // rb
-    //         hsl.hue = 1 - max_saturated.b * ONE_SIXTH;
-    //     }
-    //     // the two most active channels of the input color are in a lerp between their grey value 
-    //     // and max saturated value. capture that lerp in the most active channel.
-    //     hsl.saturation = respace(rgb.r, {min_saturated.r, max_saturated.r}, {0, 1});
-    // } else if max_saturated.g == 1 {
-    //     if max_saturated.r > 0 { // rg
-    //         hsl.hue = ONE_THIRD - max_saturated.r * ONE_SIXTH;
-    //     } else { // gb
-    //         hsl.hue = ONE_THIRD + max_saturated.b * ONE_SIXTH;
-    //     }
-    // } else {
-    //     assert(max_saturated.b == 1);
-    //     if max_saturated.r > 0 { // rb
-    //         hsl.hue = 2 * ONE_THIRD + max_saturated.r * ONE_SIXTH;
-    //     } else { // bg
-    //         hsl.hue = 2 * ONE_THIRD - max_saturated.g * ONE_SIXTH;
-    //     }
-    // }
+    if max_saturated.r == 1 {
+        if max_saturated.g > 0 { // rg
+            hsy.hue = 0 + max_saturated.g * ONE_SIXTH;
+        } else { // rb
+            hsy.hue = 1 - max_saturated.b * ONE_SIXTH;
+        }
+    } else if max_saturated.g == 1 {
+        if max_saturated.r > 0 { // rg
+            hsy.hue = ONE_THIRD - max_saturated.r * ONE_SIXTH;
+        } else { // gb
+            hsy.hue = ONE_THIRD + max_saturated.b * ONE_SIXTH;
+        }
+    } else {
+        assert(max_saturated.b == 1);
+        if max_saturated.r > 0 { // rb
+            hsy.hue = 2 * ONE_THIRD + max_saturated.r * ONE_SIXTH;
+        } else { // bg
+            hsy.hue = 2 * ONE_THIRD - max_saturated.g * ONE_SIXTH;
+        }
+    }
 
+    // saturation...
 
+    #if T == Color4f then hsy.alpha = rgb.a; else hsy.alpha = 1;
     return hsy;
 }
 

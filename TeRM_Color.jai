@@ -1,11 +1,18 @@
-COLOR4F_WHITE       :: Color4f.{1,1,1,1};
-COLOR4F_RED         :: Color4f.{1,0,0,1};
-COLOR4F_GREEN       :: Color4f.{0,1,0,1};
-COLOR4F_BLUE        :: Color4f.{0,0,1,1};
-COLOR4F_BLACK       :: Color4f.{0,0,0,1};
-COLOR4F_MAGENTA     :: Color4f.{1,0,1,1};
+COLOR4F_WHITE         :: Color4f.{1,1,1,1};
+COLOR4F_RED           :: Color4f.{1,0,0,1};
+COLOR4F_GREEN         :: Color4f.{0,1,0,1};
+COLOR4F_BLUE          :: Color4f.{0,0,1,1};
+COLOR4F_BLACK         :: Color4f.{0,0,0,1};
+COLOR4F_MAGENTA       :: Color4f.{1,0,1,1};
+COLOR4F_BRIGHT_PURPLE :: Color4f.{0.65, 0.1, 0.82, 1};
 
-COLOR4F_BRIGHT_PURPLE      :: Color4f.{0.65, 0.1, 0.82, 1};
+GREY_FACTORS :: Color3f.{0.2126, 0.7152, 0.0722};
+
+HSY_Component :: enum {
+    HUE; 
+    SATURATION;
+    LUMINANCE;
+};
 
 Color2f :: struct {
     r: float32;
@@ -27,10 +34,10 @@ Color3f :: struct {
 #overlay(r) array: [3]float32 = ---;
 }
 
-Color_HSL :: struct {
+Color_HSY :: struct {
     hue: float32;
     saturation := 1.0;
-    lightness := 0.5;
+    luminance := 0.5;
 }
 
 Color4f :: struct {
@@ -144,6 +151,15 @@ lerp_to_grey :: inline (color: Color3f, grey_value: float, alpha: float) -> Colo
     return out_color;
 }
 
+get_grey_value :: inline (color: Color3f) -> float32 {
+    return GREY_FACTORS.r * color.r + GREY_FACTORS.g * color.g + GREY_FACTORS.b * color.b;
+}
+
+to_grey :: inline (color: Color3f) -> Color3f {
+    grey := get_grey_value(color);
+    return {grey, grey, grey};
+}
+
 lighten :: inline (color: Color3f, alpha: float32) -> Color3f {
     return lerp_to_grey(color, 1, alpha);
 }
@@ -152,28 +168,43 @@ darken :: inline (color: Color3f, alpha: float32) -> Color3f {
     return lerp_to_grey(color, 0, alpha);
 }
 
-scale_lightness :: (color: Color3f, alpha: float32) -> Color3f {
-    grey_value := color_to_grey(color); 
-    grey_value *= alpha;
-    // color := grey_to_color(grey_value);
-    color.r = clamp(color.r, 0, 1);
-    color.g = clamp(color.g, 0, 1);
-    color.b = clamp(color.b, 0, 1);
-    return color;
-}
-
-// 1. finding max headroom with a division is silly
-// 2. this definitely increases brightness
-// 3. increasing saturation is a matter of moving values away from grey, but some things must increase and some must decrease to keep the same grey.
-scale_saturation :: inline (color: Color3f, scale: float32) -> Color3f {
+scale_saturation :: inline (color: Color3f, scale: float32, try_preserve_aspect := HSY_Component.HUE) -> Color3f {
     assert(scale >= 0);
+    assert(try_preserve_accuracy_of != .SATURATION);
 
-    min_saturation := color_to_grey(color);
-    grey_value := min_saturation.r;
+    min_saturation := to_min_saturation(color);
 
     if scale <= 1 {
+        grey_value := min_saturation.r;
         return lerp_to_grey(color, grey_value, 1-scale);
     }
+
+    max_saturation, max_saturation_scale := to_max_saturation(color, try_preserve_aspect);
+
+    if scale >= max_saturation_scale {
+        return max_saturation;
+    } else {
+        norm_saturation_alpha := (scale - 1) / (max_saturation_scale - 1);
+        return {
+            lerp(color.r, max_saturation.r, norm_saturation_alpha),
+            lerp(color.g, max_saturation.g, norm_saturation_alpha),
+            lerp(color.b, max_saturation.b, norm_saturation_alpha),
+        };
+    }
+}
+
+// the 'saturation_scale' out value would be 0, if it returned one, because saturation
+// is being scaled to 0.
+to_min_saturation :: to_grey;
+
+// 'saturation_scale' is the distance from the current color to max saturation, relative
+// to the distance from the min saturation to the color. e.g. if the color is equidistant
+// between min and max saturation, saturation_scale would be 1.
+to_max_saturation :: (color: Color3f, try_preserve_aspect := HSY_Component.HUE) -> max_saturation: Color3f, saturation_scale: float32 {
+    assert(try_preserve_accuracy_of != .SATURATION);
+
+    min_saturation := to_min_saturation(color);
+    grey_value := min_saturation.r;
 
     max_saturation := color;
 
@@ -217,12 +248,37 @@ scale_saturation :: inline (color: Color3f, scale: float32) -> Color3f {
         min_channel = b_channel;
     }
 
+    max_channel.max_saturation.* -= min_channel.max_saturation.*;
+    mid_channel.max_saturation.* -= min_channel.max_saturation.*;
+    // in order for a color to hit max saturation, the lowest valued channel must be muted
+    // to 0, because adding value in the third channel moves toward white, which moves
+    // away from full saturation. 
     min_channel.max_saturation.* = 0;
-    max_channel.max_saturation.* = 1;
-    grey_remainder := grey_value - max_channel.grey_factor;
-    mid_channel.max_saturation.* = grey_remainder / mid_channel.grey_factor;
 
-    // this distance represents a scale of 1
+    if max_channel.max_saturation.* <= 0 {
+        return {}, 1;
+    }
+
+    if try_preserve_accuracy_of == .HUE {
+        // there is always at least one channel with value 1. two channels have value 1 if the hue is
+        // 50% the distance between two channels. here, we scale the max channel to 1 and mid channel to
+        // a value in [0, 1]
+        scale_factor := 1 / max_channel.max_saturation.*;
+        mid_channel.max_saturation.* = clamp(mid_channel.max_saturation.* * scale_factor, 0, 1);
+        max_channel.max_saturation.* = clamp(max_channel.max_saturation.* * scale_factor, 0, 1);
+    } else { // .LUMINANCE
+        // in attempting to preserve luminance, we are trying to keep the grey value the same.
+        // doing so means maxing out the max channel and giving the remaining grey to the mid channel.
+        // this only works if sufficient value exists in the channels. for dark colors, this
+        // will just return only the channel with the strongest signal e.g. {r=0.2, g=0.1, b=0.05} -> {r=1}
+        max_channel.max_saturation.* = 1;
+        mid_channel.max_saturation.* = max((grey_value - max_channel.grey_factor) / mid_channel.grey_factor, 0);
+    }
+
+    // this procedure returns how much the channels can be scaled up until one of the 
+    // channels hits its maximum, and a scale of 1 is represented by the current distance
+    // from the grey value. so, 2x saturation scale would be 2x the current distance
+    // from grey. 
     max_min_dist := max_channel.input - max_channel.min_saturation.*;
     mid_min_dist := mid_channel.input - mid_channel.min_saturation.*;
 
@@ -232,100 +288,108 @@ scale_saturation :: inline (color: Color3f, scale: float32) -> Color3f {
     max_max_scale := abs(max_max_dist / max_min_dist);
     mid_max_scale := abs(mid_max_dist / mid_min_dist);
 
-    max_scale := min(max_max_scale, mid_max_scale);
+    max_saturation_scale := min(max_max_scale, mid_max_scale);
 
-    if scale >= max_scale {
-        return max_saturation;
-    } else {
-        norm_saturation_alpha := (scale - 1) / (max_scale - 1);
-        return {
-            lerp(color.r, max_saturation.r, norm_saturation_alpha),
-            lerp(color.g, max_saturation.g, norm_saturation_alpha),
-            lerp(color.b, max_saturation.b, norm_saturation_alpha),
-        };
-    }
-}
-// scale_saturation :: inline (color: Color3f, alpha: float32) -> Color3f {
-//     grey_value := color_to_grey(color);
-//     if alpha > 1 {
-//         max_headroom: float32; // i love to see style.
-//         grey_relative_scalars := Color3f.{1,1,1};
-//         if color.r != 0 {
-//             max_headroom = (1 - color.r) / color.r;
-//             grey_relative_scalars = {1, GREY_FACTORS.g / GREY_FACTORS.r, GREY_FACTORS.b / GREY_FACTORS.r};
-//         }
-//         if color.g != 0 {
-//             headroom_g := (1 - color.g) / color.g;
-//             if headroom_g > max_headroom {
-//                 max_headroom = headroom_g;
-//                 grey_relative_scalars = {GREY_FACTORS.r / GREY_FACTORS.g, 1, GREY_FACTORS.b / GREY_FACTORS.g};
-//             }
-//         }
-//         if color.b != 0 {
-//             headroom_b := (1 - color.b) / color.b;
-//             if headroom_b > max_headroom {
-//                 max_headroom = headroom_b;
-//                 grey_relative_scalars = {GREY_FACTORS.r / GREY_FACTORS.b, GREY_FACTORS.g / GREY_FACTORS.b, 1};
-//             }
-//         }
-//         out_color := color;
-//         if max_headroom > 0 {
-//             use_alpha := min(alpha - 1, max_headroom);
-//             out_color.r = clamp(color.r + color.r * use_alpha * grey_relative_scalars.r, 0, 1);
-//             out_color.g = clamp(color.g + color.g * use_alpha * grey_relative_scalars.g, 0, 1);
-//             out_color.b = clamp(color.b + color.b * use_alpha * grey_relative_scalars.b, 0, 1);
-//         }
-//         return out_color;
-//     }
-//     return color;
-// }
-
-color_to_grey :: inline (color: Color3f) -> Color3f {
-    grey := get_grey_value(color);
-    return {grey, grey, grey};
+    return max_saturation, max_saturation_scale;
 }
 
-get_grey_value :: inline (color: Color3f) -> float32 {
-    return GREY_FACTORS.r * color.r + GREY_FACTORS.g * color.g + GREY_FACTORS.b * color.b;
+// sets default luminance to the mid grey for the hue
+hue_to_hsy :: inline (hue: float32, saturation := 1.0) -> Color_HSY {
+    hsy: Color_HSY = ---;
+    hsy.hue = hue;
+    hsy.saturation = saturation;
+    hsy.luminance = get_grey_value(hue_to_rgb(hue));
+    return hsy;
 }
 
-GREY_FACTORS :: Color3f.{0.2126, 0.7152, 0.0722};
-
-
-hsl_to_rgb :: (hsl: Color_HSL) -> Color3f {
+hue_to_rgb :: (hue: float32) -> Color3f {
     rgb: Color3f = ---;
-    ONE_THIRD :: 1.0 / 3.0;
-    ONE_SIXTH :: 1.0 / 6.0;
+    rgb.r = respace(abs(0.5 - hue),           {ONE_SIXTH, ONE_THIRD}, {0, 1});
+    rgb.g = respace(abs(ONE_THIRD - hue),     {ONE_SIXTH, ONE_THIRD}, {1, 0});
+    rgb.b = respace(abs(ONE_THIRD * 2 - hue), {ONE_SIXTH, ONE_THIRD}, {1, 0});
+    return rgb;
+}
 
-    rgb.r = respace(abs(0.5 - hsl.hue),           {ONE_SIXTH, ONE_THIRD}, {0, 1});
-    rgb.g = respace(abs(ONE_THIRD - hsl.hue),     {ONE_SIXTH, ONE_THIRD}, {1, 0});
-    rgb.b = respace(abs(ONE_THIRD * 2 - hsl.hue), {ONE_SIXTH, ONE_THIRD}, {1, 0});
+hsy_to_rgb :: (hsy: Color_HSY) -> Color3f {
+    rgb := hue_to_rgb(hsy.hue);
 
-    grey_value := get_grey_value(rgb);
-    grey_alpha := clamp(1 - hsl.saturation, 0.0, 1.0);
-    rgb.r = lerp(rgb.r, grey_value, grey_alpha);
-    rgb.g = lerp(rgb.g, grey_value, grey_alpha);
-    rgb.b = lerp(rgb.b, grey_value, grey_alpha);
+    max_saturated_luminance := get_grey_value(rgb);
+    grey := Color3f.{max_saturated_luminance, max_saturated_luminance, max_saturated_luminance};
+    
+    luma_shifted_rgb: Color3f = ---;
 
-    if hsl.lightness > 0.5 {
-        white_alpha := clamp((hsl.lightness - 0.5) * 2, 0.0, 1.0); 
-        rgb = lighten(rgb, white_alpha);
-    } else if hsl.lightness < 0.5 {
-        black_alpha := clamp((0.5 - hsl.lightness) * 2, 0.0, 1.0); 
-        rgb = darken(rgb, black_alpha);
+    if max_saturated_luminance <= hsy.luminance {
+        alpha := clamp(1 - max_saturated_luminance / hsy.luminance, 0, 1);
+        luma_shifted_rgb.r = lerp(rgb.r, 1, alpha);
+        luma_shifted_rgb.g = lerp(rgb.g, 1, alpha);
+        luma_shifted_rgb.b = lerp(rgb.b, 1, alpha);
+    } else {
+        alpha := clamp((max_saturated_luminance - hsy.luminance) / (1 - hsy.luminance), 0, 1);
+        luma_shifted_rgb.r = lerp(rgb.r, 0, alpha);
+        luma_shifted_rgb.g = lerp(rgb.g, 0, alpha);
+        luma_shifted_rgb.b = lerp(rgb.b, 0, alpha);
     }
+
+    grey_alpha := clamp(1 - hsy.saturation, 0.0, 1.0);
+    rgb.r = lerp(luma_shifted_rgb.r, grey.r, grey_alpha);
+    rgb.g = lerp(luma_shifted_rgb.g, grey.g, grey_alpha);
+    rgb.b = lerp(luma_shifted_rgb.b, grey.b, grey_alpha);
 
     return rgb;
 }
 
-rgb_to_hsl :: (rgb: Color3f) -> Color_HSL {
-    hsl: Color_HSL = ---;
+rgb_to_hsy :: (rgb: Color3f) -> Color_HSY {
+    hsy: Color_HSY = ---;
+    
+    // min_saturated := to_min_saturation(rgb);
+    // // hsl = {hue=?, sat=1, light=0.5} is the reference value for a color
+    // max_saturated := to_max_saturation(rgb);
+
+    // color_grey_value     := get_grey_value(color);
+    // // this represents 0.5 lightness, because the most saturated version of a color is halfway between
+    // // black and white.
+    // reference_grey_value := get_grey_value(max_saturated);
+
+    // if color_grey_value > reference_grey_value {
+    //     hsl.lightness = respace(color_grey_value, {reference_grey_value, 1}, {0.5, 1});
+    // } else {
+    //     hsl.lightness = respace(color_grey_value, {0, reference_grey_value}, {0, 0.5});
+    // }
+
+    // // use channel that the hue is closest to as the pivot and lerp along the edge of the circle toward the
+    // // other nonzero channel.
+    // if max_saturated.r == 1 {
+    //     if max_saturated.g > 0 { // rg
+    //         hsl.hue = 0 + max_saturated.g * ONE_SIXTH;
+    //     } else { // rb
+    //         hsl.hue = 1 - max_saturated.b * ONE_SIXTH;
+    //     }
+    //     // the two most active channels of the input color are in a lerp between their grey value 
+    //     // and max saturated value. capture that lerp in the most active channel.
+    //     hsl.saturation = respace(rgb.r, {min_saturated.r, max_saturated.r}, {0, 1});
+    // } else if max_saturated.g == 1 {
+    //     if max_saturated.r > 0 { // rg
+    //         hsl.hue = ONE_THIRD - max_saturated.r * ONE_SIXTH;
+    //     } else { // gb
+    //         hsl.hue = ONE_THIRD + max_saturated.b * ONE_SIXTH;
+    //     }
+    // } else {
+    //     assert(max_saturated.b == 1);
+    //     if max_saturated.r > 0 { // rb
+    //         hsl.hue = 2 * ONE_THIRD + max_saturated.r * ONE_SIXTH;
+    //     } else { // bg
+    //         hsl.hue = 2 * ONE_THIRD - max_saturated.g * ONE_SIXTH;
+    //     }
+    // }
 
 
-    return hsl;
+    return hsy;
 }
 
 #scope_file
+
+ONE_THIRD :: 1.0 / 3.0;
+ONE_SIXTH :: 1.0 / 6.0;
 
 #import "Basic";
 #import "Random";

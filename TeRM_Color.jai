@@ -40,7 +40,7 @@ Color_HSY :: struct {
     hue: float32;
     saturation := 1.0;
     // note that unlike lightness (midpoint=0.5), luminance's midpoint depends on the hue.
-    luminance := 0.0;
+    luminance := 0.5;
     alpha := 1.0; // mirrors rgba's 'a', so that converting rgba -> hsy -> rgba isn't throwing away the alpha value
 }
 
@@ -232,7 +232,7 @@ to_min_saturation :: to_grey;
 // to the distance from the min saturation to the color. e.g. if the color is equidistant
 // between min and max saturation, saturation_scale would be 1.
 to_max_saturation :: (color: $T/FLOAT_RGB_TYPES, try_preserve_aspect := HSY_Component.HUE) -> max_saturation: T, saturation_scale: float32 {
-    assert(try_preserve_accuracy_of != .SATURATION);
+    assert(try_preserve_aspect != .SATURATION);
 
     min_saturation := to_min_saturation(color);
     grey_value := min_saturation.r;
@@ -256,9 +256,15 @@ to_max_saturation :: (color: $T/FLOAT_RGB_TYPES, try_preserve_aspect := HSY_Comp
 
     if color.r < color.g {
         if color.r < color.b {
-            max_channel = g_channel;
-            mid_channel = b_channel;
-            min_channel = r_channel;
+            if color.g < color.b {
+                max_channel = b_channel;
+                mid_channel = g_channel;
+                min_channel = r_channel;
+            } else {
+                max_channel = g_channel;
+                mid_channel = b_channel;
+                min_channel = r_channel;
+            }
         } else {
             max_channel = g_channel;
             mid_channel = r_channel;
@@ -287,16 +293,16 @@ to_max_saturation :: (color: $T/FLOAT_RGB_TYPES, try_preserve_aspect := HSY_Comp
     min_channel.max_saturation.* = 0;
 
     if max_channel.max_saturation.* <= 0 {
-        return color, 1;
+        return {r=1}, 1;
     }
 
-    if try_preserve_accuracy_of == .HUE {
+    if try_preserve_aspect == .HUE {
         // there is always at least one channel with value 1. two channels have value 1 if the hue is
         // 50% the distance between two channels. here, we scale the max channel to 1 and mid channel to
         // a value in [0, 1]
         scale_factor := 1 / max_channel.max_saturation.*;
         mid_channel.max_saturation.* = clamp(mid_channel.max_saturation.* * scale_factor, 0, 1);
-        max_channel.max_saturation.* = clamp(max_channel.max_saturation.* * scale_factor, 0, 1);
+        max_channel.max_saturation.* = 1;
     } else { // .LUMINANCE
         // in attempting to preserve luminance, we are trying to keep the grey value the same.
         // doing so means maxing out the max channel and giving the remaining grey to the mid channel.
@@ -350,7 +356,7 @@ hsy_to_rgb :: (hsy: Color_HSY, $T := Color4f) -> T {
     assert(T == Color3f || T == Color4f);
     rgb := hue_to_rgb(hsy.hue, T=T);
 
-    max_saturated_luminance := get_grey_value(rgb);
+    max_saturated_luminance := get_grey_value(hue_to_rgb(hsy.hue));
     
     luma_shifted_rgb: T = ---;
     if max_saturated_luminance <= hsy.luminance {
@@ -381,7 +387,13 @@ rgb_to_hsy :: (rgb: $T/FLOAT_RGB_TYPES) -> Color_HSY {
     // the reference color has saturation=1
     max_saturated := to_max_saturation(rgb);
 
-    hsy.luminance = get_grey_value(color);
+    hsy.luminance = get_grey_value(rgb);
+
+    if hsy.luminance == 0 {
+        hsy = {};
+        return hsy;
+    }
+
     // this represents 0.5 lightness, because the most saturated version of a color is halfway between
     // black and white.
     max_saturated_luminance := get_grey_value(max_saturated);
@@ -401,7 +413,7 @@ rgb_to_hsy :: (rgb: $T/FLOAT_RGB_TYPES) -> Color_HSY {
             hsy.hue = ONE_THIRD + max_saturated.b * ONE_SIXTH;
         }
     } else {
-        assert(max_saturated.b == 1);
+        assert(max_saturated.b == 1, "max saturated = %", max_saturated);
         if max_saturated.r > 0 { // rb
             hsy.hue = 2 * ONE_THIRD + max_saturated.r * ONE_SIXTH;
         } else { // bg
@@ -409,7 +421,48 @@ rgb_to_hsy :: (rgb: $T/FLOAT_RGB_TYPES) -> Color_HSY {
         }
     }
 
-    // saturation...
+    alpha: float = ---;
+    target_value: float = ---;
+
+    if max_saturated_luminance <= hsy.luminance {
+        alpha = respace(hsy.luminance, {max_saturated_luminance, 1}, {0, 1});
+        target_value = 1;
+    } else {
+        alpha = respace(hsy.luminance, {0, max_saturated_luminance}, {1, 0});
+        target_value = 0;
+    }
+
+    luma_shifted := T.{
+        r = lerp(max_saturated.r, target_value, alpha),
+        g = lerp(max_saturated.g, target_value, alpha),
+        b = lerp(max_saturated.b, target_value, alpha),
+    };
+    grey_diffs := T.{
+        r = abs(luma_shifted.r - hsy.luminance),
+        g = abs(luma_shifted.g - hsy.luminance),
+        b = abs(luma_shifted.b - hsy.luminance)
+    };
+
+    channel_value: float;
+    luma_shifted_channel: float;
+
+    if grey_diffs.r > grey_diffs.g {
+        if grey_diffs.r > grey_diffs.b {
+            channel_value = rgb.r;
+            luma_shifted_channel = luma_shifted.r;
+        } else {
+            channel_value = rgb.b;
+            luma_shifted_channel = luma_shifted.b;
+        }
+    } else if grey_diffs.g > grey_diffs.b {
+        channel_value = rgb.g;
+        luma_shifted_channel = luma_shifted.g;
+    } else {
+        channel_value = rgb.b;
+        luma_shifted_channel = luma_shifted.b;
+    }
+
+    hsy.saturation = (channel_value - hsy.luminance) / (luma_shifted_channel - hsy.luminance);
 
     #if T == Color4f then hsy.alpha = rgb.a; else hsy.alpha = 1;
     return hsy;

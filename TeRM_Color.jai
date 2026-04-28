@@ -32,16 +32,8 @@ Color3f :: struct {
 
 #overlay(r) rg: Color2f = ---;
 #overlay(g) gb: Color2f = ---;
-#overlay(r) using #as vec3: Vector3 = ---;
+#overlay(r) using #as vector: Vector3 = ---;
 #overlay(r) array: [3]float32 = ---;
-}
-
-Color_HSY :: struct {
-    hue: float32;
-    saturation := 1.0;
-    // note that unlike lightness (midpoint=0.5), luminance's midpoint depends on the hue.
-    luminance := 0.5;
-    alpha := 1.0; // mirrors rgba's 'a', so that converting rgba -> hsy -> rgba isn't throwing away the alpha value
 }
 
 Color4f :: struct {
@@ -54,7 +46,7 @@ Color4f :: struct {
 #overlay(r) rg: Color2f = ---;
 #overlay(g) gb: Color2f = ---;
 #overlay(b) ba: Color2f = ---;
-#overlay(r) using #as vec4: Vector4 = ---;
+#overlay(r) using #as vector: Vector4 = ---;
 #overlay(r) array: [4]float32 = ---;
 }
 
@@ -66,6 +58,14 @@ Color4b :: struct {
 
 #overlay(r) bytes: [4]u8 = ---;
 #overlay(r) _u32: u32 = ---;
+}
+
+Color_HSY :: struct {
+    hue: float32;
+    saturation := 1.0;
+    // note that unlike lightness (midpoint=0.5), luminance's midpoint depends on the hue.
+    luminance := 0.5;
+    alpha := 1.0; // mirrors rgba's 'a', so that converting rgba -> hsy -> rgba isn't throwing away the alpha value
 }
 
 operator * :: inline (color: Color4f, scalar: float) -> Color4f #symmetric {
@@ -135,16 +135,21 @@ lerp :: inline (begin: Color4f, end: Color4f, t: float) -> Color4f {
     };
 }
 
-get_random_color :: inline (r_bounds := Vector2.{0.3, 0.95}, g_bounds := Vector2.{0.3, 0.95}, b_bounds := Vector2.{0.3, 0.95}, a := 1.0, random_state : *Random_State = null) -> Color4f {
+get_random_color :: inline (saturation_range := Vector2.{0.3, 1.0}, lightness_range := Vector2.{0.3, 0.7}, alpha := 1.0, random_state : *Random_State = null) -> Color4f {
     if random_state == null {
         random_state = *context.random_state;
     }
-    float_color: Color4f = ---;
-    float_color.r = r_bounds.x + random_get_zero_to_one(random_state) * (r_bounds.y - r_bounds.x);
-    float_color.g = g_bounds.x + random_get_zero_to_one(random_state) * (g_bounds.y - g_bounds.x);
-    float_color.b = b_bounds.x + random_get_zero_to_one(random_state) * (b_bounds.y - b_bounds.x);
-    float_color.a = a;
-    return float_color;
+
+    hsy: Color_HSY = ---;
+    hsy.hue        = random_get_zero_to_one(random_state);
+    hsy.saturation = respace(random_get_zero_to_one(random_state), {0, 1}, saturation_range);
+
+    lightness     := respace(random_get_zero_to_one(random_state), {0, 1}, lightness_range);
+    set_lightness(*hsy, lightness);
+
+    hsy.alpha      = alpha;
+
+    return hsy_to_rgb(hsy);
 }
 
 lerp_to_grey :: inline (color: $T/FLOAT_RGB_TYPES, grey_value: float, alpha: float) -> T {
@@ -199,7 +204,7 @@ get_lightness :: (hsy: Color_HSY) -> float32 {
 
 scale_saturation :: inline (color: $T/FLOAT_RGB_TYPES, scale: float32, try_preserve_aspect := HSY_Component.HUE) -> T {
     assert(scale >= 0);
-    assert(try_preserve_accuracy_of != .SATURATION);
+    assert(try_preserve_aspect != .SATURATION);
 
     min_saturation := to_min_saturation(color);
 
@@ -357,115 +362,130 @@ hsy_to_rgb :: (hsy: Color_HSY, $T := Color4f) -> T {
     rgb := hue_to_rgb(hsy.hue, T=T);
 
     max_saturated_luminance := get_grey_value(hue_to_rgb(hsy.hue));
-    
-    luma_shifted_rgb: T = ---;
-    if max_saturated_luminance <= hsy.luminance {
-        white_alpha := respace(hsy.luminance, {max_saturated_luminance, 1}, {0, 1});
-        luma_shifted_rgb.r = lerp(rgb.r, 1, white_alpha);
-        luma_shifted_rgb.g = lerp(rgb.g, 1, white_alpha);
-        luma_shifted_rgb.b = lerp(rgb.b, 1, white_alpha);
-    } else {
-        black_alpha := respace(hsy.luminance, {0, max_saturated_luminance}, {1, 0});
-        luma_shifted_rgb.r = lerp(rgb.r, 0, black_alpha);
-        luma_shifted_rgb.g = lerp(rgb.g, 0, black_alpha);
-        luma_shifted_rgb.b = lerp(rgb.b, 0, black_alpha);
-    }
 
     grey_alpha := clamp(1 - hsy.saturation, 0.0, 1.0);
-    rgb.r = lerp(luma_shifted_rgb.r, max_saturated_luminance, grey_alpha);
-    rgb.g = lerp(luma_shifted_rgb.g, max_saturated_luminance, grey_alpha);
-    rgb.b = lerp(luma_shifted_rgb.b, max_saturated_luminance, grey_alpha);
-    #if T == Color4f then rgb.a = hsy.alpha;
+    rgb = lerp_to_grey(rgb, max_saturated_luminance, grey_alpha);
+    
+    luma_alpha: float = ---;
+    luma_target: float = ---;
+    if max_saturated_luminance <= hsy.luminance {
+        luma_alpha = respace(hsy.luminance, {max_saturated_luminance, 1}, {0, 1});
+        rgb = lighten(rgb, luma_alpha);
+    } else {
+        luma_alpha = respace(hsy.luminance, {0, max_saturated_luminance}, {1, 0});
+        rgb = darken(rgb, luma_alpha);
+    }
 
+    #if T == Color4f then rgb.a = hsy.alpha;
     return rgb;
 }
 
 rgb_to_hsy :: (rgb: $T/FLOAT_RGB_TYPES) -> Color_HSY {
     hsy: Color_HSY = ---;
     
-    min_saturated := to_min_saturation(rgb);
-    // the reference color has saturation=1
+    // the reference color (pure hue) has saturation=1
     max_saturated := to_max_saturation(rgb);
 
     hsy.luminance = get_grey_value(rgb);
 
-    if hsy.luminance == 0 {
-        hsy = {};
-        return hsy;
-    }
-
-    // this represents 0.5 lightness, because the most saturated version of a color is halfway between
-    // black and white.
+    // this represents 0.5 lightness, because the most saturated version of a color is halfway between black and white.
     max_saturated_luminance := get_grey_value(max_saturated);
 
-    // // use channel that the hue is closest to as the pivot and lerp along the edge of the circle toward the
-    // // other nonzero channel.
+    derive_saturation :: (hsy: *Color_HSY, channel: float, max_saturated_luminance: float) {
+        alpha: float = ---;
+        target_value: float = ---;
+
+        if max_saturated_luminance <= hsy.luminance {
+            alpha = respace(hsy.luminance, {max_saturated_luminance, 1}, {0, 1});
+            target_value = 1;
+        } else {
+            alpha = respace(hsy.luminance, {0, max_saturated_luminance}, {1, 0});
+            target_value = 0;
+        }
+
+        MAX_SATURATED_CHANNEL_VALUE :: 1.0;
+        luma_shifted_channel := lerp(MAX_SATURATED_CHANNEL_VALUE, target_value, alpha);
+
+        numerator   := channel - hsy.luminance;
+        denominator := luma_shifted_channel - hsy.luminance;
+
+        if denominator == 0 {
+            // 1 if numerator is nonzero because the quotient approaches
+            // infinity as denom goes to zero, but 1 is max value for saturation.
+            hsy.saturation = ifx numerator == 0 then 0.0 else 1.0;
+        } else {
+            hsy.saturation = numerator / denominator;
+        }
+    }
+
+    // use channel that the hue is closest to as the pivot and lerp along the edge of the circle toward the other nonzero channel.
     if max_saturated.r == 1 {
         if max_saturated.g > 0 { // rg
             hsy.hue = 0 + max_saturated.g * ONE_SIXTH;
         } else { // rb
             hsy.hue = 1 - max_saturated.b * ONE_SIXTH;
         }
+        derive_saturation(*hsy, rgb.r, max_saturated_luminance);
     } else if max_saturated.g == 1 {
         if max_saturated.r > 0 { // rg
             hsy.hue = ONE_THIRD - max_saturated.r * ONE_SIXTH;
         } else { // gb
             hsy.hue = ONE_THIRD + max_saturated.b * ONE_SIXTH;
         }
+        derive_saturation(*hsy, rgb.g, max_saturated_luminance);
     } else {
-        assert(max_saturated.b == 1, "max saturated = %", max_saturated);
+        assert(max_saturated.b == 1);
         if max_saturated.r > 0 { // rb
             hsy.hue = 2 * ONE_THIRD + max_saturated.r * ONE_SIXTH;
         } else { // bg
             hsy.hue = 2 * ONE_THIRD - max_saturated.g * ONE_SIXTH;
         }
+        derive_saturation(*hsy, rgb.b, max_saturated_luminance);
     }
-
-    alpha: float = ---;
-    target_value: float = ---;
-
-    if max_saturated_luminance <= hsy.luminance {
-        alpha = respace(hsy.luminance, {max_saturated_luminance, 1}, {0, 1});
-        target_value = 1;
-    } else {
-        alpha = respace(hsy.luminance, {0, max_saturated_luminance}, {1, 0});
-        target_value = 0;
-    }
-
-    luma_shifted := T.{
-        r = lerp(max_saturated.r, target_value, alpha),
-        g = lerp(max_saturated.g, target_value, alpha),
-        b = lerp(max_saturated.b, target_value, alpha),
-    };
-    grey_diffs := T.{
-        r = abs(luma_shifted.r - hsy.luminance),
-        g = abs(luma_shifted.g - hsy.luminance),
-        b = abs(luma_shifted.b - hsy.luminance)
-    };
-
-    channel_value: float;
-    luma_shifted_channel: float;
-
-    if grey_diffs.r > grey_diffs.g {
-        if grey_diffs.r > grey_diffs.b {
-            channel_value = rgb.r;
-            luma_shifted_channel = luma_shifted.r;
-        } else {
-            channel_value = rgb.b;
-            luma_shifted_channel = luma_shifted.b;
-        }
-    } else if grey_diffs.g > grey_diffs.b {
-        channel_value = rgb.g;
-        luma_shifted_channel = luma_shifted.g;
-    } else {
-        channel_value = rgb.b;
-        luma_shifted_channel = luma_shifted.b;
-    }
-
-    hsy.saturation = (channel_value - hsy.luminance) / (luma_shifted_channel - hsy.luminance);
 
     #if T == Color4f then hsy.alpha = rgb.a; else hsy.alpha = 1;
     return hsy;
+}
+
+// linear = walk hue linearly from red to green to blue to red (or starting at whatever hue)
+// star   = imagine a color wheel, move in a star pattern, generating a set of alternatingly
+// opposite-ish hues.
+sample_linear_color_space :: (steps: int, initial_hue := 0.0, saturation := 1.0, lightness := 0.5, alpha := 1.0, move_pattern := enum { LINEAR; STAR; }.LINEAR) -> []Color4f {
+    if steps == 0 {
+        return .[];
+    }
+
+    initial_hue = clamp(initial_hue, 0, 1);
+    colors := make_static_array(Color4f, steps);
+
+    hsy := Color_HSY.{saturation=saturation, alpha=alpha};
+    opposite_begin := div_ceil(steps, 2);
+
+    for 0..steps-1 {
+        color_it: int;
+
+        if move_pattern == .STAR {
+            even_index := it & 0x1 == 0;
+            half_index := it / 2;
+            if even_index {
+                color_it = half_index;
+            } else {
+                color_it = opposite_begin + half_index;
+            }
+        } else {
+            color_it = it;
+        }
+
+        hsy.hue = initial_hue + cast(float) color_it / steps;
+        if hsy.hue >= 1 {
+            hsy.hue -= 1;
+        }
+        set_lightness(*hsy, lightness);
+
+        colors[it] = hsy_to_rgb(hsy);
+    }
+    
+    return colors;
 }
 
 #scope_file
@@ -477,6 +497,7 @@ ONE_SIXTH :: 1.0 / 6.0;
 #import "Random";
 #import "Math";
 #import "TeRM/TeRM_Math";
+#import "TeRM/TeRM_Array";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

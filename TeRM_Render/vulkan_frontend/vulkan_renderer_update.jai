@@ -19,6 +19,9 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     defer array_reset_keeping_memory(*skinned_mesh_draws);
     defer array_reset_keeping_memory(*line_draws);
     defer array_reset_keeping_memory(*skinning_joints);
+    defer array_reset_keeping_memory(*prepared_opaque_static_mesh_draw_commands);
+    defer array_reset_keeping_memory(*prepared_opaque_skinned_mesh_draw_commands);
+    defer array_reset_keeping_memory(*prepared_line_draw_batches);
 
     defer for 0..GPU_HEAP_TYPE_COUNT-1 {
         gpu_linear_allocator_reset(*current_frame.temp_allocators[it]);
@@ -42,14 +45,12 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     viewport := Vector2.{xx render_target_width, xx render_target_height};
 
     cmd := begin_command_buffer(current_frame);
+    // begin_command_buffer(transfer_command_buffer);
 
     // note: UNDEFINED treats the previous data in the image as garbage, which doesn't allow
     // reading from it at this stage. probably want to change this in the future.
     transition_image(cmd, render_target, .UNDEFINED, .COLOR_ATTACHMENT_OPTIMAL);
     transition_image(cmd, depth_buffer.obj, .UNDEFINED, .DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-    // clear render target, among other things
-    begin_rendering(cmd, render_target_view);
 
     // note : frames in flight blech. will get memory tearing without buffer copies.
 
@@ -65,17 +66,25 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         per_frame_uniform.time            = global_shader_time;
         per_frame_uniform.delta_time      = global_shader_delta_time;
 
-        copy_to_gpu_buffer(*current_frame.per_frame_uniform_buffer, *per_frame_uniform);
+        copy_to_gpu_buffer(*current_frame.per_frame_uniform_buffer, *per_frame_uniform, command_buffer=cmd);
     }
+
+    prepare_draw_meshes(cmd, current_frame, static_mesh_draws);
+    prepare_draw_meshes(cmd, current_frame, skinned_mesh_draws);
+    prepare_draw_billboard_particles(cmd, current_frame);
+    prepare_draw_lines(cmd, current_frame);
+
+    add_buffer_transfer_barrier(cmd);
+
+    // clear render target, among other things
+    begin_rendering(cmd, render_target_view);
 
     vkCmdBindDescriptorSets(
         cmd, .GRAPHICS, billboard_pipeline_layout, 0, 1, *textures_descriptor_set, 0, null
     );
-
     vkCmdBindDescriptorSets(
         cmd, .GRAPHICS, billboard_pipeline_layout, 1, 1, *materials_storage_buffer_descriptor_set, 0, null
     );
-
     vkCmdBindDescriptorSets(
         cmd, .GRAPHICS, billboard_pipeline_layout, 2, 1, *current_frame.per_frame_uniform_descriptor_set, 0, null
     );
@@ -84,7 +93,6 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     draw_meshes(cmd, current_frame, skinned_mesh_draws);
     draw_billboard_particles(cmd, current_frame);
     draw_lines(cmd, current_frame);
-
     draw_dev_gui(cmd);
 
     vkCmdEndRendering(cmd);

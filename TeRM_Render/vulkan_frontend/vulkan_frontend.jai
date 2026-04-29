@@ -41,6 +41,7 @@ Renderer :: struct {
         transfer_command_pool: VkCommandPool;
         transfer_command_buffer: VkCommandBuffer;
         transfer_fence: VkFence;
+        transfer_buffer_memory_barriers: Buffer_Memory_Barrier_Collection;
 
         graphics_queue: VkQueue; // per thread?
         transfer_queue: VkQueue; // per thread?
@@ -101,6 +102,10 @@ Renderer :: struct {
         line_draws: [..]Line_Draw;
 
         debug_switch: bool;
+
+        prepared_opaque_static_mesh_draw_commands: [..]VkDrawIndexedIndirectCommand;
+        prepared_opaque_skinned_mesh_draw_commands: [..]VkDrawIndexedIndirectCommand;
+        prepared_line_draw_batches: [..]Line_Draw_Batch;
     };
 
     texture_references: []Texture_Ref;
@@ -127,6 +132,12 @@ MAX_STATIC_MESHES :: 128_000;
 MAX_SKINNED_MESHES :: 64_000;
 MAX_SKINNING_JOINTS :: MAX_SKINNED_MESHES * 8;
 MAX_GPU_HEAPS :: 128;
+
+Line_Draw_Batch :: struct {
+    buffer: GPU_Buffer;
+    width: float32;
+    count: s32;
+}
 
 GPU_Material :: struct {
     albedo_factor: Vector4;
@@ -171,7 +182,6 @@ Static_Mesh_Draw :: struct {
     scale: Vector3;
     ref: Mesh_Ref;
 }
-
 
 Skinned_Mesh_Draw :: struct {
     using static_draw: Static_Mesh_Draw;
@@ -236,6 +246,11 @@ Queue_Family_Capability_Flags :: enum_flags {
     GRAPHICS;
     COMPUTE;
     TRANSFER;
+}
+
+Buffer_Memory_Barrier_Collection :: struct {
+    barriers: [..]VkBufferMemoryBarrier;
+    pipeline_stage_flags: VkPipelineStageFlags;
 }
 
 Queue_Family_Indices :: struct {

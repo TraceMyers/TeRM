@@ -260,16 +260,10 @@ to_max_saturation :: (color: $T/FLOAT_RGB_TYPES, try_preserve_aspect := HSY_Comp
     b_channel := Color_Channel.{color.b, *max_saturation.b, *min_saturation.b, GREY_FACTORS.b};
 
     if color.r < color.g {
-        if color.r < color.b {
-            if color.g < color.b {
-                max_channel = b_channel;
-                mid_channel = g_channel;
-                min_channel = r_channel;
-            } else {
-                max_channel = g_channel;
-                mid_channel = b_channel;
-                min_channel = r_channel;
-            }
+        if color.r < color.b && color.g < color.b {
+            max_channel = b_channel;
+            mid_channel = g_channel;
+            min_channel = r_channel;
         } else {
             max_channel = g_channel;
             mid_channel = r_channel;
@@ -450,6 +444,7 @@ rgb_to_hsy :: (rgb: $T/FLOAT_RGB_TYPES) -> Color_HSY {
 // linear = walk hue linearly from red to green to blue to red (or starting at whatever hue)
 // star   = imagine a color wheel, move in a star pattern, generating a set of alternatingly
 // opposite-ish hues.
+// todo: the star algorithm is essentially n steps with 2 stages of alternation. stages of alternation could also be parameterized
 sample_linear_color_space :: (steps: int, initial_hue := 0.0, saturation := 1.0, lightness := 0.5, alpha := 1.0, move_pattern := enum { LINEAR; STAR; }.LINEAR) -> []Color4f {
     if steps == 0 {
         return .[];

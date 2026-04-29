@@ -65,6 +65,33 @@ array_init :: inline (array: *[]$T) {
     init_range(array.data, 0, array.count);
 }
 
+array_sum :: inline (array: []$T) -> T 
+#modify {
+    tinfo := cast(*Type_Info) T;
+    return tinfo.type == .FLOAT || tinfo.type == .INTEGER;
+} {
+    sum: T;
+    for array {
+        sum += it;
+    }
+    return sum;
+}
+
+array_average :: inline (array: []$T) -> T 
+#modify {
+    tinfo := cast(*Type_Info) T;
+    return tinfo.type == .FLOAT || tinfo.type == .INTEGER;
+} {
+    if array.count == 0 {
+        return xx 0;
+    }
+    sum: T;
+    for array {
+        sum += it;
+    }
+    return sum / array.count;
+}
+
 copy_range_inside_array :: (array: *[]$T, dst: s64, src: s64, count: s64) {
     assert(count > 0 && dst != src);
     diff := dst - src;

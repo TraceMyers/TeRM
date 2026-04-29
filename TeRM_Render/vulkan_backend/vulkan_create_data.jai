@@ -309,7 +309,7 @@ create_gpu_buffer_for_array :: (data: []$T, usage_flags: VkBufferUsageFlags, mem
     return create_gpu_buffer(data.count * size_of(T), usage_flags, memory_flags);
 }
 
-copy_to_gpu_buffer :: (buffer: *GPU_Buffer, array: []$T, override_count := -1) {
+copy_to_gpu_buffer :: (buffer: *GPU_Buffer, array: []$T, override_count := -1, command_buffer: VkCommandBuffer = null) {
     using context.renderer;
     heap := *gpu_heap_pool[buffer.source_heap];
     
@@ -321,10 +321,10 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, array: []$T, override_count := -1) {
     copy_size := copy_count * size_of(T);
     assert(buffer.size >= xx copy_size);
 
-    copy_to_gpu_buffer(buffer, cast(*void) array.data, cast(u32) copy_size);
+    copy_to_gpu_buffer(buffer, cast(*void) array.data, cast(u32) copy_size, command_buffer=command_buffer);
 }
 
-copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0xffff_ffff, additional_offset: u32 = 0) {
+copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0xffff_ffff, additional_offset: u32 = 0, command_buffer: VkCommandBuffer = null) {
     using context.renderer;
     heap := *gpu_heap_pool[buffer.source_heap];
 
@@ -357,54 +357,91 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0x
         };
 
         // Record copy on transfer queue
-        cmd := transfer_command_buffer;
-        begin_command_buffer(cmd);
+        cmd: VkCommandBuffer;
+        if command_buffer == null {
+            cmd = transfer_command_buffer;
+            begin_command_buffer(cmd);
+        } else {
+            cmd = command_buffer;
+        }
 
         vkCmdCopyBuffer(cmd, staging_buffer_heap.buffer, heap.buffer, 1, *copy_region);
         
-        access_flags: VkAccessFlags;
-        pipeline_stage_flags: VkPipelineStageFlags;
-
-        if heap.type == {
-        case .VERTEX_BUFFER;
-            access_flags = .VERTEX_ATTRIBUTE_READ_BIT;
-            pipeline_stage_flags = .VERTEX_INPUT_BIT;
-        case .SKINNED_VERTEX_BUFFER;
-            access_flags = .VERTEX_ATTRIBUTE_READ_BIT;
-            pipeline_stage_flags = .VERTEX_INPUT_BIT;
-        case .INDEX_BUFFER;
-            access_flags = .INDEX_READ_BIT;
-            pipeline_stage_flags = .VERTEX_INPUT_BIT;
-        case;
-            // todo: can tighten this with the buffer's stated usage
-            access_flags = 
-                  .INDIRECT_COMMAND_READ_BIT
-                | .UNIFORM_READ_BIT
-                | .INPUT_ATTACHMENT_READ_BIT
-                | .SHADER_READ_BIT
-                | .SHADER_WRITE_BIT;
-            pipeline_stage_flags =
-                  .DRAW_INDIRECT_BIT
-                // | .GEOMETRY_SHADER_BIT
-                // | .TESSELLATION_CONTROL_SHADER_BIT
-                // | .TESSELLATION_EVALUATION_SHADER_BIT
-                | .VERTEX_SHADER_BIT
-                | .FRAGMENT_SHADER_BIT
-                | .COMPUTE_SHADER_BIT;
+        if command_buffer == null {
+            immediate_submit_buffer_transfer_commands(heap, copy_offset, copy_size);
+        } else {
+            add_buffer_memory_barrier_for_transfer(*transfer_buffer_memory_barriers, heap, copy_offset, copy_size);
         }
-
-        barrier := VkBufferMemoryBarrier.{
-            srcAccessMask = .TRANSFER_WRITE_BIT,
-            dstAccessMask = access_flags,
-            buffer        = heap.buffer,
-            offset        = xx copy_offset,
-            size          = xx copy_size
-        };
-
-        vkCmdPipelineBarrier(cmd, .TRANSFER_BIT, pipeline_stage_flags, 0, 0, null, 1, *barrier, 0, null);
-
-        submit_commands(cmd, transfer_fence, transfer_queue);
     }
+}
+
+add_buffer_memory_barrier_for_transfer :: (collection: *Buffer_Memory_Barrier_Collection, heap: *GPU_Heap, region_offset: s32, region_size: u32) {
+    access_flags: VkAccessFlags;
+
+    if heap.type == {
+    case .VERTEX_BUFFER;
+        access_flags = .VERTEX_ATTRIBUTE_READ_BIT;
+        collection.pipeline_stage_flags |= .VERTEX_INPUT_BIT;
+    case .SKINNED_VERTEX_BUFFER;
+        access_flags = .VERTEX_ATTRIBUTE_READ_BIT;
+        collection.pipeline_stage_flags |= .VERTEX_INPUT_BIT;
+    case .INDEX_BUFFER;
+        access_flags = .INDEX_READ_BIT;
+        collection.pipeline_stage_flags |= .VERTEX_INPUT_BIT;
+    case;
+        // todo: can tighten this with the buffer's stated usage
+        access_flags = 
+              .INDIRECT_COMMAND_READ_BIT
+            | .UNIFORM_READ_BIT
+            | .INPUT_ATTACHMENT_READ_BIT
+            | .SHADER_READ_BIT
+            | .SHADER_WRITE_BIT;
+        collection.pipeline_stage_flags |=
+              .DRAW_INDIRECT_BIT
+            // | .GEOMETRY_SHADER_BIT
+            // | .TESSELLATION_CONTROL_SHADER_BIT
+            // | .TESSELLATION_EVALUATION_SHADER_BIT
+            | .VERTEX_SHADER_BIT
+            | .FRAGMENT_SHADER_BIT
+            | .COMPUTE_SHADER_BIT;
+    }
+
+    array_add(*collection.barriers, {
+        srcAccessMask = .TRANSFER_WRITE_BIT,
+        dstAccessMask = access_flags,
+        buffer        = heap.buffer,
+        offset        = xx region_offset,
+        size          = xx region_size
+    });
+}
+
+immediate_submit_buffer_transfer_commands :: (heap: *GPU_Heap, buffer_offset: s32, buffer_size: u32) {
+    using context.renderer;
+
+    array_local: [1]VkBufferMemoryBarrier;
+    collection: Buffer_Memory_Barrier_Collection;
+    collection.barriers.data = array_local.data;
+    collection.barriers.allocated = 1;
+    add_buffer_memory_barrier_for_transfer(*collection, heap, buffer_offset, buffer_size);
+    vkCmdPipelineBarrier(transfer_command_buffer, .TRANSFER_BIT, collection.pipeline_stage_flags, 0, 0, null, 1, collection.barriers.data, 0, null);
+    submit_commands(transfer_command_buffer, transfer_fence, transfer_queue);
+}
+
+add_buffer_transfer_barrier :: (cmd: VkCommandBuffer) {
+    using context.renderer;
+
+    collection := transfer_buffer_memory_barriers;
+    if collection.barriers.count == 0 {
+        trm_warning("tried to submit empty transfer barrier collection");
+        return;
+    }
+    vkCmdPipelineBarrier(cmd, .TRANSFER_BIT, collection.pipeline_stage_flags, 0, 0, null, xx collection.barriers.count, collection.barriers.data, 0, null);
+    reset_memory_barrier_collection(*transfer_buffer_memory_barriers);
+}
+
+reset_memory_barrier_collection :: (collection: *Buffer_Memory_Barrier_Collection) {
+    array_reset_keeping_memory(*collection.barriers);
+    collection.pipeline_stage_flags = 0;
 }
 
 add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {

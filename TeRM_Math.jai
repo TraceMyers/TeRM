@@ -17,6 +17,8 @@
 // Conversion, Rounding and Respace
 // Limits
 // Boxes
+// LUT
+// PMF
 // Misc
 // Vectors Extension
 // Vector2 Extension
@@ -225,6 +227,19 @@ to_vector3 :: (cardinal: Direction_3D, orientation: Quaternion) -> Vector3 {
         return  get_fore_direction(*orientation);
     case .BACK;
         return -get_fore_direction(*orientation);
+    }
+}
+
+get_relative_direction_vector :: (up: Vector2, relative_direction: Direction_2D) -> Vector2 {
+    if #complete relative_direction == {
+    case .UP;
+        return up;
+    case .DOWN;
+        return -up;
+    case .RIGHT;
+        return Vector2.{up.y, -up.x};
+    case .LEFT;
+        return Vector2.{-up.y, up.x};
     }
 }
 
@@ -1057,6 +1072,107 @@ sweep_aabb :: inline  (aabb: AABB, displacement: Vector3) -> AABB {
 }
 
 // -----------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------ :LUT
+
+LUT :: struct {
+    y_values: []float;
+    min_x: float;
+    max_x: float;
+}
+
+make_lut :: (curve_function: (x: float) -> y: float, min_x: float, max_x: float, sample_resolution: int) -> LUT {
+    assert(sample_resolution >= 2);
+
+    lut := LUT.{y_values = NewArray(float, sample_resolution), min_x = min_x, max_x = max_x};
+
+    even_sample_resolution := sample_resolution & 0x1 == 0;
+
+    diff := max_x - min_x;
+    for 0..sample_resolution - 1 {
+        x := get_lut_x_value(it, min_x, max_x, sample_resolution);
+        lut.y_values[it] = curve_function(x);
+    }
+
+    return lut;
+}
+
+sample_lut :: (lut: LUT, x: float) -> y: float {
+    i := round(respace(x, {lut.min_x, lut.max_x}, {0, xx (lut.y_values.count - 1)}));
+    return lut.y_values[i];
+}
+
+get_lut_x_value :: (i: int, min_x: float, max_x: float, sample_resolution: int) -> x: float {
+    if i == 0 || i == sample_resolution - 1  {
+        // min and max are often important values, so keep those...
+        return min_x + (diff * (cast(float) i / (sample_resolution - 1)));
+    } else {
+        // evenly step through the domain s.t. the x values all take an equal amount of the domain.
+        //    x   x   x   x       <- x values each in the middle of their subdomain
+        //  |   |   |   |   |     <- .. evenly divided space
+        //  ^               ^
+        // min_x          max_x
+        return min_x + (diff * ((cast(float) i + 0.5) / sample_resolution));
+    }
+}
+
+// -----------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------ :PMF
+
+// 'pdf' doesn't have to be normalized for its domain.
+// sample_resolution is how many possible y values can be drawn from the distribution.
+// sample_granularity is the maximum difference in likelihood between y values.
+make_pmf :: (pdf: (x: float) -> y: float, min_x: float, max_x: float, sample_resolution: int, sample_granularity := 10.0) -> []float {
+    assert(sample_resolution >= 2);
+    assert(sample_granularity >= 2);
+
+    y_value_count_max := sample_granularity - 1;
+
+    curve := make_curve(pdf, min_x, max_x, sample_resolution,, temp);
+
+    max_y: float;
+    for y : curve.y_values {
+        // (pseudo) likelihood values must be >= 0
+        assert(y >= 0);
+        max_y = max(y, max_y);
+    }
+
+    if max_y <= 0 {
+        return .[0.0];
+    }
+    inv_max_y := 1.0 / max_y;
+
+    total_sample_count: int;
+    for y : curve.y_values {
+        total_sample_count += round(y * inv_max_y * sample_granularity);
+    }
+
+    if total_sample_count == 0 {
+        return .[0.0];
+    }
+
+    pmf: [..]float;
+    array_reserve(*pmf, total_sample_count);
+
+    for y : curve.y_values {
+        sample_count := round(y * inv_max_y * sample_granularity);
+        if sample_count > 0 { 
+            x := get_lut_x_value(it_index, min_x, max_x, sample_resolution);
+            for 0..sample_count - 1 {
+                array_add(*pmf, x);
+            }
+        }
+    }
+
+    return pmf;
+}
+
+sample_pmf :: (pmf: []float, state: *Random_State = null) -> float {
+    x := ifx state then random_get_zero_to_one(state) else random_get_zero_to_one();
+    i := round(respace(x, {0, 1}, {0, xx (pmf.count - 1)}));
+    return pmf[i];
+}
+
+// -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :Misc
 
 sign :: inline (x: $T, $can_return_zero := true) -> T {
@@ -1495,6 +1611,7 @@ RECIP_TWO_PI_FIXED_32 :: (1 << 32) / TWO_PI_FIXED;
 #import "Math";
 #import "Basic";
 #import "Bit_Operations";
+#import "Random";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

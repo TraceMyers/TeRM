@@ -369,7 +369,7 @@ rotate :: inline (v: Vector3, axis: Vector3, angle: float32, $do_normalize := tr
 }
 
 interp_rotate_with_alpha :: (origin: Quaternion, target: Quaternion, alpha: float32) -> Quaternion {
-    assert(alpha >= 0.0 && alpha <= 1.0);
+    assert(alpha >= 0.0 && alpha <= 1.0, "alpha: %", alpha);
     cos_theta := dot(origin, target);
 
     // put target in the same hemisphere as the origin, so that the interpolation takes the shortest path
@@ -388,6 +388,7 @@ interp_rotate_with_alpha :: (origin: Quaternion, target: Quaternion, alpha: floa
 // slow because of acos at the top
 // instead of calling this a bunch, for a fixed rotation, just use quat multiply
 interp_rotate_with_time :: (origin: Quaternion, target: Quaternion, speed: float32, delta_time: float32) -> Quaternion {
+    assert(speed >= 0);
     rot_dist := speed * delta_time;
     cos_ht := abs(dot(origin, target));
     t := 2.0 * acos_approx(cos_ht);

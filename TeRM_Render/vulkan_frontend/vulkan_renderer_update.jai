@@ -18,10 +18,12 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     defer array_reset_keeping_memory(*static_mesh_draws);
     defer array_reset_keeping_memory(*skinned_mesh_draws);
     defer array_reset_keeping_memory(*line_draws);
+    defer array_reset_keeping_memory(*in_front_line_draws);
     defer array_reset_keeping_memory(*skinning_joints);
     defer array_reset_keeping_memory(*prepared_opaque_static_mesh_draw_commands);
     defer array_reset_keeping_memory(*prepared_opaque_skinned_mesh_draw_commands);
     defer array_reset_keeping_memory(*prepared_line_draw_batches);
+    defer array_reset_keeping_memory(*prepared_in_front_line_draw_batches);
 
     defer for 0..GPU_HEAP_TYPE_COUNT-1 {
         gpu_linear_allocator_reset(*current_frame.temp_allocators[it]);
@@ -72,7 +74,8 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     prepare_draw_meshes(cmd, current_frame, static_mesh_draws);
     prepare_draw_meshes(cmd, current_frame, skinned_mesh_draws);
     prepare_draw_billboard_particles(cmd, current_frame);
-    prepare_draw_lines(cmd, current_frame);
+    prepare_draw_lines(cmd, current_frame, true);
+    prepare_draw_lines(cmd, current_frame, false);
 
     add_buffer_transfer_barrier(cmd);
 

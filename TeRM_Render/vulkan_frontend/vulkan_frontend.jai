@@ -92,19 +92,22 @@ Renderer :: struct {
         transparent_mesh_pipeline: VkPipeline;
         transparent_skinned_mesh_pipeline: VkPipeline;
         
+        draw_in_front_opaque_line_pipeline: VkPipeline;
         opaque_line_pipeline: VkPipeline;
-        // transparent_line_pipeline: VkPipeline;
 
         particle_draws: [..]Billboard_Instance;
         static_mesh_draws: [..]Static_Mesh_Draw;
         skinned_mesh_draws: [..]Skinned_Mesh_Draw;
         skinning_joints: [..]Matrix4;
+
+        in_front_line_draws: [..]Line_Draw;
         line_draws: [..]Line_Draw;
 
         debug_switch: bool;
 
         prepared_opaque_static_mesh_draw_commands: [..]VkDrawIndexedIndirectCommand;
         prepared_opaque_skinned_mesh_draw_commands: [..]VkDrawIndexedIndirectCommand;
+        prepared_in_front_line_draw_batches: [..]Line_Draw_Batch;
         prepared_line_draw_batches: [..]Line_Draw_Batch;
     };
 

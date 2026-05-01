@@ -24,29 +24,36 @@ draw_billboard_particles :: (cmd: VkCommandBuffer, current_frame: *Graphics_Fram
     vkCmdDraw(cmd, xx billboard_vertices.count, xx particle_draws.count, 0, 0); 
 }
 
-prepare_draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame) {
+prepare_draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, in_front: bool) {
     using context.renderer;
 
-    if line_draws.count == 0 {
+    draws := ifx in_front then in_front_line_draws else line_draws;
+
+    if draws.count == 0 {
         return;
     }
 
-    quick_sort(line_draws, draw => draw.width);
+    quick_sort(draws, draw => draw.width);
 
-    temp_draw_batch := make_dynamic_array(Static_Mesh_Vertex, line_draws.count*2,, temp);
-    batch_width := line_draws[0].width;
+    temp_draw_batch := make_dynamic_array(Static_Mesh_Vertex, draws.count*2,, temp);
+    batch_width := draws[0].width;
     flush_draws: bool;
 
-    array_add(*temp_draw_batch, {position=line_draws[0].a, color=to_color4f(line_draws[0].color)});
-    array_add(*temp_draw_batch, {position=line_draws[0].b, color=to_color4f(line_draws[0].color)});
+    array_add(*temp_draw_batch, {position=draws[0].a, color=to_color4f(draws[0].color)});
+    array_add(*temp_draw_batch, {position=draws[0].b, color=to_color4f(draws[0].color)});
 
-    for 1..line_draws.count {
-        if it == line_draws.count || line_draws[it].width != batch_width {
+    for 1..draws.count {
+        if it == draws.count || draws[it].width != batch_width {
             flush_draws = true;
         }
 
         if flush_draws {
-            draw_batch := array_add(*prepared_line_draw_batches);
+            draw_batch: *Line_Draw_Batch;
+            if in_front {
+                draw_batch = array_add(*prepared_in_front_line_draw_batches);
+            } else {
+                draw_batch = array_add(*prepared_line_draw_batches);
+            }
 
             draw_batch.width = batch_width;
             draw_batch.buffer = gpu_linear_allocate(.VERTEX_BUFFER, size_of(Static_Mesh_Vertex) * temp_draw_batch.count, .VERTEX_BUFFER_BIT, true);
@@ -54,36 +61,44 @@ prepare_draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame) {
 
             copy_to_gpu_buffer(*draw_batch.buffer, temp_draw_batch, command_buffer=cmd);
 
-            if it == line_draws.count {
+            if it == draws.count {
                 break;
             }
 
-            batch_width = line_draws[it].width;
+            batch_width = draws[it].width;
             array_reset_keeping_memory(*temp_draw_batch);
             flush_draws = false;
         }
 
-        array_add(*temp_draw_batch, {position=line_draws[it].a, color=to_color4f(line_draws[it].color)});
-        array_add(*temp_draw_batch, {position=line_draws[it].b, color=to_color4f(line_draws[it].color)});
+        array_add(*temp_draw_batch, {position=draws[it].a, color=to_color4f(draws[it].color)});
+        array_add(*temp_draw_batch, {position=draws[it].b, color=to_color4f(draws[it].color)});
     }
 }
 
 draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame) {
     using context.renderer;
 
-    if line_draws.count == 0 {
-        return;
-    }
-
     vkCmdBindDescriptorSets(cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 3, 1, *current_frame.skinned_mesh_instances_shader_data_descriptor_set, 0, null);
     vkCmdBindDescriptorSets(cmd, .GRAPHICS, opaque_mesh_pipeline_layout, 4, 1, *current_frame.skinned_mesh_sections_shader_data_descriptor_set, 0, null);
 
-    vkCmdBindPipeline(cmd, .GRAPHICS, opaque_line_pipeline);
+    if in_front_line_draws.count != 0 {
+        vkCmdBindPipeline(cmd, .GRAPHICS, draw_in_front_opaque_line_pipeline);
 
-    for prepared_line_draw_batches {
-        vkCmdSetLineWidth(cmd, it.width);
-        bind_vertex_buffer(cmd, it.buffer);
-        vkCmdDraw(cmd, xx it.count, 1, 0, 0);
+        for prepared_in_front_line_draw_batches {
+            vkCmdSetLineWidth(cmd, it.width);
+            bind_vertex_buffer(cmd, it.buffer);
+            vkCmdDraw(cmd, xx it.count, 1, 0, 0);
+        }
+    }
+
+    if line_draws.count != 0 {
+        vkCmdBindPipeline(cmd, .GRAPHICS, opaque_line_pipeline);
+
+        for prepared_line_draw_batches {
+            vkCmdSetLineWidth(cmd, it.width);
+            bind_vertex_buffer(cmd, it.buffer);
+            vkCmdDraw(cmd, xx it.count, 1, 0, 0);
+        }
     }
 }
 

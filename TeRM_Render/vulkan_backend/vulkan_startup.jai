@@ -574,14 +574,18 @@ create_default_pipelines :: () -> bool {
 
         dynamic_states := VkDynamicState.[.VIEWPORT, .SCISSOR, .LINE_WIDTH]; 
 
-        build_info.name = "opaque line pipeline";
+        build_info.name = "draw in front opaque line pipeline";
         build_info.input_assembly.create.topology = .LINE_LIST;
         build_info.depth_stencil.create.depthTestEnable = VK_FALSE;
-        build_info.depth_stencil.create.depthWriteEnable = VK_FALSE;
+        build_info.depth_stencil.create.depthWriteEnable = VK_TRUE;
         build_info.dynamic_state.create = {
             dynamicStateCount = xx dynamic_states.count,
             pDynamicStates    = dynamic_states.data
         };
+        draw_in_front_opaque_line_pipeline = build_pipeline(*build_info);
+
+        build_info.name = "opaque line pipeline";
+        build_info.depth_stencil.create.depthTestEnable = VK_TRUE;
         opaque_line_pipeline = build_pipeline(*build_info);
     }
     

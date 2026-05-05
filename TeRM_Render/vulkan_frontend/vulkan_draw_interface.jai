@@ -44,15 +44,22 @@ draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pos
     add_skinning_joints(renderer, new_draw);
 }
 
-draw_line :: inline (renderer: *Renderer, begin: Vector3, end: Vector3, color: Color4b, width := 1.0, draw_in_front := false) {
+draw_line :: inline (renderer: *Renderer, begin: Vector3, end: Vector3, color: Color4b, width := 1.0, draw_in_front := false, time := 0.0) {
+    draw := Line_Draw.{begin, end, color, width};
     if draw_in_front {
-        array_add(*renderer.in_front_line_draws, {begin, end, color, width});
+        array_add(*renderer.in_front_line_draws, draw);
+        if time > 0 {
+            array_add(*renderer.timed_in_front_line_draws, {draw=draw, time_remaining=time});
+        }
     } else {
-        array_add(*renderer.line_draws, {begin, end, color, width});
+        array_add(*renderer.line_draws, draw);
+        if time > 0 {
+            array_add(*renderer.timed_line_draws, {draw=draw, time_remaining=time});
+        }
     }
 }
 
-draw_circle :: (renderer: *Renderer, center: Vector3, radius: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false) {
+draw_circle :: (renderer: *Renderer, center: Vector3, radius: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
     assert(segment_count >= 3);
 
     inv_segment_count := 1.0 / cast(float) segment_count;
@@ -64,20 +71,20 @@ draw_circle :: (renderer: *Renderer, center: Vector3, radius: float32, up: Vecto
         sin_x, cos_x := sin_cos(radians);
         next_radius_position := center + right * (radius * cos_x) + up * (radius * sin_x);
 
-        draw_line(renderer, radius_position, next_radius_position, color, line_width, draw_in_front);
-        draw_line(renderer, center, next_radius_position, color, line_width, draw_in_front);
+        draw_line(renderer, radius_position, next_radius_position, color, line_width, draw_in_front, time);
+        draw_line(renderer, center, next_radius_position, color, line_width, draw_in_front, time);
 
         radius_position = next_radius_position;
     }
 }
 
-draw_circle :: inline (renderer: *Renderer, center: Vector3, radius: float32, orientation: Quaternion, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false) {
+draw_circle :: inline (renderer: *Renderer, center: Vector3, radius: float32, orientation: Quaternion, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
     up    := get_up_direction(*orientation);
     right := get_right_direction(*orientation);
-    draw_circle(renderer, center, radius, up, right, color, line_width, segment_count, draw_in_front);
+    draw_circle(renderer, center, radius, up, right, color, line_width, segment_count, draw_in_front, time);
 }
 
-draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false) {
+draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
     assert(segment_count >= 3);
 
     fore := cross(up, right);
@@ -102,24 +109,24 @@ draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height:
         down_next_radius_position := next_radius_position - up_offset;
 
         // top circle
-        draw_line(renderer, up_radius_position, up_next_radius_position, color, line_width, draw_in_front);
-        draw_line(renderer, up_center, up_next_radius_position, color, line_width, draw_in_front);
+        draw_line(renderer, up_radius_position, up_next_radius_position, color, line_width, draw_in_front, time);
+        draw_line(renderer, up_center, up_next_radius_position, color, line_width, draw_in_front, time);
 
         // bottom circle
-        draw_line(renderer, down_radius_position, down_next_radius_position, color, line_width, draw_in_front);
-        draw_line(renderer, down_center, down_next_radius_position, color, line_width, draw_in_front);
+        draw_line(renderer, down_radius_position, down_next_radius_position, color, line_width, draw_in_front, time);
+        draw_line(renderer, down_center, down_next_radius_position, color, line_width, draw_in_front, time);
 
         // side
-        draw_line(renderer, up_radius_position, down_radius_position, color, line_width, draw_in_front);
+        draw_line(renderer, up_radius_position, down_radius_position, color, line_width, draw_in_front, time);
 
         radius_position = next_radius_position;
     }
 }
 
-draw_cylinder :: inline (renderer: *Renderer, center: Vector3, radius: float32, height: float32, orientation: Quaternion, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false) {
+draw_cylinder :: inline (renderer: *Renderer, center: Vector3, radius: float32, height: float32, orientation: Quaternion, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
     up    := get_up_direction(*orientation);
     right := get_right_direction(*orientation);
-    draw_cylinder(renderer, center, radius, height, up, right, color, line_width, segment_count, draw_in_front);
+    draw_cylinder(renderer, center, radius, height, up, right, color, line_width, segment_count, draw_in_front, time);
 }
 
 #scope_file

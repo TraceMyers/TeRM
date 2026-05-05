@@ -26,6 +26,9 @@ Renderer :: struct {
 
         msaa_samples := 1;
 
+        delta_time: float32;
+        unscaled_delta_time: float32;
+        
         global_shader_time: float32;
         global_shader_delta_time: float32;
 
@@ -102,6 +105,9 @@ Renderer :: struct {
 
         in_front_line_draws: [..]Line_Draw;
         line_draws: [..]Line_Draw;
+
+        timed_in_front_line_draws: [..]Timed_Draw(Line_Draw);
+        timed_line_draws: [..]Timed_Draw(Line_Draw);
 
         debug_switch: bool;
 
@@ -184,6 +190,11 @@ Static_Mesh_Draw :: struct {
     orientation: Quaternion;
     scale: Vector3;
     ref: Mesh_Ref;
+}
+
+Timed_Draw :: struct($draw_type: Type) {
+    draw: draw_type;
+    time_remaining: float32;
 }
 
 Skinned_Mesh_Draw :: struct {

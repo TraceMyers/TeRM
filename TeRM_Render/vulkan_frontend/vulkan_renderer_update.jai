@@ -25,6 +25,22 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     defer array_reset_keeping_memory(*prepared_line_draw_batches);
     defer array_reset_keeping_memory(*prepared_in_front_line_draw_batches);
 
+    for < *timed_in_front_line_draws {
+        array_add(*in_front_line_draws, it.draw);
+        it.time_remaining -= unscaled_delta_time;
+        if it.time_remaining <= 0 {
+            array_unordered_remove_by_index(*timed_in_front_line_draws, it_index);
+        }
+    }
+
+    for < *timed_line_draws {
+        array_add(*line_draws, it.draw);
+        it.time_remaining -= unscaled_delta_time;
+        if it.time_remaining <= 0 {
+            array_unordered_remove_by_index(*timed_line_draws, it_index);
+        }
+    }
+
     defer for 0..GPU_HEAP_TYPE_COUNT-1 {
         gpu_linear_allocator_reset(*current_frame.temp_allocators[it]);
     }

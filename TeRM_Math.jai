@@ -347,6 +347,7 @@ set_orientation :: (out_orientation: *Quaternion, forward: Vector3, up: Vector3)
 }
 
 rotate :: (in_out_orientation: *Quaternion, axis: Vector3, angle: float32) {
+    if angle == 0 then return;
     assert(is_normalized(axis));
     ht := angle * 0.5;
     sin_ht, cos_ht := sin_cos(ht);
@@ -356,6 +357,7 @@ rotate :: (in_out_orientation: *Quaternion, axis: Vector3, angle: float32) {
 }
 
 rotate :: inline (v: Vector3, axis: Vector3, angle: float32, $do_normalize := true) -> Vector3 {
+    if angle == 0 then return v;
     assert(is_normalized(axis));
     ht := angle * 0.5;
     sin_ht, cos_ht := sin_cos(ht);
@@ -712,6 +714,9 @@ convert_to_fast_trig_range :: inline (x: float32) -> x1: float32, sin_sign: floa
 // test shows ~25-50% reduction in time (maybe depending on branch misses) from using sin and cos separately. inputs are recommended to stay within domain (-5000,5000) to keep max error below 0.035 and median error ~0.0001, due to limitations with mod_two_pi()
 // todo: bring the error down
 sin_cos :: inline (x: float32) -> sin_x: float32, cos_x: float32 {
+    if x == 0 {
+        return 0, 1;
+    }
     x1, sin_sign, cos_sign := convert_to_fast_trig_range(x); 
     x2 := x1 * x1;
 	pos_val_sin := (((((-0.000000023889859 * x2 + 0.0000027525562) * x2 - 0.00019840874) * x2 + 0.0083333310) * x2 - 0.16666667) * x2 + 1.0) * x1;
@@ -1384,20 +1389,29 @@ reflect :: inline (vector: Vector3, normal: Vector3) -> Vector3 {
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------- :Vector2 Extension
 
-operator - :: (a: Vector2, scalar: float32) -> Vector2 {
+operator - :: inline (a: Vector2, scalar: float32) -> Vector2 {
     return .{a.x - scalar, a.y - scalar};
 }
 
-operator + :: (a: Vector2, scalar: float32) -> Vector2 {
+operator + :: inline (a: Vector2, scalar: float32) -> Vector2 {
     return .{a.x + scalar, a.y + scalar};
 }
 
-operator - :: (a: Vector3, scalar: float32) -> Vector3 {
+operator - :: inline (a: Vector3, scalar: float32) -> Vector3 {
     return .{a.x - scalar, a.y - scalar, a.z - scalar};
 }
 
-operator + :: (a: Vector3, scalar: float32) -> Vector3 {
+operator + :: inline (a: Vector3, scalar: float32) -> Vector3 {
     return .{a.x + scalar, a.y + scalar, a.z + scalar};
+}
+
+get_normal_and_length :: inline (v: Vector2) -> normal: Vector2, len: float {
+    len_sq := length_squared(v);
+    if len_sq <= VERY_SMALL_NUMBER {
+        return {}, 0;
+    }
+    len := length(v);
+    return v / len, len;
 }
 
 // -----------------------------------------------------------------------------------

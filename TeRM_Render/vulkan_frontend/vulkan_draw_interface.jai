@@ -129,6 +129,27 @@ draw_cylinder :: inline (renderer: *Renderer, center: Vector3, radius: float32, 
     draw_cylinder(renderer, center, radius, height, up, right, color, line_width, segment_count, draw_in_front, time);
 }
 
+draw_raycast :: (renderer: *Renderer, result: Raycast_Result, origin_color := COLOR4F_MAGENTA, miss_ray_color := COLOR4F_BLUE, hit_ray_color := COLOR4F_RED, hit_marker_radius := 0.02, line_width := 4.0, draw_in_front := false, time := 10.0) {
+    ray_normal := normalize(result.ray_destination - result.ray_origin);
+    ray_right, ray_up: Vector3;
+    if ray_normal.z > 0.95 {
+        ray_right = cross(ray_normal, Vector3.{x=1});
+    } else {
+        ray_right = cross(ray_normal, Vector3.{z=1});
+    }
+    ray_up = cross(ray_normal, ray_right);
+
+    origin_radius := hit_marker_radius * 0.5;
+    draw_circle(renderer, result.ray_origin, origin_radius, ray_up, ray_right, to_color4b(origin_color), line_width, 4, draw_in_front, time);
+
+    if result.is_hit {
+        draw_line(renderer, result.ray_origin, result.hit_location, to_color4b(hit_ray_color), line_width, draw_in_front, time);
+        draw_circle(renderer, result.hit_location, hit_marker_radius, ray_up, ray_right, to_color4b(hit_ray_color), line_width, 4, draw_in_front, time);
+    } else {
+        draw_line(renderer, result.ray_origin, result.ray_destination, to_color4b(miss_ray_color), line_width, draw_in_front, time);
+    }
+}
+
 #scope_file
 
 add_skinning_joints :: (renderer: *Renderer, draw: *Skinned_Mesh_Draw) {

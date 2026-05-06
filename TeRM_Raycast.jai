@@ -7,11 +7,7 @@
 #module_parameters()(
     // 0, 1, 2 (0=none, 1=validate+log, 2=validate+assert). validation requires TeRM_Log module.
     // term logs can be customized program-wide to go to stdout, stdout + callback, or just callback.
-    VALIDATION_LEVEL := 0, 
-    // how close is considered basically touching?
-    VERY_CLOSE_DISTANCE := 0.0000005,
-    // how close is pretty close?
-    CLOSE_DISTANCE := 0.00001
+    VALIDATION_LEVEL := 0
 );
 
 Raycast_Request :: struct {
@@ -40,6 +36,8 @@ Raycast_Request :: struct {
 
 Raycast_Result :: struct {
     hit_index: s32;
+    ray_origin: Vector3;
+    ray_destination: Vector3;
     hit_distance := FLOAT32_MAX;
     hit_location: Vector3;
     hit_normal: Vector3;
@@ -47,7 +45,7 @@ Raycast_Result :: struct {
     hit_back_face: bool;
     origin_inside_collider: bool;
     normal_is_degenerate: bool;
-    normal_is_back_face: bool;
+    normal_is_inside: bool;
 }
 
 make_raycast_request :: inline (ray_begin: Vector3, ray_end: Vector3) -> Raycast_Request {
@@ -68,7 +66,7 @@ make_raycast_request :: inline (ray_origin: Vector3, ray_direction: Vector3, ray
 raycast_plane :: (request: *Raycast_Request, result: *Raycast_Result, point_on_plane: Vector3, plane_normal: Vector3, caller_loc := #caller_location) -> bool {
     validate_axes(plane_normal, {}, {}, .PLANE, caller_loc);
     calculate_ray_direction_and_length(request);
-    result.* = {};
+    result.* = {ray_origin=request.ray_src, ray_destination=request.ray_dst};
 
     diff_to_plane := point_on_plane - request.ray_src ;
     dist_sq_to_plane := length_squared(diff_to_plane);
@@ -87,8 +85,8 @@ raycast_plane :: (request: *Raycast_Request, result: *Raycast_Result, point_on_p
             }
         }
     } else  {
-        pointing_cos_t := dot(plane_normal, request.ray_direction);
-        impact_dist := signed_distance_to_plane * pointing_cos_t;
+        pointing_cos_t := dot(-plane_normal, request.ray_direction);
+        impact_dist := -signed_distance_to_plane / pointing_cos_t;
 
         // pointing wrong direction or too far?
         if impact_dist >= 0 && impact_dist <= request.ray_length {
@@ -109,7 +107,7 @@ raycast_plane :: (request: *Raycast_Request, result: *Raycast_Result, point_on_p
                 set_hit();
                 if request.return_back_face_normal {
                     result.hit_normal = -plane_normal;
-                    result.normal_is_back_face = true;
+                    result.normal_is_inside = true;
                 } else {
                     result.hit_normal = plane_normal;
                 }
@@ -136,84 +134,134 @@ raycast_circle :: (request: *Raycast_Request, result: *Raycast_Result, center: V
     return result.is_hit;
 }
 
+dbg_top_center: Vector3;
+dbg_bot_center: Vector3;
+
 raycast_cylinder :: (request: *Raycast_Request, result: *Raycast_Result, center: Vector3, radius: float, half_height: float, height_direction: Vector3, caller_loc := #caller_location) -> bool {
     validate_axes(height_direction, {}, {}, .CYLINDER, caller_loc);
     calculate_ray_direction_and_length(request);
-    result.* = {};
+    result.* = {ray_origin=request.ray_src, ray_destination=request.ray_dst};
 
-    // todo: if needing to optimize, a lot of redundant calculation is being done here
-
-    can_hit_back_face := raycast_can_hit_back_face(request, true);
     result.origin_inside_collider = is_point_inside_cylinder(request.ray_src, center, radius, half_height, height_direction);
+    can_hit_back_face := raycast_can_hit_back_face(request, true) & result.origin_inside_collider;
 
     if result.origin_inside_collider && can_hit_back_face && request.origin_inside_collider_rules.hit_where == .RAY_ORIGIN {
         result.is_hit = true;
         result.hit_distance = 0;
         result.hit_location = request.ray_src;
-
     } else if !result.origin_inside_collider || can_hit_back_face {
         top_center := center + half_height * height_direction;
         bot_center := center - half_height * height_direction;
 
-        closest_point_on_cylinder_line_segment: Vector3 = ---;
-        closest_point_on_ray: Vector3 = ---;
+        top_plane_intersection, distance_to_top_plane, hit_top_plane, hit_top_plane_back_face := get_ray_intersection_with_plane(request.ray_src, request.ray_direction, top_center, height_direction, true);
+        bot_plane_intersection, distance_to_bot_plane, hit_bot_plane, hit_bot_plane_back_face := get_ray_intersection_with_plane(request.ray_src, request.ray_direction, bot_center, -height_direction, true);
 
-        closest_point_on_each_line_segment(request.ray_src, request.ray_dst, bot_center, top_center, *closest_point_on_ray, *closest_point_on_cylinder_line_segment);
+        hit_top_plane &= distance_to_top_plane <= request.ray_length;
+        hit_bot_plane &= distance_to_bot_plane <= request.ray_length;
 
-        closest_ray_point_inside_cylinder := is_point_inside_cylinder(closest_point_on_ray, center, radius, half_height, height_direction);
-
-        top_circle_result: Raycast_Result;
-        raycast_circle(request, *top_circle_result, top_center, radius, height_direction, caller_loc);
-
-        bot_circle_result: Raycast_Result;
-        raycast_circle(request, *bot_circle_result, bot_center, radius, -height_direction, caller_loc);
-
-        // the closest point along the ray must be inside(/on) the cylinder or the ray definitely didn't hit the sides/hull
-        if closest_ray_point_inside_cylinder {
-            cos_t := dot(height_direction, request.ray_direction);
-            sin_t := sqrt(1 - square(cos_t));
-            projection_dist_along_ray := radius / sin_t;
-
-            hull_projection: Vector3 = ---;
-            if result.origin_inside_collider  {
-                hull_projection = closest_point_on_ray + projection_dist_along_ray * request.ray_direction;
-            } else {
-                hull_projection = closest_point_on_ray - projection_dist_along_ray * request.ray_direction;
-            }
-
-            to_projection_diff := hull_projection - center;
-            height_dist        := abs(dot(to_projection_diff, height_direction));
-            
-            // if the projection onto the hull isn't too far along the height axis, there's an intersection.
-            // try not to let the ray pass through the crack between the hull and the circle by adding some error
-            if height_dist <= half_height + SMALL_NUMBER { 
+        try_hit_circle :: inline (result: *Raycast_Result, plane_intersection: Vector3, circle_center: Vector3, radius: float, distance: float, normal: Vector3) -> bool {
+            dist_sq_to_intersection := distance_squared(plane_intersection, circle_center);
+            if dist_sq_to_intersection <= radius * radius {
                 result.is_hit = true;
-                result.hit_location = hull_projection;
-                result.hit_distance = distance(hull_projection, request.ray_src);
+                result.hit_distance = distance;
+                result.hit_location = plane_intersection;
+                result.hit_normal = normal;
+                return true;
+            } else return false;
+        }
 
-                sphere_diff := result.hit_location - center;
-                sphere_diff_height_proj := height_direction * dot(height_direction, sphere_diff);
-                inside_normal := normalize(sphere_diff - sphere_diff_height_proj);
-
-                if result.origin_inside_collider {
-                    if request.return_back_face_normal {
-                        result.hit_normal = inside_normal;
-                        result.normal_is_back_face = true;
-                    } else {
-                        result.hit_normal = -inside_normal;
-                    }
-                    result.hit_back_face = true;
-                } else {
-                    result.hit_normal = -inside_normal;
+        try_hit_back_of_circle :: inline (result: *Raycast_Result, plane_intersection: Vector3, circle_center: Vector3, radius: float, distance: float, normal: Vector3, can_hit_back_face: bool, return_back_face_normal: bool) {
+            if can_hit_back_face && try_hit_circle(result, plane_intersection, circle_center, radius, distance, normal) {
+                result.origin_inside_collider = true;
+                result.hit_back_face = true;
+                if return_back_face_normal {
+                    result.hit_normal *= -1;
+                    result.normal_is_inside = true;
                 }
             }
         }
 
-        if top_circle_result.hit_distance < result.hit_distance {
-            result.* = top_circle_result;
+        if hit_top_plane && hit_bot_plane {
+            if distance_to_top_plane < distance_to_bot_plane {
+                try_hit_circle(result, top_plane_intersection, top_center, radius, distance_to_top_plane, height_direction);
+            } else {
+                try_hit_circle(result, bot_plane_intersection, bot_center, radius, distance_to_bot_plane, -height_direction);
+            }
+        } else if hit_top_plane {
+            if hit_top_plane_back_face {
+                try_hit_back_of_circle(result, top_plane_intersection, top_center, radius, distance_to_top_plane, height_direction, can_hit_back_face, request.return_back_face_normal);
+            } else {
+                try_hit_circle(result, top_plane_intersection, top_center, radius, distance_to_top_plane, height_direction);
+            }
+        } else if hit_bot_plane {
+            if hit_bot_plane_back_face {
+                try_hit_back_of_circle(result, bot_plane_intersection, bot_center, radius, distance_to_bot_plane, -height_direction, can_hit_back_face, request.return_back_face_normal);
+            } else {
+                try_hit_circle(result, bot_plane_intersection, bot_center, radius, distance_to_bot_plane, -height_direction);
+            }
         }
-        if bot_circle_result.hit_distance < result.hit_distance {
-            result.* = bot_circle_result;
+
+        dbg_top_center = top_center;
+        dbg_bot_center = bot_center;
+
+        // if already hit, then it hit the top or bottom
+        if !result.is_hit {
+            // analytic ray-cylinder side intersection: project the ray and origin offset onto the
+            // plane perpendicular to the axis, then solve |X_perp + t*D_perp|^2 = r^2 for t.
+            X_perp := (request.ray_src - center) - dot(request.ray_src - center, height_direction) * height_direction;
+            D_perp := request.ray_direction - dot(request.ray_direction, height_direction) * height_direction;
+
+            a := dot(D_perp, D_perp);
+            b := 2.0 * dot(X_perp, D_perp);
+            c := dot(X_perp, X_perp) - radius * radius;
+
+            // a is sin^2(angle between ray and axis); near zero means ray is parallel to the axis,
+            // in which case the side cannot be entered (caps are handled above).
+            if a > VERY_SMALL_NUMBER {
+                discriminant := b * b - 4.0 * a * c;
+                if discriminant >= 0 {
+                    sqrt_disc := sqrt(discriminant);
+
+                    // citardauq form: pick the addition that doesn't cancel, derive the other root via Vieta's.
+                    q      := -0.5 * (b + (ifx b >= 0 then sqrt_disc else -sqrt_disc));
+                    t1     := q / a;
+                    t2     := ifx q != 0 then c / q else t1;
+                    t_near := min(t1, t2);
+                    t_far  := max(t1, t2);
+
+                    try_register_side_hit :: (result: *Raycast_Result, request: *Raycast_Request, t: float, center: Vector3, axis: Vector3, half_height: float, radius: float, is_back_face: bool) -> bool {
+                        if t < 0 || t > request.ray_length return false;
+                        hit_location := request.ray_src + request.ray_direction * t;
+                        height_offset := dot(hit_location - center, axis);
+                        if abs(height_offset) > half_height return false;
+
+                        axis_point := center + height_offset * axis;
+                        normal := (hit_location - axis_point) / radius;
+
+                        result.is_hit = true;
+                        result.hit_distance = t;
+                        result.hit_location = hit_location;
+                        if is_back_face {
+                            result.hit_back_face = true;
+                            if request.return_back_face_normal {
+                                result.hit_normal = -normal;
+                                result.normal_is_inside = true;
+                            } else {
+                                result.hit_normal = normal;
+                            }
+                        } else {
+                            result.hit_normal = normal;
+                        }
+                        return true;
+                    }
+
+                    if !try_register_side_hit(result, request, t_near, center, height_direction, half_height, radius, false) {
+                        if can_hit_back_face {
+                            try_register_side_hit(result, request, t_far, center, height_direction, half_height, radius, true);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -229,7 +277,7 @@ is_point_inside_cylinder :: inline (point: Vector3, cylinder_center: Vector3, cy
     toward_point := point - cylinder_center;
     height_dist  := abs(dot(toward_point, cylinder_height_direction));
 
-    return radial_dist <= cylinder_radius && height_dist <= cylinder_half_height;
+    return radial_dist <= cylinder_radius + SMALL_NUMBER && height_dist <= cylinder_half_height + SMALL_NUMBER;
 }
 
 /*
@@ -270,7 +318,7 @@ raycast_rectangle :: (request: Raycast_Request, result: *Raycast_Result, rect_ha
                     result.hit_back_face = aiming_for_backside;
                     if result.hit_back_face && !request.flip_back_face_hit_normal {
                         result.hit_normal *= -1.0;
-                        result.normal_is_back_face = true;
+                        result.normal_is_inside = true;
                     }
                 }
             }
@@ -334,7 +382,7 @@ raycast_sphere :: (request: *Raycast_Request, result: *Raycast_Result, sphere_ra
                 if request.flip_back_face_hit_normal {
                     result.hit_normal *= -1;
                 } else {
-                    result.normal_is_back_face = true;
+                    result.normal_is_inside = true;
                 }
             }
         } else { // NO_HIT
@@ -436,7 +484,7 @@ calculate_ray_direction_and_length :: inline (request: *Raycast_Request) {
     if !request.ray_direction_and_length_calculated {
         ray_diff := request.ray_dst - request.ray_src;
         ray_length_sq := length_squared(ray_diff);
-        if ray_length_sq <= VERY_CLOSE_DISTANCE {
+        if ray_length_sq <= VERY_SMALL_NUMBER {
             request.ray_length = 0;
             request.ray_direction = {};
         } else {
@@ -445,25 +493,6 @@ calculate_ray_direction_and_length :: inline (request: *Raycast_Request) {
         }
         request.ray_direction_and_length_calculated = true;
     }
-}
-
-is_normalized :: (v: $Vec_Type, tolerance := CLOSE_DISTANCE) -> bool {
-    return abs(length_squared(v) - 1.0) < tolerance;
-}
-
-closest_point_on_line_and_segment :: (point: Vector3, seg_beg: Vector3, seg_end: Vector3, out_point_on_line: *Vector3, out_point_on_segment: *Vector3) -> norm_dist: float {
-    toward_end: Vector3 = ---;
-    norm_dist := line_projection_norm_dist(*point, *seg_beg, *seg_end, *toward_end);
-    out_point_on_line.* = seg_beg + toward_end * norm_dist;
-    clamped_norm_dist := clamp(norm_dist, 0, 1);
-    out_point_on_segment.* = seg_beg + toward_end * clamped_norm_dist;
-    return norm_dist;
-}
-
-closest_point_on_line :: (point: Vector3, seg_beg: Vector3, seg_end: Vector3) -> Vector3, float {
-    toward_end: Vector3 = ---;
-    norm_dist := line_projection_norm_dist(*point, *seg_beg, *seg_end, *toward_end);
-    return seg_beg + toward_end * norm_dist, norm_dist;
 }
 
 raycast_can_hit_back_face :: inline (using request: Raycast_Request, origin_inside_collider: bool) -> bool {
@@ -565,8 +594,6 @@ HERE,
     */
 }
 
-#import "Math";
-
 VALIDATION_LEVEL_NONE   :: 0;
 VALIDATION_LEVEL_MEDIUM :: 1;
 VALIDATION_LEVEL_HIGH   :: 2;
@@ -582,6 +609,9 @@ report_module_error :: (fmt: string, args: ..Any) #expand {
         }
     }
 }
+
+#import "Basic";
+#import "Math";
 
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Math";

@@ -184,6 +184,7 @@ init_dev_gui :: (using renderer: *Renderer) {
 
     imgui_context = ImGui.CreateContext();
 
+    dev_gui_init_fonts();
     dev_gui_set_theme_paper_and_ink();
 
     assert(ImGui.ImplWin32_Init(window), "failed to initialize imgui win32 implementation");

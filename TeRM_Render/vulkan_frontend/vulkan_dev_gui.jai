@@ -142,6 +142,9 @@ dev_gui_set_theme_crt_phosphor :: () {
     phosphor      := dev_gui_rgba(120, 255, 160) * 0.92;
     phosphor_dim  := dev_gui_rgba(70, 200, 110) * 0.92;
     phosphor_glow := dev_gui_rgba(180, 255, 200) * 0.92;
+    // phosphor      := dev_gui_rgba(230, 230, 250);
+    // phosphor_dim  := dev_gui_rgba(200, 200, 250);
+    // phosphor_glow := dev_gui_rgba(250, 250, 250);
     amber         := dev_gui_rgba(255, 190, 80);
 
     s.Colors[ImGui.Col.Text]                  = phosphor;
@@ -388,17 +391,50 @@ dev_gui_set_theme_sage_and_clay :: () {
 // and soft mauve as accents. Bigger rounding, fat padding, no borders -
 // reads as a moody after-hours panel rather than a tool window.
 dev_gui_set_theme_twilight_plum :: () {
+    // original mauve-purple input field
+    twilight_plum_apply(dev_gui_rgba(70, 52, 84));
+}
+
+// darker frame — input fields recede more, higher contrast against text
+dev_gui_set_theme_twilight_plum_deep :: () {
+    twilight_plum_apply(dev_gui_rgba(34, 24, 42));
+}
+
+// lighter frame — input fields feel raised off the panel
+dev_gui_set_theme_twilight_plum_lifted :: () {
+    twilight_plum_apply(dev_gui_rgba(86, 64, 102));
+}
+
+// more chromatic mauve — pushes the purple harder
+dev_gui_set_theme_twilight_plum_saturated :: () {
+    twilight_plum_apply(dev_gui_rgba(82, 56, 96));
+}
+
+// cooler, blue-leaning indigo frame
+dev_gui_set_theme_twilight_plum_cool :: () {
+    twilight_plum_apply(dev_gui_rgba(54, 46, 84));
+}
+
+// warmer, rose-tinted frame
+dev_gui_set_theme_twilight_plum_warm :: () {
+    twilight_plum_apply(dev_gui_rgba(82, 58, 80));
+}
+
+dev_gui_set_theme_twilight_plum_neutral :: () {
+    twilight_plum_apply(dev_gui_rgba(28, 28, 28));
+}
+
+twilight_plum_apply :: (bg_frame: ImGui.ImColor) {
     s := ImGui.GetStyle();
 
-    ROUNDING :: 8.0;
-    s.WindowRounding    = ROUNDING;
-    s.ChildRounding     = ROUNDING;
-    s.PopupRounding     = ROUNDING;
-    s.FrameRounding     = ROUNDING - 2.0;
-    s.ScrollbarRounding = ROUNDING;
-    s.GrabRounding      = ROUNDING - 2.0;
-    s.TabRounding       = ROUNDING - 2.0;
-    s.TreeLinesRounding = 4.0;
+    s.WindowRounding    = 0.0;
+    s.ChildRounding     = 0.0;
+    s.PopupRounding     = 0.0;
+    s.FrameRounding     = 0.0;
+    s.ScrollbarRounding = 0.0;
+    s.GrabRounding      = 0.0;
+    s.TabRounding       = 0.0;
+    s.TreeLinesRounding = 0.0;
 
     s.WindowBorderSize  = 0.0;
     s.FrameBorderSize   = 0.0;
@@ -412,9 +448,9 @@ dev_gui_set_theme_twilight_plum :: () {
     s.IndentSpacing     = 22.0;
     s.GrabMinSize       = 16.0;
 
-    bg_main      := dev_gui_rgba(42, 30, 52);   // aubergine
+    // bg_main      := dev_gui_rgba(42, 30, 52);   // aubergine
+    bg_main      := dev_gui_rgba(42, 42, 42);   // aubergine
     bg_secondary := dev_gui_rgba(54, 40, 66);
-    bg_frame     := dev_gui_rgba(70, 52, 84);
     text         := dev_gui_rgba(248, 228, 205); // peach cream
     text_dim     := dev_gui_rgba(170, 150, 138);
     gold         := dev_gui_rgba(220, 175, 90);

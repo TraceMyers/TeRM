@@ -146,10 +146,12 @@ prepare_draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, dr
         prev_draw  := *draws[it-1];
 
         prev_transform   := *mesh_instances[it-1].transform;
-        prev_transform.*  = make_translation_matrix4(prev_draw.position);
-        prev_transform.*  = rotate(prev_transform.*, prev_draw.orientation);
-        scale := make_scale_matrix4(prev_draw.scale);
-        prev_transform.* *= scale;
+
+        scale       := make_scale_matrix4(prev_draw.scale);
+        rotation    := rotation_matrix(Matrix4, prev_draw.orientation);
+        translation := make_translation_matrix4(prev_draw.position);
+
+        prev_transform.* = translation * rotation * scale;
 
         #if DRAWING_SKINNED_MESHES {
             mesh_instances[it-1].joint_offset = xx prev_draw.joint_offset;

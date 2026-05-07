@@ -97,14 +97,18 @@ make_transform_matrix :: (position: Vector3, orientation: Quaternion, scale: Vec
 decompose_transform_matrix :: (transform: *Matrix4, out_position: *Vector3, out_orientation: *Quaternion, out_scale: *Vector3) {
     out_position.* = Vector3.{transform._14, transform._24, transform._34};
 
-    out_scale.x = length(transform.v[0].xyz);
-    out_scale.y = length(transform.v[1].xyz);
-    out_scale.z = length(transform.v[2].xyz);
+    col0 := Vector3.{transform._11, transform._21, transform._31};
+    col1 := Vector3.{transform._12, transform._22, transform._32};
+    col2 := Vector3.{transform._13, transform._23, transform._33};
 
-    right_axis := transform.v[0].xyz / out_scale.x;
-    fore_axis  := transform.v[1].xyz / out_scale.y;
-    up_axis    := transform.v[2].xyz / out_scale.z;
-    out_orientation.* = conjugate(make_quat(fore_axis, right_axis, up_axis));
+    out_scale.x = length(col0);
+    out_scale.y = length(col1);
+    out_scale.z = length(col2);
+
+    right_axis := col0 / out_scale.x;
+    fore_axis  := col1 / out_scale.y;
+    up_axis    := col2 / out_scale.z;
+    out_orientation.* = make_quat(fore_axis, right_axis, up_axis);
 }
 
 splat :: inline (x: float, $vector_size: int) -> $T

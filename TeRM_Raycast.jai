@@ -338,6 +338,99 @@ raycast_box :: (request: *Raycast_Request, result: *Raycast_Result, center: Vect
     return result.is_hit;
 }
 
+// a pillbox is: start with an upright capsule and take a cross section of it, such that 
+// it's a standing, thin sheet of paper with a sillhouette like a nascar race track
+// with a half-circle at the top and bottom. lie the sheet flat on the ground and 
+// extrude it vertically, giving the sheet depth, which becomes the height of the volume.
+//
+// from above:              from side:
+//
+//    |  length |                  |  length  | <-- half_box_length excudes radius
+//    ___________                 ______________
+//   /           \               | `          ` | | height
+//  |          ,--| radius       | `          ` | |
+//   \_________|_/               |_`__________`_| |
+//            radius
+//
+// half_box_length is not half the length of the pillbox, but rather the length
+// of the inner box. this is because if it did include the radius of the two end circles,
+// you would have to obey the rule length >= radius, compared to the much simpler
+// length >= 0 (and half_box_length >= 0). note also that half_width = radius.
+raycast_pillbox :: (request: *Raycast_Request, result: *Raycast_Result, center: Vector3, radius: float, half_box_length: float, half_height: float, width_direction: Vector3, length_direction: Vector3, height_direction: Vector3, caller_loc := #caller_location) -> bool {
+    starting_inside_box := is_point_inside_box(request.ray_origin, center, {radius, half_box_length, half_height}, width_direction, length_direction, height_direction);
+    starting_inside_front_cylinder := is_point_inside_cylinder(request.ray_origin, center + length_direction * half_box_length, radius, half_height, height_direction);
+    starting_inside_rear_cylinder := is_point_inside_cylinder(request.ray_origin, center - length_direction * half_box_length, radius, half_height, height_direction);
+
+    result.origin_inside_collider = starting_inside_box || starting_inside_front_cylinder || starting_inside_rear_cylinder;
+
+    result.* = {ray_origin=request.ray_origin, ray_destination=request.ray_destination};
+
+    box_result: Raycast_Result;
+    // raycast to the oriented box that contains the pillbox. if it hits the 
+    // box-part of the pillbox, just return. if it hits an endcap occupied by
+    // a half-cylinder, try raycasting to that cylinder.
+    if raycast_box(request, *box_result, center, radius, half_box_length + radius, half_height, width_direction, length_direction, height_direction, caller_loc) {
+        center_diff := box_result.hit_location - center;
+        length_distance := dot(center_diff, length_direction);
+
+        if abs(length_distance) > half_box_length {
+            cylinder_center: Vector3 = ---;
+            if length_distance > 0 {
+                cylinder_center = center + length_direction * half_box_length;
+            } else {
+                cylinder_center = center - length_direction * half_box_length;
+            }
+
+            NUDGE_DISTANCE :: 0.0001;
+            dummy_request := request.*;
+
+            // wherever on the containing box the ray hit, we want to 
+            // create a new ray starting just outside the containing box,
+            // moving along the ray's line, toward the volume. only attempting
+            // to contact the outsides of the cylinder sidesteps the complex
+            // situation where you're trying to raycast to the inner surface of a thing
+            // which has multiple implicit cylinder surfaces *inside* it. basically,
+            // if you try to raycast from inside, there is a 50% chance you will
+            // hit an implied inner surface... which is bad.
+            if box_result.origin_inside_collider {
+                dummy_request.ray_origin = box_result.hit_location + request.ray_direction * NUDGE_DISTANCE;
+                dummy_request.ray_direction = -request.ray_direction;
+            } else {
+                dummy_request.ray_origin = box_result.hit_location - request.ray_direction * NUDGE_DISTANCE;
+                dummy_request.ray_direction = request.ray_direction;
+            }
+
+            cylinder_result: Raycast_Result;
+            if raycast_cylinder(*dummy_request, *cylinder_result, cylinder_center, radius, half_height, height_direction, caller_loc) {
+                diff_to_hit := cylinder_result.hit_location - request.ray_origin;
+                distance_along_ray := dot(diff_to_hit, request.ray_direction);
+
+                hit_within_range := distance_along_ray >= 0 && distance_along_ray <= request.ray_length;
+                allowed_to_hit := !result.origin_inside_collider || request.can_hit_back_face;
+
+                if hit_within_range && allowed_to_hit {
+                    result.is_hit = true;
+                    result.hit_location = cylinder_result.hit_location;
+                    result.hit_distance = distance_along_ray;
+                    result.hit_normal   = cylinder_result.hit_normal;
+                    if result.origin_inside_collider {
+                        result.hit_back_face = true;
+                        if request.return_back_face_normal {
+                            result.hit_normal *= -1;
+                            result.normal_is_inside = true;
+                        }
+                    }
+                }
+            }
+        } else {
+            result.* = box_result;
+        }
+    }
+
+    result.normal_is_degenerate |= !is_normalized(result.hit_normal);
+    return result.is_hit;
+}
+
 /*
 raycast_rectangle :: (request: Raycast_Request, result: *Raycast_Result, rect_half_width: float, rect_half_height: float, rect_center: Vector3, rect_axis_up: Vector3, rect_axis_right: Vector3, rect_axis_fore: Vector3, caller_loc := #caller_location) -> bool {
     validate_axes(rect_axis_up, rect_axis_right, rect_axis_fore, .RECTANGLE, caller_loc);
@@ -567,6 +660,7 @@ Internal_Volume_Type :: enum {
     SPHERE;
     CAPSULE;
     BOX;
+    PILLBOX;
     CONVEX;
     NON_CONVEX;
 }

@@ -12,6 +12,9 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     using context.renderer;
     auto_release_temp();
 
+    in_the_middle_of_rendering = true;
+    defer in_the_middle_of_rendering = false;
+
     current_frame := get_current_frame();
 
     defer array_reset_keeping_memory(*particle_draws);

@@ -1,4 +1,5 @@
 draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
+    assert(!renderer.in_the_middle_of_rendering);
     billboard_instance := array_add(*renderer.particle_draws);
     billboard_instance.position      = draw.position;
     billboard_instance.scale         = {draw.scale, draw.scale};
@@ -9,24 +10,28 @@ draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
+    assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[draw.ref.index];
     assert(mesh.skeleton.joints.count == 0);
     array_add(*renderer.static_mesh_draws, draw);
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}) {
+    assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(mesh.skeleton.joints.count == 0);
     array_add(*renderer.static_mesh_draws, {position, orientation, {scale,scale,scale}, ref});
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}) {
+    assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(mesh.skeleton.joints.count == 0);
     array_add(*renderer.static_mesh_draws, {position, orientation, scale, ref});
 }
 
 draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
+    assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[draw.ref.index];
     assert(mesh.skeleton.joints.count != 0);
     add_skinning_joints(renderer, *draw);
@@ -34,6 +39,7 @@ draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
 }
 
 draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pose: *Skeletal_Pose = null, scale := Vector3.{1,1,1}, orientation := Quaternion.{}) {
+    assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
 
     assert(mesh.skeleton.joints.count != 0);
@@ -45,6 +51,7 @@ draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pos
 }
 
 draw_line :: inline (renderer: *Renderer, begin: Vector3, end: Vector3, color: Color4b, width := 1.0, draw_in_front := false, time := 0.0) {
+    assert(!renderer.in_the_middle_of_rendering);
     draw := Line_Draw.{begin, end, color, width};
     if draw_in_front {
         array_add(*renderer.in_front_line_draws, draw);
@@ -60,6 +67,7 @@ draw_line :: inline (renderer: *Renderer, begin: Vector3, end: Vector3, color: C
 }
 
 draw_circle :: (renderer: *Renderer, center: Vector3, radius: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
+    assert(!renderer.in_the_middle_of_rendering);
     assert(segment_count >= 3);
 
     inv_segment_count := 1.0 / cast(float) segment_count;
@@ -79,13 +87,48 @@ draw_circle :: (renderer: *Renderer, center: Vector3, radius: float32, up: Vecto
 }
 
 draw_circle :: inline (renderer: *Renderer, center: Vector3, radius: float32, orientation: Quaternion, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
+    assert(!renderer.in_the_middle_of_rendering);
     up    := get_up_direction(*orientation);
     right := get_right_direction(*orientation);
     draw_circle(renderer, center, radius, up, right, color, line_width, segment_count, draw_in_front, time);
 }
 
-draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
+draw_box :: (renderer: *Renderer, center: Vector3, extent: Vector3, up: Vector3, right: Vector3, forward: Vector3, color: Color4b, line_width := 1.0, draw_in_front := false, time := 0.0) {
+    assert(!renderer.in_the_middle_of_rendering);
+    top_center := center + up * extent.z;
+    bot_center := center - up * extent.z;
+
+    top_a := top_center + forward * extent.y - right * extent.x;
+    top_b := top_center + forward * extent.y + right * extent.x;
+    top_c := top_center - forward * extent.y - right * extent.x;
+    top_d := top_center - forward * extent.y + right * extent.x;
+
+    bot_a := bot_center + forward * extent.y - right * extent.x;
+    bot_b := bot_center + forward * extent.y + right * extent.x;
+    bot_c := bot_center - forward * extent.y - right * extent.x;
+    bot_d := bot_center - forward * extent.y + right * extent.x;
+
+    draw_line(renderer, top_a, top_b, color, line_width, draw_in_front, time);
+    draw_line(renderer, top_b, top_d, color, line_width, draw_in_front, time);
+    draw_line(renderer, top_d, top_c, color, line_width, draw_in_front, time);
+    draw_line(renderer, top_c, top_a, color, line_width, draw_in_front, time);
+
+    draw_line(renderer, bot_a, bot_b, color, line_width, draw_in_front, time);
+    draw_line(renderer, bot_b, bot_d, color, line_width, draw_in_front, time);
+    draw_line(renderer, bot_d, bot_c, color, line_width, draw_in_front, time);
+    draw_line(renderer, bot_c, bot_a, color, line_width, draw_in_front, time);
+
+    draw_line(renderer, top_a, bot_a, color, line_width, draw_in_front, time);
+    draw_line(renderer, top_b, bot_b, color, line_width, draw_in_front, time);
+    draw_line(renderer, top_c, bot_c, color, line_width, draw_in_front, time);
+    draw_line(renderer, top_d, bot_d, color, line_width, draw_in_front, time);
+}
+
+// draw_portion < 1 means only draw that portion of the cylinder.
+draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0, draw_portion := 1.0) {
+    assert(!renderer.in_the_middle_of_rendering);
     assert(segment_count >= 3);
+    assert(draw_portion >= 0 && draw_portion <= 1);
 
     fore := cross(up, right);
 
@@ -98,7 +141,7 @@ draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height:
     down_center := center - up * half_height;
 
     for 1..segment_count {
-        radians := (cast(float) it * inv_segment_count) * 2.0 * PI; 
+        radians := (cast(float) it * inv_segment_count) * (2.0 * PI * draw_portion);
         sin_x, cos_x := sin_cos(radians);
         next_radius_position := center + right * (radius * cos_x) + fore * (radius * sin_x);
 
@@ -124,15 +167,24 @@ draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height:
 }
 
 draw_cylinder :: inline (renderer: *Renderer, center: Vector3, radius: float32, height: float32, orientation: Quaternion, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
+    assert(!renderer.in_the_middle_of_rendering);
     up    := get_up_direction(*orientation);
     right := get_right_direction(*orientation);
     draw_cylinder(renderer, center, radius, height, up, right, color, line_width, segment_count, draw_in_front, time);
 }
 
 draw_raycast :: (renderer: *Renderer, result: Raycast_Result, origin_color := COLOR4F_MAGENTA, miss_ray_color := COLOR4F_BLUE, hit_ray_color := COLOR4F_RED, hit_marker_radius := 0.02, line_width := 4.0, draw_in_front := false, time := 10.0) {
-    ray_normal := normalize(result.ray_destination - result.ray_origin);
+    assert(!renderer.in_the_middle_of_rendering);
+    ray_normal: Vector3;
+
+    if is_normalized(result.hit_normal) {
+        ray_normal = result.hit_normal;
+    } else {
+        ray_normal = normalize(result.ray_destination - result.ray_origin);
+    }
+
     ray_right, ray_up: Vector3;
-    if ray_normal.z > 0.95 {
+    if abs(ray_normal.z) > 0.95 {
         ray_right = cross(ray_normal, Vector3.{x=1});
     } else {
         ray_right = cross(ray_normal, Vector3.{z=1});

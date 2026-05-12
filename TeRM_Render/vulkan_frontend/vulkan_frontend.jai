@@ -115,6 +115,8 @@ Renderer :: struct {
         prepared_opaque_skinned_mesh_draw_commands: [..]VkDrawIndexedIndirectCommand;
         prepared_in_front_line_draw_batches: [..]Line_Draw_Batch;
         prepared_line_draw_batches: [..]Line_Draw_Batch;
+
+        in_the_middle_of_rendering: bool;
     };
 
     texture_references: []Texture_Ref;

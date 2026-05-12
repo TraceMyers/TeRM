@@ -600,7 +600,7 @@ distance_squared_between_line_segments :: (a1: Vector3, a2: Vector3, b1: Vector3
 	return distance_squared(closest_point_a.*, closest_point_b.*);
 }
 
-line_projection_norm_dist :: inline (point: *Vector3, seg_beg: *Vector3, seg_end: *Vector3, out_toward_end: *Vector3) -> t: float {
+line_projection_norm_dist :: inline (point: *$T, seg_beg: *T, seg_end: *T, out_toward_end: *T) -> t: float {
     out_toward_end.* = seg_end.* - seg_beg.*;
     toward_pt  := point.* - seg_beg.*;
     scaled_cos_t := dot(out_toward_end.*, toward_pt);
@@ -617,15 +617,15 @@ closest_point_on_line_and_segment :: (point: Vector3, seg_beg: Vector3, seg_end:
     return norm_dist;
 }
 
-closest_point_on_line_segment :: (point: Vector3, seg_beg: Vector3, seg_end: Vector3) -> Vector3, float {
+closest_point_on_line_segment :: (point: $T/VectorTypes, seg_beg: Vector3, seg_end: Vector3) -> Vector3, float {
     toward_end: Vector3 = ---;
     norm_dist := line_projection_norm_dist(*point, *seg_beg, *seg_end, *toward_end);
     clamped_norm_dist := clamp(norm_dist, 0, 1);
     return seg_beg + toward_end * clamped_norm_dist, clamped_norm_dist;
 }
 
-closest_point_on_line :: (point: Vector3, seg_beg: Vector3, seg_end: Vector3) -> Vector3, float {
-    toward_end: Vector3 = ---;
+closest_point_on_line :: (point: $T/VectorTypes, seg_beg: T, seg_end: T) -> T, float {
+    toward_end: T = ---;
     norm_dist := line_projection_norm_dist(*point, *seg_beg, *seg_end, *toward_end);
     return seg_beg + toward_end * norm_dist, norm_dist;
 }
@@ -972,6 +972,39 @@ get_max_value :: ($Number_Type: Type) -> Number_Type
     }
 }
 
+min_and_max :: inline (a: $T, b: T) -> min: T, max: T {
+    if a < b {
+        return a, b;
+    } else {
+        return b, a;
+    }
+}
+
+min_and_max :: inline (a: $T, b: T, $a_less_than_b: (T, T) -> bool) -> min: T, max: T {
+    if inline a_less_than_b(a, b) {
+        return a, b;
+    } else {
+        return b, a;
+    }
+}
+
+min :: inline (a: $T, b: T, $a_less_than_b: (T, T) -> bool) -> min: T {
+    if inline a_less_than_b(a, b) {
+        return a;
+    } else {
+        return b;
+    }
+}
+
+max :: inline (a: $T, b: T, $a_less_than_b: (T, T) -> bool) -> min: T {
+    if inline a_less_than_b(a, b) {
+        return b;
+    } else {
+        return a;
+    }
+}
+
+
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------- :Boxes
 
@@ -1070,6 +1103,28 @@ is_point_inside_box :: (point: Vector2i, upper_left: Vector2i, lower_right: Vect
         && point.y >= upper_left.y && point.y <= lower_right.y;
 }
 
+// extent = (half width, half length, half height)
+is_point_inside_box :: inline (point: Vector3, box_center: Vector3, box_extent: Vector3, box_width_direction: Vector3, box_length_direction: Vector3, box_height_direction: Vector3) -> bool {
+    diff := point - box_center;
+
+    width_dist  := abs(dot(diff, box_width_direction));
+    length_dist := abs(dot(diff, box_length_direction));
+    height_dist := abs(dot(diff, box_height_direction));
+
+    return width_dist <= box_extent.x && length_dist <= box_extent.y && height_dist <= box_extent.x;
+}
+
+is_point_inside_cylinder :: inline (point: Vector3, cylinder_center: Vector3, cylinder_radius: float, cylinder_half_height: float, cylinder_height_direction: Vector3) -> bool {
+    top_center := cylinder_center + cylinder_half_height * cylinder_height_direction;
+    bot_center := cylinder_center - cylinder_half_height * cylinder_height_direction;
+
+    radial_dist  := distance_from_line(point, top_center, bot_center);
+    toward_point := point - cylinder_center;
+    height_dist  := abs(dot(toward_point, cylinder_height_direction));
+
+    return radial_dist <= cylinder_radius + SMALL_NUMBER && height_dist <= cylinder_half_height + SMALL_NUMBER;
+}
+
 // if an AABB were to move, what would the bounding box containing the previous and new AABB be?
 sweep_aabb :: inline  (aabb: AABB, displacement: Vector3) -> AABB {
     min := aabb.center - aabb.extent;
@@ -1137,7 +1192,7 @@ make_pmf :: (pdf: (x: float) -> y: float, min_x: float, max_x: float, sample_res
 
     y_value_count_max := sample_granularity - 1;
 
-    curve := make_curve(pdf, min_x, max_x, sample_resolution,, temp);
+    curve := make_lut(pdf, min_x, max_x, sample_resolution,, temp);
 
     max_y: float;
     for y : curve.y_values {
@@ -1393,8 +1448,8 @@ reflect :: inline (vector: Vector3, normal: Vector3) -> Vector3 {
 get_ray_intersection_with_plane :: (ray_origin: Vector3, ray_direction: Vector3, point_on_plane: Vector3, plane_normal: Vector3, can_hit_back_face := false) -> pos: Vector3, distance: float, hit: bool, hit_back_face: bool {
     diff_to_plane := point_on_plane - ray_origin;
     signed_distance_to_plane := dot(diff_to_plane, plane_normal);
-    pointing_cos_t := dot(-plane_normal, ray_direction);
-    impact_dist := -signed_distance_to_plane / pointing_cos_t;
+    pointing_cos_t := dot(plane_normal, ray_direction);
+    impact_dist := signed_distance_to_plane / pointing_cos_t;
 
     if impact_dist < 0 {
         return ray_origin, 0, false, false;
@@ -1403,14 +1458,17 @@ get_ray_intersection_with_plane :: (ray_origin: Vector3, ray_direction: Vector3,
     on_front_side := signed_distance_to_plane <= 0;
     on_back_side_and_can_hit_back_face := signed_distance_to_plane > 0 && can_hit_back_face;
 
+    impact_point := ray_origin + ray_direction * impact_dist;
+
     if on_front_side {
-        return ray_origin + ray_direction * impact_dist, impact_dist, true, false;
+        return impact_point, impact_dist, true, false;
     } else if on_back_side_and_can_hit_back_face {
-        return ray_origin + ray_direction * impact_dist, impact_dist, true, true;
+        return impact_point, impact_dist, true, true;
     } else {
         return ray_origin, 0, false, false;
     }
 }
+
 
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------- :Vector2 Extension

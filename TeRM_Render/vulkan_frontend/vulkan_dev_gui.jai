@@ -42,7 +42,7 @@ dev_gui_init_fonts :: () {
     font_config.PixelSnapH = false;
 
     io := ImGui.GetIO();
-    io.Fonts.AddFontFromFileTTF(io.Fonts, "fonts/RobotoMono-SemiBold.ttf", 16.0, null, io.Fonts.GetGlyphRangesDefault(io.Fonts));
+    io.Fonts.AddFontFromFileTTF(io.Fonts, "fonts/RobotoMono-SemiBold.ttf", 24.0, null, io.Fonts.GetGlyphRangesDefault(io.Fonts));
 
     io.Fonts.Build(io.Fonts);
 }

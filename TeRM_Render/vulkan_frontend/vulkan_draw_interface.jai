@@ -9,6 +9,12 @@ draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
     billboard_instance.texture_index = xx draw.texture_index;
 }
 
+add_specialization_to_last_static_mesh_draw :: (renderer: *Renderer, specialization: Mesh_Specialization_Params) {
+    last_draw := *renderer.static_mesh_draws[renderer.static_mesh_draws.count-1];
+    array_add(*renderer.mesh_draw_specializations, specialization);
+    last_draw.specialization = renderer.mesh_draw_specializations.count - 1;
+}
+
 draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[draw.ref.index];
@@ -20,14 +26,14 @@ draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(mesh.skeleton.joints.count == 0);
-    array_add(*renderer.static_mesh_draws, {position, orientation, {scale,scale,scale}, ref});
+    array_add(*renderer.static_mesh_draws, {position, orientation, {scale,scale,scale}, ref, -1});
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(mesh.skeleton.joints.count == 0);
-    array_add(*renderer.static_mesh_draws, {position, orientation, scale, ref});
+    array_add(*renderer.static_mesh_draws, {position, orientation, scale, ref, -1});
 }
 
 draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {

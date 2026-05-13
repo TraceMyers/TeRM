@@ -12,7 +12,8 @@ layout(location=0) out      mat3 out_tbn;
 layout(location=3) out      vec2 out_uv_0;
 layout(location=4) out      vec2 out_uv_1;
 layout(location=5) out      vec4 out_color;
-layout(location=6) out flat int  out_material_id;
+layout(location=6) out      vec4 add_color;
+layout(location=7) out flat int  out_material_id;
 
 layout(set=3, binding=0, scalar) readonly buffer Mesh_Instance_Data {
     Skinned_Mesh_Instance_Shader_Data array[];

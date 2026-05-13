@@ -381,7 +381,7 @@ raycast_pillbox :: (request: *Raycast_Request, result: *Raycast_Result, center: 
                 cylinder_center = center - length_direction * half_box_length;
             }
 
-            NUDGE_DISTANCE :: 0.0001;
+            NUDGE_DISTANCE :: 0.01;
             dummy_request := request.*;
 
             // wherever on the containing box the ray hit, we want to 

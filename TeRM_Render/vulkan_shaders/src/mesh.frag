@@ -3,7 +3,8 @@ layout(location=0) in mat3 in_tbn;
 layout(location=3) in      vec2 in_uv_0;
 layout(location=4) in      vec2 in_uv_1;
 layout(location=5) in      vec4 in_color;
-layout(location=6) in flat int  in_material_id;
+layout(location=6) in      vec4 add_color;
+layout(location=7) in flat int  in_material_id;
 
 layout(location=0) out vec4 color;
 
@@ -16,6 +17,7 @@ void main() {
     } else {
         color = mat.albedo_factor * in_color;
     }
+
 
     // todo: alt non-opaque/masked shader with parametric cutoff and pipeline has blending. use only
     // on sections that call for it
@@ -40,4 +42,6 @@ void main() {
     float light_value = normal_dot_light * (1.0 - ambient_light) + ambient_light;
 
     color.rgb *= light_value;
+
+    color += add_color;
 }

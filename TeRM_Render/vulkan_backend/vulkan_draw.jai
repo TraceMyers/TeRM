@@ -1,4 +1,3 @@
-
 prepare_draw_billboard_particles :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame) {
     using context.renderer;
 
@@ -145,6 +144,11 @@ prepare_draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, dr
     for 1..draws.count {
         prev_draw  := *draws[it-1];
 
+        if prev_draw.specialization != -1 {
+            mesh_instances[it-1].specialization.specialized = true;
+            mesh_instances[it-1].specialization.params = mesh_draw_specializations[prev_draw.specialization];
+        }
+        
         prev_transform   := *mesh_instances[it-1].transform;
 
         scale       := make_scale_matrix4(prev_draw.scale);

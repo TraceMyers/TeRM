@@ -27,6 +27,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     defer array_reset_keeping_memory(*prepared_opaque_skinned_mesh_draw_commands);
     defer array_reset_keeping_memory(*prepared_line_draw_batches);
     defer array_reset_keeping_memory(*prepared_in_front_line_draw_batches);
+    defer array_reset_keeping_memory(*mesh_draw_specializations);
 
     for < *timed_in_front_line_draws {
         array_add(*in_front_line_draws, it.draw);

@@ -47,13 +47,22 @@ struct Mesh_Section_Shader_Data {
     int material;
 };
 
+struct Mesh_Specialization {
+    float flash_rate;
+    float flash_value;
+    float flash_begin_time;
+    bool specialized;
+};
+
 struct Skinned_Mesh_Instance_Shader_Data {
     mat4 transform;
     int joint_transform_offset;
+    Mesh_Specialization specialization;
 };
 
 struct Mesh_Instance_Shader_Data {
     mat4 transform;
+    Mesh_Specialization specialization;
 };
 
 // ----------------------------------------------- universal bindings

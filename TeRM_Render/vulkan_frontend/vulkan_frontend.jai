@@ -102,6 +102,7 @@ Renderer :: struct {
         static_mesh_draws: [..]Static_Mesh_Draw;
         skinned_mesh_draws: [..]Skinned_Mesh_Draw;
         skinning_joints: [..]Matrix4;
+        mesh_draw_specializations: [..]Mesh_Specialization_Params;
 
         in_front_line_draws: [..]Line_Draw;
         line_draws: [..]Line_Draw;
@@ -171,13 +172,26 @@ GPU_Material :: struct {
     orm_tex: s32;
 };
 
+Mesh_Specialization_Params :: struct {
+    flash_rate: float;
+    flash_value: float;
+    flash_begin_time: float;
+}
+
+Mesh_Specialization :: struct {
+    using params: Mesh_Specialization_Params;
+    specialized: bool;
+}
+
 Mesh_Instance_Shader_Data :: struct {
     transform: Matrix4;
+    specialization: Mesh_Specialization #align 4;
 }
 
 Skinned_Mesh_Instance_Shader_Data :: struct {
     transform: Matrix4;
     joint_offset: s32;
+    specialization: Mesh_Specialization #align 4;
 };
 
 // this is on the per-draw level
@@ -192,6 +206,7 @@ Static_Mesh_Draw :: struct {
     orientation: Quaternion;
     scale: Vector3;
     ref: Mesh_Ref;
+    specialization := -1;
 }
 
 Timed_Draw :: struct($draw_type: Type) {

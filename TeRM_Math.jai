@@ -52,7 +52,7 @@ VECTOR3_DOWN    :: Vector3.{ 0,  0, -1};
 // some convenient values, 'small' relative to the precision of 1.0
 SMALLISH_NUMBER     :: 0.003;
 SMALL_NUMBER        :: 0.00001;
-VERY_SMALL_NUMBER   :: 0.0000003;
+VERY_SMALL_NUMBER   :: 0.0000005;
 
 INV_PI          :: 1.0 / PI;
 INV_2_PI        :: 1.0 / (2.0 * PI);
@@ -522,7 +522,7 @@ closest_point_on_each_line_segment :: (a1: Vector3, a2: Vector3, b1: Vector3, b2
     // normalized distance along each segement where the respective closest points lie
     s, t: float = ---;
 
-    MAX_ERROR :: SMALL_NUMBER;
+    MAX_ERROR :: VERY_SMALL_NUMBER;
     if a_len_sq <= MAX_ERROR {
         if b_len_sq <= MAX_ERROR {
             s, t = 0;
@@ -1429,6 +1429,11 @@ is_normalized :: (v: $Vec_Type, tolerance := 0.0001) -> bool {
     return abs(length_squared(v) - 1.0) < tolerance;
 }
 
+project_vector_onto_plane :: inline (vector: Vector3, plane_normal: Vector3) -> Vector3 {
+    assert(is_normalized(plane_normal, SMALL_NUMBER));
+    return vector - dot(vector, plane_normal) * plane_normal;
+}
+
 project_point_onto_plane :: inline (point: Vector3, point_on_plane: Vector3, plane_normal: Vector3) -> pos: Vector3, signed_dist: float {
     assert(is_normalized(plane_normal, SMALL_NUMBER));
     diff := point - point_on_plane;
@@ -1444,31 +1449,6 @@ reflection_component :: inline (vector: Vector3, normal: Vector3) -> float {
 reflect :: inline (vector: Vector3, normal: Vector3) -> Vector3 {
     return vector + reflection_component(vector, normal) * normal; 
 }
-
-get_ray_intersection_with_plane :: (ray_origin: Vector3, ray_direction: Vector3, point_on_plane: Vector3, plane_normal: Vector3, can_hit_back_face := false) -> pos: Vector3, distance: float, hit: bool, hit_back_face: bool {
-    diff_to_plane := point_on_plane - ray_origin;
-    signed_distance_to_plane := dot(diff_to_plane, plane_normal);
-    pointing_cos_t := dot(plane_normal, ray_direction);
-    impact_dist := signed_distance_to_plane / pointing_cos_t;
-
-    if impact_dist < 0 {
-        return ray_origin, 0, false, false;
-    }
-
-    on_front_side := signed_distance_to_plane <= 0;
-    on_back_side_and_can_hit_back_face := signed_distance_to_plane > 0 && can_hit_back_face;
-
-    impact_point := ray_origin + ray_direction * impact_dist;
-
-    if on_front_side {
-        return impact_point, impact_dist, true, false;
-    } else if on_back_side_and_can_hit_back_face {
-        return impact_point, impact_dist, true, true;
-    } else {
-        return ray_origin, 0, false, false;
-    }
-}
-
 
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------- :Vector2 Extension

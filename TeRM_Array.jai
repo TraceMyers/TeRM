@@ -18,10 +18,13 @@ make_static_array :: inline ($T: Type, count := 0) -> []T {
     return array;
 }
 
-make_local_static_array :: inline ($T: Type, $max: int) -> []T #expand {
-    `_local_static_array_storage: [max]T;
+make_local_static_array :: inline ($T: Type, $max: int, count := 0, $id := "") -> []T #expand {
+    assert(count <= max);
+    array_name :: #run tprint("`_local_static_array_storage_%", id);
+    #insert #run tprint("%: [max]T;", array_name);
     array: []T;
-    array.data = `_local_static_array_storage.data;
+    array.data = #insert #run tprint("%.data;", array_name);
+    array.count = count;
     return array;
 }
 

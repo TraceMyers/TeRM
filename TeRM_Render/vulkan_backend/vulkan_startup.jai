@@ -1,5 +1,4 @@
 // todo: texture deduplication/sharing
-// todo: material instancing
 
 // --- sections ---
 // vk instance

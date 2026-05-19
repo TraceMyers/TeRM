@@ -14,10 +14,11 @@
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :Misc
 
-// for a given bit collection (u64 in items array), send a mask that represents a specific 
+// for a given bit collection (u64), send a mask that represents a specific 
 // sequence of bits, and search for a sequence where no mask 1's match any of the collection 1's.
 // for example, pretending a collection is 8 bits:
 // sequence/mask: 111
+//              111     < matched below to 000
 // collection: 10001001
 //  bit index: 76543210
 //                ^
@@ -33,6 +34,7 @@ find_index_of_missing_bit_sequence_lsb :: inline (bits: $T, sequence: u64, seque
             return xx it;
         }
     }
+    if somethign somekdsfaslkd ;lkasdfl;k aklda
     return -1;
 }
 
@@ -84,6 +86,11 @@ only_cleared_bits :: #bake_arguments only_set_or_only_cleared_bits(set_or_cleare
 only_set_or_only_cleared_bits :: (array: *Bit_Array, body: Code, flags: For_Flags, $set_or_cleared: enum {SET; CLEARED;}) #expand {
     #assert((flags & .POINTER) == 0);
 
+    // you already know whether it's set or cleared, so this is sort of performative,
+    // but I figured it makes sense to keep it this way for consistency with
+    // the base for expansion def
+    `it := #ifx set_or_cleared == .SET then 1 else 0;
+
     // the other reason this exists is to add reverse iteration, which the pool uses.
     for <=((flags & .REVERSE) != 0) slot, slot_index: array.slots {
 
@@ -117,11 +124,6 @@ only_set_or_only_cleared_bits :: (array: *Bit_Array, body: Code, flags: For_Flag
             }
 
             if found_set_or_cleared_bit {
-                // you already know whether it's set or cleared, so this is sort of performative,
-                // but I figured it makes sense to keep it this way for consistency with
-                // the base for expansion def
-                `it := #ifx set_or_cleared == .SET then 1 else 0;
-
                 #if (flags & .REVERSE) != 0 {
                     `it_index := base_index + (limit - i);
                 } else {
@@ -612,7 +614,7 @@ CT_Table :: struct($key_type: Type, $value_type: Type, $lookup_table_size := 819
 
     #run assert(is_power_of_two(lookup_table_size));
     #run assert(lookup_table_size >= 8);
-    #run assert(lookup_table_size < U32_MAX_VALUE);
+    #run assert(lookup_table_size < get_max_value(u32));
 }
 
 table_init :: (table: *CT_Table, reserve_count := 256) {
@@ -769,29 +771,16 @@ table_remove_container :: (table: *CT_Table, container: *CT_Table_KV_Container) 
 
 #scope_file
 
-div_ceil :: inline (a: $Int_Type, b: Int_Type) -> Int_Type 
-#modify {
-    return Int_Type.(*Type_Info).type == .INTEGER;
-} {
-    assert(a >= 0 && b > 0);
-    return ((a - 1) / b) + 1;
-}
-
 _fib16 :: (int_val: $T, min_digits := 0) -> FormatInt #expand {
     return FormatInt.{value=int_val, base=16, minimum_digits=min_digits};
 }
 
-get_bit_array_slot_size_and_max_value :: () -> s64, s64 {
+get_bit_array_slot_size_and_max_value :: () -> s64, u64 {
     bit_array: Bit_Array;
-    // bit_array.slots.data = xx *bit_array; // no null deref
-    // bit_array.slots.count = 1;
-    byte_size := size_of(type_of(bit_array.slots[0]));
-    bit_count := byte_size * 8;
-    max_value := ((((1).(s64) << (bit_count - 1)) - 1) << 1) | 1;
-    return byte_size, max_value;
+    bit_array_slot_type :: #run type_of(bit_array.slots[0]);
+    return size_of(bit_array_slot_type), xx get_max_value(bit_array_slot_type);
 }
 
-U32_MAX_VALUE :: 0xffff_ffff;
 BIT_ARRAY_SLOT_SIZE, BIT_ARRAY_SLOT_MAX_VALUE :: #run get_bit_array_slot_size_and_max_value();
 BIT_ARRAY_SLOT_BIT_COUNT :: BIT_ARRAY_SLOT_SIZE * 8;
 
@@ -805,6 +794,7 @@ BIT_ARRAY_SLOT_BIT_COUNT :: BIT_ARRAY_SLOT_SIZE * 8;
 }
 
 #import "TeRM/TeRM_Allocation";
+#import "TeRM/TeRM_Math";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

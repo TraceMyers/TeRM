@@ -143,15 +143,15 @@ draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height:
     radius_position := center + right * radius;
     next_radius_position: Vector3;
 
-    up_center   := center + up * half_height;
-    down_center := center - up * half_height;
+    up_offset := up * half_height;
+    up_center   := center + up_offset;
+    down_center := center - up_offset;
 
     for 1..segment_count {
         radians := (cast(float) it * inv_segment_count) * (2.0 * PI * draw_portion);
         sin_x, cos_x := sin_cos(radians);
         next_radius_position := center + right * (radius * cos_x) + fore * (radius * sin_x);
 
-        up_offset := up * half_height;
         up_radius_position        := radius_position + up_offset;
         up_next_radius_position   := next_radius_position + up_offset;
         down_radius_position      := radius_position - up_offset;
@@ -178,6 +178,90 @@ draw_cylinder :: inline (renderer: *Renderer, center: Vector3, radius: float32, 
     right := get_right_direction(*orientation);
     draw_cylinder(renderer, center, radius, height, up, right, color, line_width, segment_count, draw_in_front, time);
 }
+
+draw_sphere :: (renderer: *Renderer, center: Vector3, radius: float32, color: Color4b, line_width := 1.0, segment_count := 8, draw_in_front := false, time := 0.0) {
+    draw_capsule(renderer, center, radius, 0, {z=1}, {x=1}, color, line_width, segment_count, draw_in_front, time);
+}
+
+draw_capsule :: (renderer: *Renderer, center: Vector3, radius: float32, cylinder_height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 8, draw_in_front := false, time := 0.0, draw_portion := 1.0) {
+    MAX_SEGMENTS :: 64;
+    assert(!renderer.in_the_middle_of_rendering);
+    assert(segment_count >= 3 && segment_count <= MAX_SEGMENTS);
+    assert(draw_portion >= 0 && draw_portion <= 1);
+
+    fore := cross(up, right);
+
+    half_height := cylinder_height * 0.5;
+    inv_segment_count := 1.0 / cast(float) segment_count;
+    radius_direction := right;
+    radius_position := center + radius_direction * radius;
+
+    up_offset := up * half_height;
+    up_center   := center + up_offset;
+    down_center := center - up_offset;
+
+    MAX_VERTICAL_SEGMENT_COUNT :: #run div_ceil(MAX_SEGMENTS, 2) + 1;
+    vertical_segment_count := div_ceil(segment_count, 2)+1;
+    vertical_segment_cos_values := make_local_static_array(float, MAX_VERTICAL_SEGMENT_COUNT, vertical_segment_count, id="0");
+    vertical_segment_sin_values := make_local_static_array(float, MAX_VERTICAL_SEGMENT_COUNT, vertical_segment_count, id="1");
+
+    for < 1..vertical_segment_cos_values.count {
+        norm_angle := cast(float) it / vertical_segment_count;
+        vertical_segment_sin_values[it-1], vertical_segment_cos_values[it-1] = sin_cos(norm_angle * PI * 0.5);
+        vertical_segment_sin_values[it-1] *= radius;
+        vertical_segment_cos_values[it-1] *= radius;
+    }
+
+    for 1..segment_count+1 {
+        radians := (cast(float) it * inv_segment_count) * (2.0 * PI * draw_portion);
+        sin_x, cos_x := sin_cos(radians);
+        next_radius_direction := right * cos_x + fore * sin_x;
+        next_radius_position  := center + radius_direction * radius;
+
+        if cylinder_height > 0 {
+            up_radius_position        := radius_position + up_offset;
+            up_next_radius_position   := next_radius_position + up_offset;
+            down_radius_position      := radius_position - up_offset;
+            down_next_radius_position := next_radius_position - up_offset;
+            // top circle
+            draw_line(renderer, up_radius_position, up_next_radius_position, color, line_width, draw_in_front, time);
+            // bottom circle
+            draw_line(renderer, down_radius_position, down_next_radius_position, color, line_width, draw_in_front, time);
+            // side
+            draw_line(renderer, up_radius_position, down_radius_position, color, line_width, draw_in_front, time);
+        } else {
+            // draw the belt of the sphere
+            draw_line(renderer, radius_position, next_radius_position, color, line_width, draw_in_front, time);
+        }
+
+        vertical_position_up   := center + radius_direction * radius + up_offset;
+        vertical_position_down := center + radius_direction * radius - up_offset;
+
+        for 0..vertical_segment_cos_values.count-1 {
+            sin_factor := vertical_segment_sin_values[it];
+            cos_factor := vertical_segment_cos_values[it];
+
+            next_vertical_position_up := center + radius_direction * cos_factor + up * sin_factor + up_offset;
+            next_ring_position_up     := center + next_radius_direction * cos_factor + up * sin_factor + up_offset;
+
+            next_vertical_position_down := center + radius_direction * cos_factor - up * sin_factor - up_offset;
+            next_ring_position_down     := center + next_radius_direction * cos_factor - up * sin_factor - up_offset;
+
+            draw_line(renderer, vertical_position_up, next_vertical_position_up, color, line_width, draw_in_front, time);
+            draw_line(renderer, next_vertical_position_up, next_ring_position_up, color, line_width, draw_in_front, time);
+
+            draw_line(renderer, vertical_position_down, next_vertical_position_down, color, line_width, draw_in_front, time);
+            draw_line(renderer, next_vertical_position_down, next_ring_position_down, color, line_width, draw_in_front, time);
+
+            vertical_position_up = next_vertical_position_up;
+            vertical_position_down = next_vertical_position_down;
+        }
+
+        radius_direction = next_radius_direction;
+        radius_position  = next_radius_position;
+    }
+}
+
 
 draw_raycast :: (renderer: *Renderer, result: Raycast_Result, origin_color := COLOR4F_MAGENTA, miss_ray_color := COLOR4F_BLUE, hit_ray_color := COLOR4F_RED, hit_marker_radius := 0.02, line_width := 4.0, draw_in_front := false, time := 10.0) {
     assert(!renderer.in_the_middle_of_rendering);

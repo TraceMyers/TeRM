@@ -1,3 +1,7 @@
+get_mesh :: (renderer: *Renderer, ref: Mesh_Ref) -> *Mesh {
+    return *renderer.meshes[ref.index];
+}
+
 draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
     assert(!renderer.in_the_middle_of_rendering);
     billboard_instance := array_add(*renderer.particle_draws);
@@ -179,7 +183,7 @@ draw_cylinder :: inline (renderer: *Renderer, center: Vector3, radius: float32, 
     draw_cylinder(renderer, center, radius, height, up, right, color, line_width, segment_count, draw_in_front, time);
 }
 
-draw_sphere :: (renderer: *Renderer, center: Vector3, radius: float32, color: Color4b, line_width := 1.0, segment_count := 8, draw_in_front := false, time := 0.0) {
+draw_sphere :: (renderer: *Renderer, center: Vector3, radius: float32, color: Color4b, line_width := 1.0, segment_count := 12, draw_in_front := false, time := 0.0) {
     draw_capsule(renderer, center, radius, 0, {z=1}, {x=1}, color, line_width, segment_count, draw_in_front, time);
 }
 
@@ -261,7 +265,6 @@ draw_capsule :: (renderer: *Renderer, center: Vector3, radius: float32, cylinder
         radius_position  = next_radius_position;
     }
 }
-
 
 draw_raycast :: (renderer: *Renderer, result: Raycast_Result, origin_color := COLOR4F_MAGENTA, miss_ray_color := COLOR4F_BLUE, hit_ray_color := COLOR4F_RED, hit_marker_radius := 0.02, line_width := 4.0, draw_in_front := false, time := 10.0) {
     assert(!renderer.in_the_middle_of_rendering);

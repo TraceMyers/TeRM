@@ -34,7 +34,6 @@ find_index_of_missing_bit_sequence_lsb :: inline (bits: $T, sequence: u64, seque
             return xx it;
         }
     }
-    if somethign somekdsfaslkd ;lkasdfl;k aklda
     return -1;
 }
 
@@ -156,8 +155,7 @@ Pool :: struct($Item_Type: Type) {
 
 pool_init :: (pool: *Pool, cap: s64, lock_allocation := false) {
     pool.* = {};
-    pool.items.allocator = context.allocator;
-    pool.in_use.allocator = context.allocator;
+    pool_set_allocator(pool, context.allocator);
     pool_set_capacity(pool, cap);
     if lock_allocation {
         pool_lock_allocation(pool);
@@ -169,9 +167,13 @@ pool_set_capacity :: (using pool: *Pool($T), cap: s64) {
     resize_in_use(pool, cap);
 }
 
+pool_set_allocator :: (using pool: *Pool($T), allocator: Allocator) {
+    items.allocator = allocator;
+    in_use.allocator = allocator; 
+}
+
 pool_lock_allocation :: (using pool: *Pool($T)) {
-    items.allocator = no_allocator;
-    in_use.allocator = no_allocator; 
+    pool_set_allocator(pool, no_allocator);
     allow_grow_default = false;
     allow_shrink_default = false;
 }
@@ -343,116 +345,103 @@ resize_in_use :: (using pool: *Pool($T), new_count: s64) {
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------- :Struct_Of_Arrays
 
-// todo: make it so this stores in one block of memory rather than n blocks
-
-// implementation that converts a type into a struct wherein each field is an array 
-// corresponding a field of the struct.
-// in other words, instead of storing your data like so:
-//
-// vectors: [..]Vector3;
-//
-// you can store it like so:
-//
-// vectors: Struct_Of_Arrays(Vector3, "xs", "ys", "zs");
-//
-// where the above type looks like this:
-// {
+// declare a type matching this pattern: 
+// Vector_SOA :: struct {
 //      xs: [..]float;
 //      ys: [..]float;
 //      zs: [..]float;
+//      item_type :: Vector3;
+//      item_fields :: string.["x", "y", "z"];
 // }
+// ... where the arrays match the fields of the type.
+// this used to be less redundant but that version was a pain and harder to understand.
+// 
+// that type can be passed in to any of the following procedures in order to
+// operate on all of them at once.
+//
+// e.g. soa_add(*vectors, {1,1,1}); adds 1.0 to each of the arrays.
 
-Struct_Of_Arrays :: struct($item_type: Type, $array_field_names: ..string) {
+soa_for_each_array :: (soa: *$T, operation: string, $declare_item_field_var := false, only_first_array := false) #expand {
     #insert -> string {
         builder: String_Builder;
-        tinfo := item_type.(*Type_Info);
+
+        tinfo := type_info(T);
         assert(tinfo.type == .STRUCT);
-        tinfo_struct := tinfo.(*Type_Info_Struct);
+        tinfo_struct := cast(*Type_Info_Struct) tinfo;
 
-        field_index := 0;
+        INVALID_MEMBER : Type_Info_Struct_Member.Flags = .CONSTANT | .OVERLAY;
+
+        i := 0;
         for member : tinfo_struct.members {
-            if member.flags != 0 then continue;
-            member_tinfo := member.type;
-            member_type := (*member_tinfo).(*Type).*;
-            print(*builder, "\t%: [..]%;\n", array_field_names[field_index], member_type);
-            field_index += 1;
-        }
-
-        print(*builder, "ITEM_FIELD_NAMES :: string.[");
-        for member : tinfo_struct.members {
-            if member.flags != 0 then continue;
-            print(*builder, "\"%\",", member.name);
-        }
-        print(*builder, "];\n");
-
-        type_str := builder_to_string(*builder);
-        return type_str;
-    };
-}
-
-soa_for_each_array :: (soa: *Struct_Of_Arrays, operation: string, $declare_item_field_var := false) #expand {
-    #insert -> string {
-        builder: String_Builder;
-        for 0..soa.array_field_names.count-1 {
-            array_field_name := soa.array_field_names[it];
-            item_field_name := soa.ITEM_FIELD_NAMES[it];
+            if member.flags & INVALID_MEMBER {
+                continue;
+            }
+            defer i += 1;
             print(*builder, "\t{\n");
-            print(*builder, "\t\tarray := *soa.%;\n", array_field_name);
+            print(*builder, "\t\tarray := *soa.%;\n", member.name);
             #if declare_item_field_var {
-                print(*builder, "\t\tfield := *`item.%;\n", item_field_name);
+                print(*builder, "\t\tfield := *`item.%;\n", soa.item_fields[i]);
             }
             print(*builder, "#insert operation;");
             print(*builder, "\t}\n");
+            if only_first_array {
+                break;
+            }
         }
+
         return builder_to_string(*builder);
     }
 }
 
-soa_set_allocator :: (soa: *Struct_Of_Arrays, allocator: Allocator) {
+soa_set_allocator :: (soa: *$T, allocator: Allocator) {
     soa_for_each_array(soa, "array.allocator = `allocator;");
 }
 
-soa_add :: (soa: *Struct_Of_Arrays, item: soa.item_type) {
+soa_add :: (soa: *$T) {
+    soa_for_each_array(soa, "array_add(array);");
+}
+
+soa_add :: (soa: *$T, item: soa.item_type) {
     soa_for_each_array(soa, "array_add(array, field.*);", true);
 }
 
-soa_set :: (soa: *Struct_Of_Arrays, i: s64, item: soa.item_type) {
+soa_set :: (soa: *$T, i: s64, item: soa.item_type) {
     soa_for_each_array(soa, "array.*[`i] = field.*;", true);
 }
 
-soa_get :: (soa: *Struct_Of_Arrays, i: s64) -> soa.item_type {
+soa_get :: (soa: *$T, i: s64) -> soa.item_type {
     item: soa.item_type = ---;
     soa_for_each_array(soa, "field.* = array.*[`i];", true);
     return item;
 }
 
-soa_unordered_remove_by_index :: (soa: *Struct_Of_Arrays, i: s64) {
+soa_unordered_remove_by_index :: (soa: *$T, i: s64) {
     soa_for_each_array(soa, "array_unordered_remove_by_index(array, `i);");
 }
 
-soa_ordered_remove_by_index :: (soa: *Struct_Of_Arrays, i: s64) {
+soa_ordered_remove_by_index :: (soa: *$T, i: s64) {
     soa_for_each_array(soa, "array_ordered_remove_by_index(array, `i);");
 }
 
-soa_resize :: (soa: *Struct_Of_Arrays, count: s64) {
+soa_resize :: (soa: *$T, count: s64) {
     soa_for_each_array(soa, "array_resize(array, `count);");
 }
 
-soa_reserve :: (soa: *Struct_Of_Arrays, count: s64) {
+soa_reserve :: (soa: *$T, count: s64) {
     soa_for_each_array(soa, "array_reserve(array, `count);");
 }
 
-soa_reset :: (soa: *Struct_Of_Arrays) {
+soa_reset :: (soa: *$T) {
     soa_for_each_array(soa, "array_reset(array);");
 }
 
-soa_reset_keeping_memory :: (soa: *Struct_Of_Arrays) {
+soa_reset_keeping_memory :: (soa: *$T) {
     soa_for_each_array(soa, "array_reset_keeping_memory(array);");
 }
 
-soa_item_count :: (soa: *Struct_Of_Arrays) -> int {
+soa_count :: (soa: *$T) -> int {
     count: int = ---;
-    #insert #run tprint("\tcount = soa.%.count;\n", soa.array_field_names[0]);
+    soa_for_each_array(soa, "`count = array.count;", false, true);
     return count;
 }
 
@@ -510,13 +499,26 @@ Linear_Table :: struct($key_type: Type, $value_type: Type, $use_simple_key_hash 
     values: [..]value_type;
 }
 
-table_init :: (using table: *Linear_Table, reserve_count := 64) {
-    key_hashes.allocator = context.allocator;
-    values.allocator     = context.allocator;
+table_init :: (using table: *Linear_Table, reserve_count := 64, lock_allocation := false) {
+    table_set_allocator(table, context.allocator);
+    table_reset(table, reserve_count);
+    if lock_allocation {
+        table_set_allocator(table, no_allocator);
+    }
+}
+
+table_reset :: (using table: *Linear_Table, reserve_count := 0) {
     array_reset(*key_hashes);
     array_reset(*values);
-    array_reserve(*key_hashes, reserve_count);
-    array_reserve(*values, reserve_count);
+    if reserve_count > 0 {
+        array_reserve(*key_hashes, reserve_count);
+        array_reserve(*values, reserve_count);
+    }
+}
+
+table_set_allocator :: (table: *Linear_Table, allocator: Allocator) {
+    table.key_hashes.allocator = allocator; 
+    table.values.allocator = allocator;
 }
 
 table_count :: inline (table: *Linear_Table) -> int {
@@ -703,7 +705,6 @@ table_remove_by_key_hash :: (table: *CT_Table, key_hash: u32) -> bool {
     table_remove_container(table, container);
     return true;
 }
-
 
 table_remove_by_value :: (table: *CT_Table, value: table.value_type) {
     for *table.kv_containers {

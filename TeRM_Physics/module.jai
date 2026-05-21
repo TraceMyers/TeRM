@@ -1,7 +1,18 @@
-#module_parameters(
+#module_parameters()(
     collision_channels : []string = string.[],
-    raycast_channels   : []string = string.[]
-);
+    raycast_channels   : []string = string.[],
+    user_types: $I/interface Type_Provider_Default = Type_Provider_Default,
+    DEBUG_INVALIDATED_TEMPLATE_PROPERTIES := false
+) {
+    Type_Provider_Default :: struct {
+        entity_id_type      :: void;
+    }
+}
+
+PHYSICS_DELTA_TIME :: 1.0 / 100.0;
+
+collision_iteration_count := 4;
+physics_step_state        := Physics_Step_State.RUN_PHYSICS;
 
 Collision_Channel :: enum_flags u32 {
     #insert -> string {
@@ -23,21 +34,24 @@ Raycast_Channel :: enum_flags u32 {
     }
 }
 
-
-#load "core_types.jai";
 #load "properties.jai";
 #load "world.jai";
 #load "collision.jai";
 #load "raycast.jai";
 #load "raycast_simple.jai";
 #load "shape.jai";
+#load "body.jai";
 
 #scope_module
 
 world: *Physical_World;
 
-#import "TeRM/TeRM_Allocation";
+#import "Math";
+#import "Basic";
+
 #import "TeRM/TeRM_Storage";
+#import "TeRM/TeRM_Allocation";
+#import "TeRM/TeRM_Math";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

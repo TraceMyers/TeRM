@@ -25,19 +25,18 @@ component_array_init :: (array: *Component_Array, size: int) {
     array.ids.allocator        = {};
 
     // saving allocator if user wants to free later
-    allocator = context.allocator;
+    array.allocator = context.allocator;
 }
 
-component_array_add :: (array: *Component_Array, id: type_of(array).id_type) {
+component_array_add :: (array: *Component_Array, id: user_types.entity_id_type) {
     assert(array.components.count == array.ids.count);
 
     array_type               :: #run type_of(array);
-    entity_type              :: #run array_type.entity_type;
     component_type           :: #run array_type.component_type;
-    component_pointer_offset :: #run get_component_pointer_offset(entity_type, component_type);
+    component_pointer_offset :: #run get_component_pointer_offset(component_type);
 
     entity := user_types.id_to_entity_proc(id);
-    component_ptr  := cast(**) ((cast(*u8) entity) + component_pointer_offset);
+    component_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
     component_ptr.* = array_add(*array.components);
     array_add(*array.ids, id);
 }
@@ -46,9 +45,8 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
     assert(array.components.count == array.ids.count);
 
     array_type               :: #run type_of(array);
-    entity_type              :: #run array_type.entity_type;
     component_type           :: #run array_type.component_type;
-    component_pointer_offset :: #run get_component_pointer_offset(entity_type, component_type);
+    component_pointer_offset :: #run get_component_pointer_offset(component_type);
 
     index := component - array.components.data;
     assert(index >= 0 && index < array.components.count);
@@ -61,7 +59,7 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
         // swap back
         array.components[index] = array.components[array.components.count-1];
         array.ids[index]        = array.ids[array.components.count-1];
-        entity_at_end          := user_types.id_to_entity(array.ids[index]);
+        entity_at_end          := user_types.id_to_entity_proc(array.ids[index]);
         component_ptr  = cast(**component_type) ((cast(*u8) entity_at_end) + component_pointer_offset);
         component_ptr.*         = *array.components[index];
     } 
@@ -72,12 +70,19 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
 
 #scope_module
 
-get_component_pointer_offset :: (entity_type: Type, component_type: Type) -> int {
-    entity_tinfo := type_info(entity_type);
+entity_type :: #run -> Type {
+    proc_tinfo := type_info(type_of(user_types.entity_to_id_proc));
+    assert(proc_tinfo.argument_types[0].type == .POINTER);
+    arg_pointer_tinfo := cast(*Type_Info_Pointer) proc_tinfo.argument_types[0];
+    return (cast(*Type) *(arg_pointer_tinfo.pointer_to)).*;
+}
+
+get_component_pointer_offset :: (component_type: Type) -> int {
+    entity_tinfo := cast(*Type_Info_Struct) type_info(entity_type);
     for member : entity_tinfo.members {
         if member.type.type == .POINTER {
             pointer_tinfo := cast(*Type_Info_Pointer) member.type;
-            field_type := (cast(*Type) pointer_tinfo.pointer_to).*;
+            field_type := (cast(*Type) *(pointer_tinfo.pointer_to)).*;
             if field_type == component_type {
                 return member.offset_in_bytes;
             }

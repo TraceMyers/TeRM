@@ -191,6 +191,10 @@ load_mesh :: (path: string) -> Mesh, bool {
     return mesh, true;
 }
 
+is_static_mesh :: (mesh: *Mesh) -> bool {
+    return mesh.skeleton.joints.count == 0;
+}
+
 Static_Mesh_Vertex :: struct {
     position: Vector3;
     normal:   Vector3;

@@ -1,6 +1,7 @@
 Physics_Collider :: struct {
     using shape_data: union {
         half_height: float32;
+        circle: Shape_Circle;
         rectangle: Shape_Rectangle;
         cylinder: Shape_Cylinder;
         box: Shape_Box;

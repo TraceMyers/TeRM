@@ -24,9 +24,9 @@ get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which 
 
 make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaternion) -> Matrix4 {
     q     := normalize(camera_orientation);
-    up    := get_up_direction(*q); 
-    fore  := get_fore_direction(*q);
-    right := get_right_direction(*q);
+    up    := get_up_direction(q); 
+    fore  := get_fore_direction(q);
+    right := get_right_direction(q);
 
     view: Matrix4 = ---;
     view.v[0] = .{right.x,   right.y,  right.z, -dot(right, camera_center)};

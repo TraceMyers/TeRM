@@ -1,26 +1,28 @@
+// todo: debug proc to validate that templates aren't being altered
+
 Physical_World :: struct {
-    // declare an array of constant physics properties and assign this view to point to it,
-    // or allocate an array at runtime to represent the set of properties that should
-    // not change. either way is fine, but if you do make a constant array, you need
-    // to set this view so that the module can help you avoid crashing by 
-    // attempting changes to constant memory.
-    shared_properties: []Physics_Properties;
+    body_templates: Linear_Table(string, Physics_Body_Template);
     unique_properties: Pool(Physics_Properties);
-    body_data: Struct_Of_Arrays(
-        Physics_Body_Combined_Data,
-        "flags", "collision_channels", "bodies"
-    );
+    body_data: Physics_Body_SOA;
+
+    #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
+        debug_template_properties: [..]Physics_Properties;
+    }
+
     allocator: Allocator;
 }
 
-create_physical_world :: (shared_properties: []Physics_properties, bodies_max := 32768, unique_properties_max := 4096) -> Physical_World {
+create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique_properties_max := 4096) -> Physical_World {
     out_world: Physical_World;
-    out_world.shared_properties = shared_properties;
+
+    table_init(*out_world.body_templates, body_templates_max, true);
     pool_init(*out_world.unique_properties, unique_properties_max, true);
-    if reserve_bodies > 0 {
+
+    if bodies_max > 0 {
         soa_reserve(*out_world.body_data, bodies_max);
-        soa_set_allocator(*out_world.body_data, no_allocator);
     }
+    soa_set_allocator(*out_world.body_data, no_allocator);
+
     out_world.allocator = context.allocator;
     return out_world;
 }
@@ -30,16 +32,34 @@ destroy_physical_world :: (in_world: *Physical_World) {
     save_allocator := context.allocator;
     context.allocator = in_world.allocator;
     defer context.allocator = save_allocator;
-    in_world.unique_properties.items.allocator = in_world.allocator;
-    in_world.unique_properties.in_use.allocator = in_world.allocator;
+
+    table_set_allocator(*in_world.body_templates, in_world.allocator);
+    table_reset(*in_world.body_templates);
+
+    pool_set_allocator(*in_world.unique_properties, in_world.allocator);
     pool_reset(*in_world.unique_properties);
+
     soa_set_allocator(*in_world.body_data, in_world.allocator);
     soa_reset(*in_world.body_data);
+    
     in_world.* = {};
 }
 
 set_physical_world :: (in_world: *Physical_World) {
     world = in_world;
+}
+
+// if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES (module param) is true, this can be called
+// any time by the user to make sure they aren't invalidating their own templates. it
+// will also be called automatically during the physics update.
+debug_validate_template_properties :: () {
+    #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
+        using world;
+        assert(body_templates.values.count == debug_template_properties.count);
+        for 0..body_templates.values.count-1 {
+            assert(body_templates.values[it].properties == debug_template_properties[it]);
+        }
+    }
 }
 
 Physics_Step_State :: enum {
@@ -48,6 +68,26 @@ Physics_Step_State :: enum {
     PAUSED;
     PAUSE_ON_COLLISION;
 }
+
+Physics_Body_Combined_Data :: struct {
+    flags:              Physics_Body_Flags;
+    collision_channels: Collision_Channel;
+    entity_id:          user_types.entity_id_type;
+    using body:         Physics_Body;
+}
+
+Physics_Body_SOA :: struct {
+    flags:              [..]Physics_Body_Flags;
+    collision_channels: [..]Collision_Channel;
+    entity_ids:         [..]user_types.entity_id_type;
+    bodies:             [..]Physics_Body;
+    
+    item_type   :: Physics_Body_Combined_Data;
+    item_fields :: string.["flags", "collision_channels", "entity_id", "body"];
+}
+
+#scope_module
+
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

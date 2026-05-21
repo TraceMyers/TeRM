@@ -30,8 +30,9 @@ make_raycast_request :: inline (ray_begin: Vector3, ray_end: Vector3) -> Raycast
     return Raycast_Request.{ray_origin=ray_begin, ray_destination=ray_end};
 }
 
-// if you already have origin & direction, saves a little calculation time.
+// if you already have direction & length, saves a little calculation time.
 make_raycast_request :: inline (ray_origin: Vector3, ray_direction: Vector3, ray_length: float) -> Raycast_Request {
+    assert(is_normalized(ray_direction));
     return Raycast_Request.{
         ray_origin = ray_origin, 
         ray_destination = ray_origin + ray_direction * ray_length, 
@@ -39,6 +40,28 @@ make_raycast_request :: inline (ray_origin: Vector3, ray_direction: Vector3, ray
         ray_length = ray_length,
         ray_direction_and_length_calculated = true
     };
+}
+
+// convenience procedure for raycasting to a collider
+raycast :: (request: *Raycast_Request, result: *Raycast_Result, center: Vector3, orientation: Quaternion, collider: Physics_Collider) -> bool {
+    if #complete collider.shape == {
+    case .PLANE;
+        return raycast_plane(request, result, center, get_fore_direction(orientation));
+    case .CIRCLE;
+        return raycast_circle(request, result, center, collider.circle, get_fore_direction(orientation));
+    case .RECTANGLE;
+        return raycast_rectangle(request, result, center, collider.rectangle, get_up_direction(orientation), get_right_direction(orientation), get_fore_direction(orientation));
+    case .CYLINDER;
+        return raycast_cylinder(request, result, center, collider.cylinder, get_up_direction(orientation));
+    case .BOX;
+        return raycast_box(request, result, center, collider.box, get_up_direction(orientation), get_fore_direction(orientation), get_right_direction(orientation));
+    case .PILLBOX;
+        return raycast_pillbox(request, result, center, collider.pillbox, get_up_direction(orientation), get_fore_direction(orientation), get_right_direction(orientation));
+    case .SPHERE;
+        return raycast_sphere(request, result, center, collider.sphere);
+    case .CAPSULE;
+        return raycast_capsule(request, result, center, collider.capsule, get_up_direction(orientation));
+    }
 }
 
 raycast_plane :: (request: *Raycast_Request, result: *Raycast_Result, point_on_plane: Vector3, plane_normal: Vector3) -> bool {
@@ -49,17 +72,15 @@ raycast_plane :: (request: *Raycast_Request, result: *Raycast_Result, point_on_p
     dist_sq_to_plane := length_squared(diff_to_plane);
     signed_distance_to_plane := dot(diff_to_plane, plane_normal);
 
-    if dist_sq_to_plane < VERY_SMALL_NUMBER {
+    if dist_sq_to_plane <= VERY_SMALL_NUMBER {
         result.origin_inside_collider = true;
-        if request.origin_inside_collider_rules.hit_where != .NO_HIT {
-            result.hit_distance = 0;
-            result.hit_location = request.ray_origin;
-            result.hit_normal = plane_normal;
-            result.is_hit = true;
-            if request.origin_inside_collider_rules.hit_where == .BACK_FACE {
-                result.hit_back_face = true;
-                result.hit_normal = -result.hit_normal;
-            }
+        result.hit_distance = 0;
+        result.hit_location = request.ray_origin;
+        result.hit_normal = plane_normal;
+        result.is_hit = true;
+        if request.return_back_face_normal {
+            result.hit_back_face = true;
+            result.hit_normal = -result.hit_normal;
         }
     } else  {
         pointing_cos_t := dot(plane_normal, request.ray_direction);
@@ -155,8 +176,8 @@ raycast_cylinder :: (request: *Raycast_Request, result: *Raycast_Result, center:
         raycast_plane_simple(*top_plane_result, request.ray_origin, request.ray_direction, top_center, height_direction);
         raycast_plane_simple(*bot_plane_result, request.ray_origin, request.ray_direction, bot_center, -height_direction);
 
-        hit_top_plane := top_plane_result.is_hit & top_plane_result.hit_distance <= request.ray_length;
-        hit_bot_plane := bot_plane_result.is_hit & bot_plane_result.hit_distance <= request.ray_length;
+        hit_top_plane := top_plane_result.is_hit && top_plane_result.hit_distance <= request.ray_length;
+        hit_bot_plane := bot_plane_result.is_hit && bot_plane_result.hit_distance <= request.ray_length;
 
         try_hit_circle :: inline (result: *Raycast_Result, plane_intersection: Vector3, circle_center: Vector3, radius: float, distance: float, normal: Vector3) -> bool {
             dist_sq_to_intersection := distance_squared(plane_intersection, circle_center);
@@ -181,22 +202,22 @@ raycast_cylinder :: (request: *Raycast_Request, result: *Raycast_Result, center:
         }
 
         if hit_top_plane && hit_bot_plane {
-            if distance_to_top_plane < distance_to_bot_plane {
-                try_hit_circle(result, top_plane_result.hit_location, top_center, radius, distance_to_top_plane, height_direction);
+            if top_plane_result.hit_distance < bot_plane_result.hit_distance {
+                try_hit_circle(result, top_plane_result.hit_location, top_center, radius, top_plane_result.hit_distance, height_direction);
             } else {
-                try_hit_circle(result, bot_plane_result.hit_location, bot_center, radius, distance_to_bot_plane, -height_direction);
+                try_hit_circle(result, bot_plane_result.hit_location, bot_center, radius, bot_plane_result.hit_distance, -height_direction);
             }
         } else if hit_top_plane {
             if top_plane_result.hit_back_face {
-                try_hit_back_of_circle(result, top_plane_result.hit_location, top_center, radius, distance_to_top_plane, height_direction, can_hit_back_face, request.return_back_face_normal);
+                try_hit_back_of_circle(result, top_plane_result.hit_location, top_center, radius, top_plane_result.hit_distance, height_direction, can_hit_back_face, request.return_back_face_normal);
             } else {
-                try_hit_circle(result, top_plane_result.hit_location, top_center, radius, distance_to_top_plane, height_direction);
+                try_hit_circle(result, top_plane_result.hit_location, top_center, radius, top_plane_result.hit_distance, height_direction);
             }
         } else if hit_bot_plane {
             if bot_plane_result.hit_back_face {
-                try_hit_back_of_circle(result, bot_plane_result.hit_location, bot_center, radius, distance_to_bot_plane, -height_direction, can_hit_back_face, request.return_back_face_normal);
+                try_hit_back_of_circle(result, bot_plane_result.hit_location, bot_center, radius, bot_plane_result.hit_distance, -height_direction, can_hit_back_face, request.return_back_face_normal);
             } else {
-                try_hit_circle(result, bot_plane_result.hit_location, bot_center, radius, distance_to_bot_plane, -height_direction);
+                try_hit_circle(result, bot_plane_result.hit_location, bot_center, radius, bot_plane_result.hit_distance, -height_direction);
             }
         }
 
@@ -466,11 +487,11 @@ raycast_capsule :: (request: *Raycast_Request, result: *Raycast_Result, center: 
     cyl_bot := center - height_direction * (half_height - radius);
 
     closest_point_on_cyl := closest_point_on_line_segment(request.ray_origin, cyl_bot, cyl_top);
-
     dist_sq := distance_squared(closest_point_on_cyl, request.ray_origin);
 
     dummy_request := request.*;
-    dummy_request.can_hit_back_face
+    dummy_request.can_hit_back_face = false;
+
     origin_inside_collider: bool;
 
     if dist_sq <= square(radius) {
@@ -503,6 +524,7 @@ raycast_capsule :: (request: *Raycast_Request, result: *Raycast_Result, center: 
         if distance_squared(request.ray_origin, result.hit_location) > square(request.ray_length) {
             result.clear_if_miss = {};
         } else {
+            result.hit_distance = dot(result.hit_location - request.ray_origin, request.ray_direction);
             result.hit_back_face = true;
             if request.return_back_face_normal {
                 result.hit_normal *= -1;
@@ -544,7 +566,7 @@ raycast_sphere_hit_calculation :: inline (sphere_center: Vector3, sphere_radius:
     result.hit_distance = distance(ray_origin, result.hit_location);
 }
 
-try_raycast_cylinder_side :: inline (request: *Raycast_Request, result: *Raycast_Result, center: Vector3, radius: Vector3, half_height: float, radius: float, height_direction: Vector3, can_hit_back_face: bool) -> bool {
+try_raycast_cylinder_side :: inline (request: *Raycast_Request, result: *Raycast_Result, center: Vector3, half_height: float, radius: float, height_direction: Vector3, can_hit_back_face: bool) -> bool {
     // analytic ray-cylinder side intersection: project the ray and origin offset onto the
     // plane perpendicular to the axis, then solve |X_perp + t*D_perp|^2 = r^2 for t.
     origin_projected := project_point_onto_plane(request.ray_origin, center, height_direction);
@@ -555,7 +577,7 @@ try_raycast_cylinder_side :: inline (request: *Raycast_Request, result: *Raycast
     c := length_squared(origin_projected) - square(radius);
 
     // a is sin^2(angle between ray and axis); near zero means ray is parallel to the axis,
-    // in which case the side cannot be entered (caps are handled above).
+    // in which case the side cannot be entered
     if a > VERY_SMALL_NUMBER {
         discriminant := square(b) - 4.0 * a * c;
         if discriminant >= 0 {

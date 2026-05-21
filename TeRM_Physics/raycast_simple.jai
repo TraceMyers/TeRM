@@ -11,14 +11,14 @@ raycast_plane_simple :: (result: *Raycast_Result_Simple, ray_origin: Vector3, ra
     pointing_cos_t := dot(plane_normal, ray_direction);
 
     result.hit_distance = signed_distance_to_plane / pointing_cos_t;
-    result.is_hit = impact_dist >= 0;
+    result.is_hit = result.hit_distance >= 0;
 
     if !result.is_hit {
         result.* = {};
         return false;
     } else {
         result.hit_back_face = signed_distance_to_plane > 0;
-        result.hit_location = ray_origin + ray_direction * impact_dist;
+        result.hit_location = ray_origin + ray_direction * result.hit_distance;
         return true;
     }
 }

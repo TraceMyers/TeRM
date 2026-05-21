@@ -1,23 +1,21 @@
 Physics_Properties :: struct {
     mass:              float;
-    linear_damping:    float; // curve?
-    angular_damping:   float; // curve?
-    pointing_friction: float; // curve?
-    slide_friction:    float; // curve?
-    air_resistance:    float;
+    linear_damping:    float; // todo: curve?
+    angular_damping:   float; // todo: curve?
+    pointing_friction: float; // todo: curve?
+    slide_friction:    float; // todo: curve?
+    air_resistance:    float; // todo: curve?
 
-    // move input only
-    linear_move_acceleration:  float;
-    angular_move_acceleration: float;
+    collider: Physics_Collider;
 }
 
-change_property :: (props: *Physics_Properties, $property_name: string, new_value: $T) {
+change_property :: (body: *Physics_Body, $property_name: string, new_value: $T) {
     PROPERTY_OFFSET :: #run -> int {
-        physics_tinfo := type_info(Physics_Body);
-        for member : physics_tinfo.members {
+        props_tinfo := type_info(Physics_Properties);
+        for member : props_tinfo.members {
             if member.name == property_name {
                 member_type := (cast(*Type) *member.type).*;
-                assert(member_type == T, "in Physics_Body, % has type %, but a value of type % was passed to change_property", property_name, member_type, T);
+                assert(member_type == T, "in Physics_Properties, % has type %, but a value of type % was passed to change_property", property_name, member_type, T);
                 return member.offset_in_bytes;
             }
         }
@@ -25,21 +23,31 @@ change_property :: (props: *Physics_Properties, $property_name: string, new_valu
         return 0;
     }
 
-    if is_shared(props) {
-        new_properties_index := pool_acquire(*context.world.physics_properties_pool);
-        new_properties := *context.world.physics_properties_pool[new_properties_index];
-        new_properties.base = props.*;
-        new_properties.template = get_template(body.properties);
-        props.* = new_properties;
-    }
-
-    property_ptr := cast(*T) ((cast(*u8) body) + PROPERTY_OFFSET);
+    make_properties_unique(body);
+    property_ptr := cast(*T) ((cast(*u8) body.properties) + PROPERTY_OFFSET);
     property_ptr.* = new_value;
 }
 
-properties_are_shared :: inline (properties: *Physics_Properties) -> bool {
-    distance := properties - world.shared_properties.data;
-    return distance >= 0 && distance < world.shared_properties.count;
+make_properties_unique :: (body: *Physics_Body) {
+    if !is_unique(body.properties) {
+        new_properties_index := pool_acquire(*world.unique_properties);
+        new_properties := *world.unique_properties[new_properties_index];
+        new_properties.* = body.properties.*;
+        body.properties = new_properties;
+    }
+}
+
+is_unique :: inline (properties: *Physics_Properties) -> shared: bool, unique_index: s32 {
+    using world;
+    unique_index := properties - unique_properties.items.data;
+    if unique_index >= 0 && unique_index < world.unique_properties.items.count {
+        assert(is_pool_item_in_use(*world.unique_properties, unique_index));
+        return true, xx unique_index;
+    }
+    shared_byte_diff := cast(*u8) properties - cast(*u8) body_templates.values.data;
+    shared_byte_end  := size_of(type_of(body_templates.values[0])) * body_templates.values.count;
+    assert(shared_byte_diff >= 0 && shared_byte_diff < shared_byte_end);
+    return false, -1;
 }
 
 // Copyright (c) 2026 Trace Myers

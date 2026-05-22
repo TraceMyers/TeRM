@@ -27,36 +27,46 @@ layout(set=5, binding=0, scalar) readonly buffer Joint_Data {
     mat4 array[];
 } skinning_joints;
 
+vec4 skinned_mesh_transform_vector(vec4 vector) {
+    Mesh_Section_Shader_Data mesh_section = mesh_sections.array[gl_DrawID];
+    int mesh_instance_index = mesh_section.mesh_instance_offset + gl_InstanceIndex;
+    Skinned_Mesh_Instance_Shader_Data mesh_inst = mesh_instances.array[mesh_instance_index];
+
+    int joint_offset = mesh_inst.joint_transform_offset;
+
+    mat4 skinning_mat_a = skinning_joints.array[in_joints[0] + joint_offset];
+    vec4 skinned_position_a = (vector * skinning_mat_a) * in_weights[0];
+
+    mat4 skinning_mat_b = skinning_joints.array[in_joints[1] + joint_offset];
+    vec4 skinned_position_b = (vector * skinning_mat_b) * in_weights[1];
+
+    mat4 skinning_mat_c = skinning_joints.array[in_joints[2] + joint_offset];
+    vec4 skinned_position_c = (vector * skinning_mat_c) * in_weights[2];
+
+    mat4 skinning_mat_d = skinning_joints.array[in_joints[3] + joint_offset];
+    vec4 skinned_position_d = (vector * skinning_mat_d) * in_weights[3];
+
+    return skinned_position_a + skinned_position_b + skinned_position_c + skinned_position_d;
+}
+
 void main() {
     Mesh_Section_Shader_Data mesh_section = mesh_sections.array[gl_DrawID];
     int mesh_instance_index = mesh_section.mesh_instance_offset + gl_InstanceIndex;
     Skinned_Mesh_Instance_Shader_Data mesh_inst = mesh_instances.array[mesh_instance_index];
 
     vec4 homogenous_position = vec4(in_position, 1.0);
-    int joint_offset = mesh_inst.joint_transform_offset;
-
-    mat4 skinning_mat_a = skinning_joints.array[in_joints[0] + joint_offset];
-    vec4 skinned_position_a = (homogenous_position * skinning_mat_a) * in_weights[0];
-
-    mat4 skinning_mat_b = skinning_joints.array[in_joints[1] + joint_offset];
-    vec4 skinned_position_b = (homogenous_position * skinning_mat_b) * in_weights[1];
-
-    mat4 skinning_mat_c = skinning_joints.array[in_joints[2] + joint_offset];
-    vec4 skinned_position_c = (homogenous_position * skinning_mat_c) * in_weights[2];
-
-    mat4 skinning_mat_d = skinning_joints.array[in_joints[3] + joint_offset];
-    vec4 skinned_position_d = (homogenous_position * skinning_mat_d) * in_weights[3];
-
-    vec4 skinned_position = skinned_position_a + skinned_position_b + skinned_position_c + skinned_position_d;
-
+    vec4 skinned_position = skinned_mesh_transform_vector(homogenous_position);
     mat4 model = mesh_inst.transform;
 
     gl_Position = skinned_position * model * frame.view_projection;
 
-    // generating the orthonormal axes of this triangle in world space
-    vec3 T = normalize(vec3(vec4(in_tangent.xyz, 0.0) * model));
-    vec3 N = normalize(vec3(vec4(in_normal.xyz,  0.0) * model));
-    vec3 B = cross(N, T) * in_tangent.w; // handedness - which direction does this ortho vector point of the two?
+    vec4 skinned_tangent = normalize(skinned_mesh_transform_vector(in_tangent));
+    vec4 skinned_normal  = normalize(skinned_mesh_transform_vector(vec4(in_normal.xyz, 1)));
+
+    // generating the orthonormal axes of this vertex in world space
+    vec3 T = normalize(vec3(vec4(skinned_tangent.xyz, 0.0) * model));
+    vec3 N = normalize(vec3(vec4(skinned_normal.xyz,  0.0) * model));
+    vec3 B = cross(N, T) * skinned_tangent.w; // handedness - which direction does this ortho vector point of the two?
 
     out_tbn         = mat3(T, B, N);
     out_uv_0        = in_uv_0;
@@ -64,3 +74,4 @@ void main() {
     out_color       = in_color;
     out_material_id = mesh_section.material;
 }
+

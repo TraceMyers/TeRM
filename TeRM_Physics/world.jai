@@ -49,18 +49,6 @@ set_physical_world :: (in_world: *Physical_World) {
     world = in_world;
 }
 
-// if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES (module param) is true, this can be called
-// any time by the user to make sure they aren't invalidating their own templates. it
-// will also be called automatically during the physics update.
-debug_validate_template_properties :: () {
-    #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
-        using world;
-        assert(body_templates.values.count == debug_template_properties.count);
-        for 0..body_templates.values.count-1 {
-            assert(body_templates.values[it].properties == debug_template_properties[it]);
-        }
-    }
-}
 
 Physics_Step_State :: enum {
     RUN_PHYSICS;

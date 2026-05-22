@@ -22,28 +22,28 @@ add_specialization_to_last_static_mesh_draw :: (renderer: *Renderer, specializat
 draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[draw.ref.index];
-    assert(mesh.skeleton.joints.count == 0);
+    assert(is_static_mesh(mesh));
     array_add(*renderer.static_mesh_draws, draw);
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
-    assert(mesh.skeleton.joints.count == 0);
+    assert(is_static_mesh(mesh));
     array_add(*renderer.static_mesh_draws, {position, orientation, {scale,scale,scale}, ref, -1});
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
-    assert(mesh.skeleton.joints.count == 0);
+    assert(is_static_mesh(mesh));
     array_add(*renderer.static_mesh_draws, {position, orientation, scale, ref, -1});
 }
 
 draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[draw.ref.index];
-    assert(mesh.skeleton.joints.count != 0);
+    assert(!is_static_mesh(mesh));
     add_skinning_joints(renderer, *draw);
     array_add(*renderer.skinned_mesh_draws, draw);
 }
@@ -51,11 +51,9 @@ draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
 draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pose: *Skeletal_Pose = null, scale := Vector3.{1,1,1}, orientation := Quaternion.{}) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
-
-    assert(mesh.skeleton.joints.count != 0);
-
+    assert(!is_static_mesh(mesh));
     new_draw := array_add(*renderer.skinned_mesh_draws);
-    new_draw.* = {static_draw={position, orientation, scale, ref}, joint_data._interface.pose=pose};
+    new_draw.* = {static_draw={position, orientation, scale, ref, -1}, joint_data._interface.pose=pose};
 
     add_skinning_joints(renderer, new_draw);
 }
@@ -187,7 +185,7 @@ draw_sphere :: (renderer: *Renderer, center: Vector3, radius: float32, color: Co
     draw_capsule(renderer, center, radius, 0, {z=1}, {x=1}, color, line_width, segment_count, draw_in_front, time);
 }
 
-draw_capsule :: (renderer: *Renderer, center: Vector3, radius: float32, cylinder_height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 8, draw_in_front := false, time := 0.0, draw_portion := 1.0) {
+draw_capsule :: (renderer: *Renderer, center: Vector3, radius: float32, half_height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 8, draw_in_front := false, time := 0.0, draw_portion := 1.0) {
     MAX_SEGMENTS :: 64;
     assert(!renderer.in_the_middle_of_rendering);
     assert(segment_count >= 3 && segment_count <= MAX_SEGMENTS);
@@ -195,12 +193,11 @@ draw_capsule :: (renderer: *Renderer, center: Vector3, radius: float32, cylinder
 
     fore := cross(up, right);
 
-    half_height := cylinder_height * 0.5;
     inv_segment_count := 1.0 / cast(float) segment_count;
     radius_direction := right;
     radius_position := center + radius_direction * radius;
 
-    up_offset := up * half_height;
+    up_offset := up * max((half_height - radius), 0);
     up_center   := center + up_offset;
     down_center := center - up_offset;
 
@@ -222,7 +219,7 @@ draw_capsule :: (renderer: *Renderer, center: Vector3, radius: float32, cylinder
         next_radius_direction := right * cos_x + fore * sin_x;
         next_radius_position  := center + radius_direction * radius;
 
-        if cylinder_height > 0 {
+        if half_height - radius > 0 {
             up_radius_position        := radius_position + up_offset;
             up_next_radius_position   := next_radius_position + up_offset;
             down_radius_position      := radius_position - up_offset;

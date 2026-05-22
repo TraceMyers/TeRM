@@ -81,6 +81,7 @@ destroy_physics_body :: (body: *Physics_Body) -> need_repoint: bool, id_to_repoi
 create_physics_body_template :: (name: string, template: Physics_Body_Template) {
     using world;
     _, success := table_set(*body_templates, name, template, .ONLY_ADD);
+    // todo: probably should make it so the tables have hash collision resolution...
     assert(success, "table failed to add template % either because of a hash collision or because a template has already been added under that name", name);
     #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
         array_add(*debug_template_properties, template.properties);

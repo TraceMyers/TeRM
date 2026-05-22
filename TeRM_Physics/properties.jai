@@ -50,5 +50,31 @@ is_unique :: inline (properties: *Physics_Properties) -> shared: bool, unique_in
     return false, -1;
 }
 
+// if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES (module param) is true, this can be called
+// any time by the user to make a point in time they know the template properties
+// to be valid.
+debug_mark_template_properties_valid :: () {
+    #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
+        using world;
+        assert(body_templates.values.count == debug_template_properties.count);
+        for 0..body_templates.values.count-1 {
+            debug_template_properties[it] = body_templates.values[it].properties;
+        }
+    }
+}
+
+// if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES (module param) is true, this can be called
+// any time by the user to make sure they aren't invalidating their own templates. it
+// will also be called automatically during the physics update.
+debug_validate_template_properties :: () {
+    #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
+        using world;
+        assert(body_templates.values.count == debug_template_properties.count);
+        for 0..body_templates.values.count-1 {
+            assert(body_templates.values[it].properties == debug_template_properties[it]);
+        }
+    }
+}
+
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

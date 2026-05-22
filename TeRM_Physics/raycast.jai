@@ -478,6 +478,9 @@ raycast_capsule :: inline (request: *Raycast_Request, result: *Raycast_Result, c
     return raycast_capsule(request, result, center, capsule.half_height, capsule.radius, height_direction);
 }
 
+debug_pt_1: Vector3;
+debug_pt_2: Vector3;
+
 raycast_capsule :: (request: *Raycast_Request, result: *Raycast_Result, center: Vector3, half_height: float32, radius: float32, height_direction: Vector3) -> bool {
     calculate_ray_direction_and_length(request);
     result.* = {ray_origin=request.ray_origin, ray_destination=request.ray_destination};
@@ -497,21 +500,32 @@ raycast_capsule :: (request: *Raycast_Request, result: *Raycast_Result, center: 
     if dist_sq <= square(radius) {
         origin_inside_collider = true;
         // raycasting inward from the outside avoids annoying inner shape collision issues (casting to inner spheres at endcaps, but only want to hit the outside)
-        dummy_request := request.*;
-        dummy_request.ray_origin += dummy_request.ray_direction * (radius * 2.01);
+        // cheat distance is the longest possible distance it could take to get outside the capsule. fails for very large numbers, ofc.
+        ERROR :: 1.0;
+        cheat_distance := sqrt(square(radius) + square(2 * half_height)) + ERROR;
+        dummy_request.ray_origin += dummy_request.ray_direction * cheat_distance;
+        dummy_request.ray_length += cheat_distance;
         dummy_request.ray_direction *= -1;
+        dummy_request.ray_destination = dummy_request.ray_origin + dummy_request.ray_direction * dummy_request.ray_length;
     }
+    
+    debug_pt_1 = request.ray_origin;
+    debug_pt_2 = dummy_request.ray_origin;
 
     hit_top_or_bottom: bool;
 
     if raycast_sphere(*dummy_request, result, cyl_top, radius) {
         if dot(result.hit_location - cyl_top, height_direction) > 0 {
             hit_top_or_bottom = true;
+        } else {
+            result.clear_if_miss = {};
         }
     }
     if !hit_top_or_bottom && raycast_sphere(*dummy_request, result, cyl_bot, radius) {
         if dot(result.hit_location - cyl_bot, -height_direction) > 0 {
             hit_top_or_bottom = true;
+        } else {
+            result.clear_if_miss = {};
         }
     }
     if !hit_top_or_bottom {
@@ -533,7 +547,8 @@ raycast_capsule :: (request: *Raycast_Request, result: *Raycast_Result, center: 
         }
     }
     
-    return false;
+    result.normal_is_degenerate |= !is_normalized(result.hit_normal);
+    return result.is_hit;
 }
 
 #scope_file
@@ -568,9 +583,11 @@ raycast_sphere_hit_calculation :: inline (sphere_center: Vector3, sphere_radius:
 
 try_raycast_cylinder_side :: inline (request: *Raycast_Request, result: *Raycast_Result, center: Vector3, half_height: float, radius: float, height_direction: Vector3, can_hit_back_face: bool) -> bool {
     // analytic ray-cylinder side intersection: project the ray and origin offset onto the
-    // plane perpendicular to the axis, then solve |X_perp + t*D_perp|^2 = r^2 for t.
-    origin_projected := project_point_onto_plane(request.ray_origin, center, height_direction);
-    direction_projected := project_vector_onto_plane(request.ray_direction, height_direction);
+    // // plane perpendicular to the axis, then solve |X_perp + t*D_perp|^2 = r^2 for t.
+
+    toward_ray_origin   := request.ray_origin - center;
+    origin_projected    := toward_ray_origin - dot(toward_ray_origin, height_direction) * height_direction;
+    direction_projected := request.ray_direction - dot(request.ray_direction, height_direction) * height_direction;
 
     a := length_squared(direction_projected);
     b := 2.0 * dot(origin_projected, direction_projected);

@@ -18,7 +18,7 @@
 // Limits
 // Boxes
 // LUT
-// PMF
+// Random Sampling
 // Misc
 // Vectors Extension
 // Vector2 Extension
@@ -1181,7 +1181,7 @@ get_lut_x_value :: (i: int, min_x: float, max_x: float, sample_resolution: int) 
 }
 
 // -----------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------ :PMF
+// ------------------------------------------------------------------ :Random Sampling
 
 // 'pdf' doesn't have to be normalized for its domain.
 // sample_resolution is how many possible y values can be drawn from the distribution.
@@ -1231,10 +1231,10 @@ make_pmf :: (pdf: (x: float) -> y: float, min_x: float, max_x: float, sample_res
     return pmf;
 }
 
-sample_pmf :: (pmf: []float, state: *Random_State = null) -> float {
+sample :: (array: []$T, state: *Random_State = null) -> T {
     x := ifx state then random_get_zero_to_one(state) else random_get_zero_to_one();
-    i := round(respace(x, {0, 1}, {0, xx (pmf.count - 1)}));
-    return pmf[i];
+    i := round(respace(x, {0, 1}, {0, xx (array.count - 1)}));
+    return array[i];
 }
 
 // -----------------------------------------------------------------------------------

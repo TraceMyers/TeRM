@@ -5,22 +5,15 @@ Raycast_Result_Simple :: struct {
     hit_back_face: bool;
 }
 
-raycast_plane_simple :: (result: *Raycast_Result_Simple, ray_origin: Vector3, ray_direction: Vector3, point_on_plane: Vector3, plane_normal: Vector3) -> bool {
+raycast_plane_simple :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3, ray_direction: Vector3, point_on_plane: Vector3, plane_normal: Vector3) -> bool {
     diff_to_plane := point_on_plane - ray_origin;
     signed_distance_to_plane := dot(diff_to_plane, plane_normal);
     pointing_cos_t := dot(plane_normal, ray_direction);
-
     result.hit_distance = signed_distance_to_plane / pointing_cos_t;
-    result.is_hit = result.hit_distance >= 0;
-
-    if !result.is_hit {
-        result.* = {};
-        return false;
-    } else {
-        result.hit_back_face = signed_distance_to_plane > 0;
-        result.hit_location = ray_origin + ray_direction * result.hit_distance;
-        return true;
-    }
+    result.is_hit = (result.hit_distance >= 0) & (pointing_cos_t != 0);
+    result.hit_back_face = signed_distance_to_plane > 0;
+    result.hit_location = ray_origin + ray_direction * result.hit_distance;
+    return result.is_hit;
 }
 
 raycast_circle_simple :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3, ray_direction: Vector3, center: Vector3, radius: float, plane_normal: Vector3) -> bool {

@@ -173,8 +173,8 @@ raycast_cylinder :: (request: *Raycast_Request, result: *Raycast_Result, center:
 
         top_plane_result: Raycast_Result_Simple = ---;
         bot_plane_result: Raycast_Result_Simple = ---;
-        raycast_plane_simple(*top_plane_result, request.ray_origin, request.ray_direction, top_center, height_direction);
-        raycast_plane_simple(*bot_plane_result, request.ray_origin, request.ray_direction, bot_center, -height_direction);
+        raycast_plane(*top_plane_result, request.ray_origin, request.ray_direction, top_center, height_direction);
+        raycast_plane(*bot_plane_result, request.ray_origin, request.ray_direction, bot_center, -height_direction);
 
         hit_top_plane := top_plane_result.is_hit && top_plane_result.hit_distance <= request.ray_length;
         hit_bot_plane := bot_plane_result.is_hit && bot_plane_result.hit_distance <= request.ray_length;

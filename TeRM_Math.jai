@@ -1142,13 +1142,13 @@ sweep_aabb :: inline  (aabb: AABB, displacement: Vector3) -> AABB {
 LUT :: struct {
     y_values: []float;
     min_x: float;
-    max_x: float;
+    inv_domain_size: float;
 }
 
 make_lut :: (curve_function: (x: float) -> y: float, min_x: float, max_x: float, sample_resolution: int) -> LUT {
     assert(sample_resolution >= 2);
 
-    lut := LUT.{y_values = NewArray(float, sample_resolution), min_x = min_x, max_x = max_x};
+    lut := LUT.{y_values = NewArray(float, sample_resolution), min_x = min_x, inv_domain_size = 1.0 / (max_x - min_x)};
 
     even_sample_resolution := sample_resolution & 0x1 == 0;
 
@@ -1161,8 +1161,16 @@ make_lut :: (curve_function: (x: float) -> y: float, min_x: float, max_x: float,
     return lut;
 }
 
-sample_lut :: (lut: LUT, x: float) -> y: float {
-    i := round(respace(x, {lut.min_x, lut.max_x}, {0, xx (lut.y_values.count - 1)}));
+sample_lut_or_get_alternative :: (lut: LUT, x: float, alt := 0) -> y: float {
+    if lut.y_values.count == 0 {
+        return alt;
+    }
+    return sample_lut(lut, float);
+}
+
+sample_lut :: inline (lut: LUT, x: float) -> y: float {
+    norm_x := clamp((x - lut.min_x) * lut.inv_domain_size, 0, 1);
+    i := round(norm_x * y_values.count);
     return lut.y_values[i];
 }
 

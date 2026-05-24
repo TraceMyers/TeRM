@@ -925,7 +925,6 @@ load_assets :: () -> bool {
                 if anim.speed == 0 {
                     anim.speed = 1;
                 }
-                log("animation: %", anim.name);
             }
 
             // todo: free vertices & indices?

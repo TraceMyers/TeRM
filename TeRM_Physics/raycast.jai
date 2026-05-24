@@ -478,9 +478,6 @@ raycast_capsule :: inline (request: *Raycast_Request, result: *Raycast_Result, c
     return raycast_capsule(request, result, center, capsule.half_height, capsule.radius, height_direction);
 }
 
-debug_pt_1: Vector3;
-debug_pt_2: Vector3;
-
 raycast_capsule :: (request: *Raycast_Request, result: *Raycast_Result, center: Vector3, half_height: float32, radius: float32, height_direction: Vector3) -> bool {
     calculate_ray_direction_and_length(request);
     result.* = {ray_origin=request.ray_origin, ray_destination=request.ray_destination};
@@ -508,9 +505,6 @@ raycast_capsule :: (request: *Raycast_Request, result: *Raycast_Result, center: 
         dummy_request.ray_direction *= -1;
         dummy_request.ray_destination = dummy_request.ray_origin + dummy_request.ray_direction * dummy_request.ray_length;
     }
-    
-    debug_pt_1 = request.ray_origin;
-    debug_pt_2 = dummy_request.ray_origin;
 
     hit_top_or_bottom: bool;
 

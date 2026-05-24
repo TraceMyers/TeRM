@@ -1,15 +1,30 @@
 Physics_Properties :: struct {
-    mass:              float;
-    linear_damping:    float; // todo: curve?
-    angular_damping:   float; // todo: curve?
-    pointing_friction: float; // todo: curve?
-    slide_friction:    float; // todo: curve?
-    air_resistance:    float; // todo: curve?
+    mass:              float = 1.0;
+    inv_mass:          float;
+
+    pointing_friction:       Physics_Float_Property;
+    slide_friction:          Physics_Float_Property;
+    move_input_acceleration: Physics_Float_Property;
 
     collider: Physics_Collider;
+
+    call_per_step: (*Physics_Body);
+}
+
+// most properties on Physics_Properties can either be a constant or a procedure call
+// if procedure call, it has the signature (*Physics_Body) -> float
+Physics_Float_Property :: struct {
+    type: enum u32 {
+        CONSTANT;
+        PROCEDURE_CALL;
+    }
+    constant: float;
+    proc: (*Physics_Body) -> float;
 }
 
 change_property :: (body: *Physics_Body, $property_name: string, new_value: $T) {
+    #assert(property_name != "inv_mass");
+
     PROPERTY_OFFSET :: #run -> int {
         props_tinfo := type_info(Physics_Properties);
         for member : props_tinfo.members {
@@ -26,6 +41,11 @@ change_property :: (body: *Physics_Body, $property_name: string, new_value: $T) 
     make_properties_unique(body);
     property_ptr := cast(*T) ((cast(*u8) body.properties) + PROPERTY_OFFSET);
     property_ptr.* = new_value;
+
+    #if property_name == "mass" {
+        assert(body.mass > 0);
+        body.inv_mass = 1.0 / body.mass;
+    }
 }
 
 make_properties_unique :: (body: *Physics_Body) {
@@ -48,6 +68,17 @@ is_unique :: inline (properties: *Physics_Properties) -> shared: bool, unique_in
     shared_byte_end  := size_of(type_of(body_templates.values[0])) * body_templates.values.count;
     assert(shared_byte_diff >= 0 && shared_byte_diff < shared_byte_end);
     return false, -1;
+}
+
+evaluate :: inline (body: *Physics_Body, $prop_name: string) -> float {
+    prop := #insert #run tprint("*body.%;", prop_name);
+    if #complete prop.type == {
+    case .CONSTANT;
+        return prop.constant;
+    case .PROCEDURE_CALL;
+        proc := cast((*Physics_Body)->(float)) prop.proc;
+        return proc(body);
+    }
 }
 
 // if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES (module param) is true, this can be called

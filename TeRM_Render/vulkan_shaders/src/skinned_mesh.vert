@@ -68,10 +68,17 @@ void main() {
     vec3 N = normalize(vec3(vec4(skinned_normal.xyz,  0.0) * model));
     vec3 B = cross(N, T) * skinned_tangent.w; // handedness - which direction does this ortho vector point of the two?
 
+    add_color = vec4(0,0,0,0);
+    if (mesh_inst.specialization.specialized) {
+        if (mesh_inst.specialization.flash_rate > 0) {
+            float flash_value = (sin((frame.time - mesh_inst.specialization.flash_begin_time) * mesh_inst.specialization.flash_rate) + 1) * 0.5 * mesh_inst.specialization.flash_value;
+            add_color.rgb = vec3(flash_value, flash_value, flash_value);
+        }
+    }
+
     out_tbn         = mat3(T, B, N);
     out_uv_0        = in_uv_0;
     out_uv_1        = in_uv_1;
     out_color       = in_color;
     out_material_id = mesh_section.material;
 }
-

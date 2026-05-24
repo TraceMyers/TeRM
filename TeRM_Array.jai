@@ -28,6 +28,16 @@ make_local_static_array :: inline ($T: Type, $max: int, count := 0, $id := "") -
     return array;
 }
 
+static_array_add :: inline (array: *[]$T, item: T, upper_bound: s64) -> bool {
+    if array.count >= upper_bound {
+        return false;
+    } else {
+        array.count += 1;
+        array.data[array.count-1] = item;
+        return true;
+    }
+}
+
 array_element_index :: inline (array: []T, item: *$T) -> s64 {
     index := item - array.data;
     assert(index >= 0 && index < array.count);
@@ -159,16 +169,6 @@ array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion
     }
 
     return false;
-}
-
-static_array_add :: inline (array: *[]$T, item: T, upper_bound: s64) -> bool {
-    if array.count >= upper_bound {
-        return false;
-    } else {
-        array.count += 1;
-        array.data[array.count-1] = item;
-        return true;
-    }
 }
 
 #scope_file

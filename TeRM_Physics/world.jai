@@ -5,9 +5,15 @@ Physical_World :: struct {
     unique_properties: Pool(Physics_Properties);
     body_data: Physics_Body_SOA;
 
+    step_state: Physics_Step_State;
+    time_accumulator: float;
+    collision_iteration_count := 5;
+
     #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
         debug_template_properties: [..]Physics_Properties;
     }
+
+    gravity := 9.8;
 
     allocator: Allocator;
 }
@@ -48,7 +54,6 @@ destroy_physical_world :: (in_world: *Physical_World) {
 set_physical_world :: (in_world: *Physical_World) {
     world = in_world;
 }
-
 
 Physics_Step_State :: enum {
     RUN_PHYSICS;

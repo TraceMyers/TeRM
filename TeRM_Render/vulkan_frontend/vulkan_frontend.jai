@@ -183,6 +183,9 @@ Mesh_Specialization :: struct {
     specialized: bool;
 }
 
+// todo: specialization params should be put into their own buffer
+// and speicalized instances will have an index if they are specialised.
+
 Mesh_Instance_Shader_Data :: struct {
     transform: Matrix4;
     specialization: Mesh_Specialization #align 4;

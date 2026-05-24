@@ -6,17 +6,42 @@ Physics_Body:: struct {
     next_position: Vector3;
     prev_orientation: Quaternion;
     next_orientation: Quaternion;
-    
+
+    // this data is calculated every physics step (that the body is awake).
+    // it represents the most up-to-date information the body had on
+    // the frame of the last physics step, so it may not be accurate to the frame.
+    // if the field is not up to date and it is requested through get_...
+    // then it will be updated on-demand.
+    using per_step: struct {
+        axes: [3]Vector3 = .[{1, 0, 0}, {0, 1, 0}, {0, 0, 1}];
+        linear_speed: float;
+
+        #overlay(axes[0]) x_axis:     Vector3;
+        #overlay(axes[1]) y_axis:     Vector3;
+        #overlay(axes[2]) z_axis:     Vector3;
+    }
+
     using properties: *Physics_Properties;
+    
+    move_input: Vector2;
+
+    #if user_types.extra_body_data != void {
+        extra_data: user_types.extra_body_data;
+    }
 }
 
 Physics_Body_Flags :: enum_flags u32 {
+    AWAKE;
     LOCK_TRANSLATION;
     LOCK_YAW;
     LOCK_PITCH;
     LOCK_ROLL;
     UPRIGHT;
+    CALCULATED_AXES;
+    CALCULATED_LINEAR_SPEED;
 }
+
+PER_STEP_PHYSICS_BODY_FLAGS : Physics_Body_Flags : .CALCULATED_AXES | .CALCULATED_LINEAR_SPEED;
 
 // a template which will be used to spawn bodies. templates are used in order
 // to encourage reusing physics properties. that is, if you create a body
@@ -80,16 +105,35 @@ destroy_physics_body :: (body: *Physics_Body) -> need_repoint: bool, id_to_repoi
 
 create_physics_body_template :: (name: string, template: Physics_Body_Template) {
     using world;
-    _, success := table_set(*body_templates, name, template, .ONLY_ADD);
+
+    template_copy := template;
+    assert(template_copy.properties.mass > 0);
+    template_copy.properties.inv_mass = 1.0 / template_copy.properties.mass;
+
+    _, success := table_set(*body_templates, name, template_copy, .ONLY_ADD);
     // todo: probably should make it so the tables have hash collision resolution...
     assert(success, "table failed to add template % either because of a hash collision or because a template has already been added under that name", name);
     #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
-        array_add(*debug_template_properties, template.properties);
+        array_add(*debug_template_properties, template_copy.properties);
     }
 }
 
 get_physics_body_template :: (name: string) -> *Physics_Body_Template {
     return table_get(*world.body_templates, name);
+}
+
+accelerate :: inline (body: *Physics_Body, accel: Vector3) {
+    if world.step_state != .PAUSED {
+        body.linear_velocity += accel * PHYSICS_DELTA_TIME;
+    }
+}
+
+push :: inline (body: *Physics_Body, force: Vector3) {
+    // todo: inv mass and probably that matrix thing I can't remember
+    if world.step_state != .PAUSED {
+        accel := force * body.inv_mass;
+        body.linear_velocity += accel * PHYSICS_DELTA_TIME;
+    }
 }
 
 get_flags :: inline (body: *Physics_Body) -> Physics_Body_Flags {
@@ -117,7 +161,43 @@ can_rotate :: inline (body: *Physics_Body) -> bool {
     return (world.body_data.flags[get_index(body)] & ALL_AXES_LOCKED) != ALL_AXES_LOCKED;
 }
 
+get_x_axis :: (body: *Physics_Body) -> Vector3 {
+    calculate_axes_if_needed(body);
+    return body.x_axis;
+}
+
+get_y_axis :: (body: *Physics_Body) -> Vector3 {
+    calculate_axes_if_needed(body);
+    return body.y_axis;
+}
+
+get_z_axis :: (body: *Physics_Body) -> Vector3 {
+    calculate_axes_if_needed(body);
+    return body.z_axis;
+}
+
 #scope_module
+
+calculate_axes_if_needed :: inline (body: *Physics_Body) {
+    flags := get_flags(body);
+    if (flags & .CALCULATED_AXES) == 0 {
+        calculate_axes(body, true);
+    }
+}
+
+calculate_axes :: (body: *Physics_Body) {
+    body.x_axis = get_right_direction(body.next_orientation);
+    body.y_axis = get_fore_direction(body.next_orientation);
+    body.z_axis = normalize(cross(body.x_axis, body.y_axis));
+
+    flags := get_flags(body) | .CALCULATED_AXES;
+    if abs(body.z_axis.x) < VERY_SMALL_NUMBER && abs(body.z_axis.y) < VERY_SMALL_NUMBER && abs(body.z_axis.z - 1) <= VERY_SMALL_NUMBER {
+        flags |= .UPRIGHT;
+    } else {
+        flags &= ~.UPRIGHT;
+    }
+    set_flags(body, flags);
+}
 
 get_index :: inline (body: *Physics_Body) -> int {
     return body - world.body_data.bodies.data;

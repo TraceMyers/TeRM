@@ -20,6 +20,16 @@ as_array :: inline (str: string, $T: Type) -> []T {
     return t_array;
 }
 
+print :: inline (str: *string, upper_bound: int, fmt: string, args: ..Any) -> bool {
+    if str.count >= upper_bound {
+        return false;
+    } else {
+        str.count += 1;
+        str.data[str.count-1] = char;
+        return true;
+    }
+}
+
 to_string_safe :: inline (str: *u8, max_read_count: s64) -> string {
     for 0..max_read_count-1 {
         if str[it] == 0 {
@@ -287,6 +297,48 @@ float_text_center_align :: (str: string, put_period_at_position: int, target_wid
         }
     }
     return copy_string(str,, temp);
+}
+
+String_Stack :: struct {
+    bytes: [..]u8;
+    sizes: [..]s32;
+}
+
+push :: (stack: *String_Stack, fmt: string, args: ..Any) -> string {
+    if stack.sizes.allocated == 0 {
+        array_reserve(*stack.sizes, 128,,  temp);
+        array_reserve(*stack.bytes, 4096,, temp);
+    }
+
+    auto_release_temp();
+
+    builder: String_Builder;
+    builder.allocator = temp;
+    print(*builder, "%", as_string(stack.bytes));
+    print(*builder, fmt, ..args);
+    new_bytes := builder_to_string(*builder,, temp);
+
+    added_bytes := new_bytes.count - stack.bytes.count;
+    array_add(*stack.sizes, xx added_bytes);
+
+    if new_bytes.count > stack.bytes.count {
+        array_resize(*stack.bytes, new_bytes.count);
+    }
+
+    memcpy(stack.bytes.data, new_bytes.data, new_bytes.count);
+    return get_current_stack(stack);
+}
+
+pop :: (stack: *String_Stack) {
+    assert(stack.sizes.count > 0);
+    
+    remove_count := stack.sizes[stack.sizes.count-1];
+    stack.sizes.count -= 1;
+    stack.bytes.count -= remove_count;
+}
+
+get_current_stack :: (stack: *String_Stack) -> string {
+    return string.{stack.bytes.count, stack.bytes.data};
 }
 
 #scope_file

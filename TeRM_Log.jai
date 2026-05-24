@@ -1,3 +1,8 @@
+#module_parameters()(
+    // a mode for if you have limited width in your print area
+    VERTICAL_MODE := false
+);
+
 // have the logging system call this proc with the finalized text, if set
 term_log_passthrough_callback: (log_text: string);
 
@@ -49,7 +54,17 @@ report_impl :: (
     }
 
     msg := tprint(fmt, ..args);
-    fully_processed_text := tprint("% % %", lead_buffer_string, msg, use_location);
+    fully_processed_text: string;
+
+    #if VERTICAL_MODE {
+        if try_replace_context_memory(header, log_context) {
+            fully_processed_text = tprint("  %\n    % %", lead_buffer_string, msg, use_location);
+        } else {
+            fully_processed_text = tprint(   "    % %", msg, use_location);
+        }
+    } else {
+        fully_processed_text = tprint("% % %", lead_buffer_string, msg, use_location);
+    }
 
     if term_log_passthrough_callback {
         term_log_passthrough_callback(fully_processed_text);
@@ -87,6 +102,51 @@ print_lead_item_to_buffer_string :: inline (bufstr: *string, lead_item: string, 
 }
 
 #import "Basic";
+
+try_replace_context_memory :: (header: string, context_str: string) -> bool {
+    if header == last_known_header && context_str == last_known_context {
+        omit_context_count += 1;
+        if omit_context_count >= omit_context_max_before_restate_context {
+            omit_context_count = 0;
+        }
+    } else {
+        omit_context_count = 0;
+    }
+
+    if omit_context_count > 0 {
+        return false;
+    } else {
+        remember(header, context_str);
+        return true;
+    }
+}
+
+remember :: (header: string, context_str: string) {
+    if !initialized_internal_strings {
+        last_known_header.data  = last_known_header_buffer.data;
+        last_known_context.data = last_known_context_buffer.data;
+        initialized_internal_strings = true;
+    }
+    remember_copy(header,      *last_known_header,  *last_known_header_buffer);
+    remember_copy(context_str, *last_known_context, *last_known_context_buffer);
+}
+
+remember_copy :: inline (user_string: string, memory: *string, memory_buffer: *[MEMORY_BUFFER_SIZE]u8) {
+    copy_size := min(memory_buffer.count, user_string.count);
+    memcpy(memory_buffer.data, user_string.data, copy_size);
+    memory.count = copy_size;
+}
+
+MEMORY_BUFFER_SIZE :: 128;
+last_known_header_buffer: [MEMORY_BUFFER_SIZE]u8;
+last_known_header: string;
+last_known_context_buffer: [MEMORY_BUFFER_SIZE]u8;
+last_known_context: string;
+
+omit_context_count: int;
+omit_context_max_before_restate_context := 30;
+
+initialized_internal_strings: bool;
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

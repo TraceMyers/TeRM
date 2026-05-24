@@ -19,6 +19,12 @@ add_specialization_to_last_static_mesh_draw :: (renderer: *Renderer, specializat
     last_draw.specialization = renderer.mesh_draw_specializations.count - 1;
 }
 
+add_specialization_to_last_skinned_mesh_draw :: (renderer: *Renderer, specialization: Mesh_Specialization_Params) {
+    last_draw := *renderer.skinned_mesh_draws[renderer.skinned_mesh_draws.count-1];
+    array_add(*renderer.mesh_draw_specializations, specialization);
+    last_draw.specialization = renderer.mesh_draw_specializations.count - 1;
+}
+
 draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[draw.ref.index];

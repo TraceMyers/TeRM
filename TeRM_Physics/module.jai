@@ -1,18 +1,15 @@
 #module_parameters()(
     collision_channels : []string = string.[],
     raycast_channels   : []string = string.[],
+    PHYSICS_DELTA_TIME := 1.0 / 100.0,
     user_types: $I/interface Type_Provider_Default = Type_Provider_Default,
     DEBUG_INVALIDATED_TEMPLATE_PROPERTIES := false
 ) {
     Type_Provider_Default :: struct {
-        entity_id_type      :: void;
+        entity_id_type  :: void;
+        extra_body_data :: void;
     }
 }
-
-PHYSICS_DELTA_TIME :: 1.0 / 100.0;
-
-collision_iteration_count := 4;
-physics_step_state        := Physics_Step_State.RUN_PHYSICS;
 
 Collision_Channel :: enum_flags u32 {
     #insert -> string {
@@ -41,6 +38,7 @@ Raycast_Channel :: enum_flags u32 {
 #load "raycast_simple.jai";
 #load "shape.jai";
 #load "body.jai";
+#load "update.jai";
 
 #scope_module
 

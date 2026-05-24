@@ -14,6 +14,18 @@ Component_Array :: struct ($component_type: Type) {
     allocator: Allocator;
 }
 
+for_expansion :: (array: Component_Array, body: Code, flags: For_Flags) #expand {
+    assert(flags == 0);
+    
+    for i : 0..array.components.count-1 {
+        `it        := *array.components[i];
+        `it_index  := i;
+        `entity_id := array.ids[i];
+
+        #insert body;
+    }
+}
+
 component_array_init :: (array: *Component_Array, size: int) {
     array_type :: #run type_of(array);
 

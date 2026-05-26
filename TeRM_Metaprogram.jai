@@ -74,6 +74,139 @@ get_struct_field :: (s: *$struct_type, $field_type: Type) -> *field_type {
     }
 }
 
+Struct_Visit_Item :: struct {
+    data: *u8;
+    info: *Type_Info;
+    member: *Type_Info_Struct_Member;
+    iter_index: int;
+    iter_index_matching_options: int;
+}
+
+Struct_Visit :: struct {
+    using item: Struct_Visit_Item;
+    parent_stack: []Struct_Visit_Item;
+    path: *String_Stack;
+}
+
+Struct_Visitor_Command :: enum {
+    CONTINUE;
+    PUSH_MEMBER_OR_CONTINUE;
+    POP_PARENT;
+    EXIT;
+}
+
+Struct_Visitor :: #type (visit_data: *Struct_Visit, user_data: *void) -> command: Struct_Visitor_Command;
+
+Struct_Visit_Options :: struct {
+    visit_pointers      := true;
+    visit_only_non_null_pointers := true;
+    visit_procedures    := false;
+    visit_constants     := false;
+    visit_overlays      := false;
+}
+
+struct_visit :: (struct_data: *$T, user_data: *void, visitor: Struct_Visitor, options: Struct_Visit_Options = {}) {
+    parent_stack: [..]Struct_Visit_Item;
+    parent_stack.allocator = temp;
+    array_reserve(*parent_stack, 16);
+
+    cur_parent_tinfo := cast(*Type_Info_Struct) type_info(T);
+    assert(cur_parent_tinfo.type == .STRUCT);
+    array_add(*parent_stack, {xx struct_data, cur_parent_tinfo, null, 0, 0});
+    
+    struct_visit_impl(*parent_stack, user_data, visitor, options);
+}
+
+#scope_file
+
+// reducing code bloat by doing this part without generics
+struct_visit_impl :: no_inline (parent_stack: *[..]Struct_Visit_Item, user_data: *void, visitor: Struct_Visitor, options: Struct_Visit_Options) {
+
+    path: String_Stack;
+    init(*path);
+    defer free_path(*path);
+
+    while parent_stack.count > 0 {
+
+        cur_parent := *parent_stack.*[parent_stack.count-1];
+        cur_parent_info := cast(*Type_Info_Struct) cur_parent.info;
+        command: Struct_Visitor_Command = .CONTINUE;
+
+        while cur_parent.iter_index < cur_parent_info.members.count {
+            defer cur_parent.iter_index += 1;
+            member := *cur_parent_info.members[cur_parent.iter_index];
+
+            if !options.visit_constants  && (member.flags & .CONSTANT) != 0 {
+                continue;
+            }
+            if !options.visit_overlays   && (member.flags & .OVERLAY) != 0 {
+                continue;
+            }
+            if !options.visit_procedures && member.type.type == .PROCEDURE {
+                continue; 
+            }
+
+            use_info := member.type;
+            member_data := cur_parent.data + member.offset_in_bytes;
+
+            if use_info.type == .POINTER {
+                if !options.visit_pointers {
+                    continue;
+                }
+                use_info    = (cast(*Type_Info_Pointer) use_info).pointer_to;
+                member_data = (cast(**u8) member_data).*;
+
+                if options.visit_only_non_null_pointers && member_data == null {
+                    continue;
+                }
+            }
+
+            defer cur_parent.iter_index_matching_options += 1;
+
+            {
+                if path.sizes.count == 0 {
+                    push(*path, member.name);
+                } else {
+                    push(*path, ".%", member.name);
+                }
+                defer pop(*path);
+
+                visit_data := Struct_Visit.{
+                    item = {xx member_data, use_info, member, 0, 0},
+                    parent_stack = parent_stack.*,
+                    path = *path
+                };
+
+                command = visitor(*visit_data, user_data);
+            }
+
+            if command == {
+            case .PUSH_MEMBER_OR_CONTINUE;
+                if use_info.type == .STRUCT && member_data != null {
+                    array_add(parent_stack, {member_data, use_info, member, 0, 0});
+                    push(*path, ".%", member.name);
+                    break;
+                }
+            case .POP_PARENT;
+                break;
+            case .EXIT;
+                return;
+            }
+        }
+
+        if command == .POP_PARENT || cur_parent.iter_index == cur_parent_info.members.count {
+            parent_stack.count -= 1;
+            if path.sizes.count > 0 {
+                pop(*path);
+            } else {
+                assert(parent_stack.count == 0);
+            }
+        }
+    }
+}
+
+#scope_export
+
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------------- Enumarray
 
@@ -517,7 +650,7 @@ S64_MAX :: 0x7fff_ffff_ffff_ffff;
 #import "Compiler";
 Program_Print :: #import "Program_Print";
 #import "Basic";
-#import "String";
+#import "TeRM/TeRM_String";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

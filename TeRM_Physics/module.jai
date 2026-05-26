@@ -11,6 +11,8 @@
     }
 }
 
+INV_PHYSICS_DELTA_TIME :: 1.0 / PHYSICS_DELTA_TIME;
+
 Collision_Channel :: enum_flags u32 {
     #insert -> string {
         builder: String_Builder;
@@ -39,6 +41,7 @@ Raycast_Channel :: enum_flags u32 {
 #load "shape.jai";
 #load "body.jai";
 #load "update.jai";
+#load "derive.jai";
 
 #scope_module
 

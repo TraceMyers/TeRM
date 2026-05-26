@@ -653,6 +653,11 @@ distance_squared_from_line :: inline (point: Vector3, seg_beg: Vector3, seg_end:
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------- :Trigonometry and Trig Helpers
 
+log_with_base :: (x: float, $base: float) -> float {
+    INV_LOG_OF_BASE :: #run 1.0 / log(base);
+    return log(abs(x)) * INV_LOG_OF_BASE;
+}
+
 // small abs max error (~0.0008) and ~15% faster when using cephes.jai acos() as the reference. thanks to Vasili at https://math.stackexchange.com/questions/4983100/finding-arcsin-or-arccos-from-other-mathmatical-functions
 acos_approx :: inline (x: float) -> float {
     if x < 0 {
@@ -1695,6 +1700,7 @@ INV_FIXED_ONE :: 1.0 / FIXED_ONE.(float);
 TWO_PI_FIXED : u64 : xx (PI * 2.0 * FIXED_ONE.(float));
 RECIP_TWO_PI_FIXED_32 :: (1 << 32) / TWO_PI_FIXED;
 
+// Math :: #import "Math";
 #import "Math";
 #import "Basic";
 #import "Bit_Operations";

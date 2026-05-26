@@ -302,13 +302,25 @@ float_text_center_align :: (str: string, put_period_at_position: int, target_wid
 String_Stack :: struct {
     bytes: [..]u8;
     sizes: [..]s32;
+    initialized: bool;
+}
+
+init :: inline (stack: *String_Stack) {
+    if !stack.initialized {
+        assert(context.allocator.proc != temp.proc, "string stack allocator can't be the temporary allocator as that would risk memory corruption");
+        array_reserve(*stack.bytes, 4096);
+        array_reserve(*stack.sizes, 128);
+        stack.initialized = true;
+    }
+}
+
+free_path :: (stack: *String_Stack) {
+    array_reset(*stack.bytes);
+    array_reset(*stack.sizes);
 }
 
 push :: (stack: *String_Stack, fmt: string, args: ..Any) -> string {
-    if stack.sizes.allocated == 0 {
-        array_reserve(*stack.sizes, 128,,  temp);
-        array_reserve(*stack.bytes, 4096,, temp);
-    }
+    init(stack);
 
     auto_release_temp();
 
@@ -325,8 +337,10 @@ push :: (stack: *String_Stack, fmt: string, args: ..Any) -> string {
         array_resize(*stack.bytes, new_bytes.count);
     }
 
-    memcpy(stack.bytes.data, new_bytes.data, new_bytes.count);
-    return get_current_stack(stack);
+    if new_bytes.count > 0 {
+        memcpy(stack.bytes.data, new_bytes.data, new_bytes.count);
+    }
+    return view_string(stack);
 }
 
 pop :: (stack: *String_Stack) {
@@ -337,7 +351,7 @@ pop :: (stack: *String_Stack) {
     stack.bytes.count -= remove_count;
 }
 
-get_current_stack :: (stack: *String_Stack) -> string {
+view_string :: (stack: *String_Stack) -> string {
     return string.{stack.bytes.count, stack.bytes.data};
 }
 

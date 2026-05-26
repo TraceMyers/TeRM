@@ -111,6 +111,5 @@ physical_entity_transform_update :: (loop_body: Code) #expand {
 
 get_physical_entity_transform_alpha :: () -> float32 {
     using context.world;
-    INV_PHYSICS_DELTA_TIME :: 1.0 / PHYSICS_DELTA_TIME;
     return clamp(world.time_accumulator * INV_PHYSICS_DELTA_TIME, 0, 1);
 }

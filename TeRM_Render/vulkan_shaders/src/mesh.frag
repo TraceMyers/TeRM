@@ -18,7 +18,6 @@ void main() {
         color = mat.albedo_factor * in_color;
     }
 
-
     // todo: alt non-opaque/masked shader with parametric cutoff and pipeline has blending. use only
     // on sections that call for it
     // if (color.a < 0.5) {
@@ -35,10 +34,8 @@ void main() {
 
     vec3 world_normal = normalize(in_tbn * map_normal);
 
-    vec3 light_dir = normalize(vec3(-0.5,0.7,-0.5));
-
     float ambient_light = 0.4;
-    float normal_dot_light = max(dot(light_dir, -world_normal), 0);
+    float normal_dot_light = max(dot(frame.light_direction, -world_normal), 0);
     float light_value = normal_dot_light * (1.0 - ambient_light) + ambient_light;
 
     color.rgb *= light_value;

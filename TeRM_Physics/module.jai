@@ -42,6 +42,8 @@ Raycast_Channel :: enum_flags u32 {
 #load "body.jai";
 #load "update.jai";
 #load "derive.jai";
+#load "overlap.jai";
+#load "convex.jai";
 
 #scope_module
 

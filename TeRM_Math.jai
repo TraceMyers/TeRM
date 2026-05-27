@@ -170,7 +170,7 @@ rotate :: (dir: Direction_2D, clockwise := true) -> Direction_2D {
 }
 
 to_direction2d :: (dir: Vector2) -> cardinal: Direction_2D {
-    if abs(dir.y) >= SMALL_NUMBER {
+    if abs(dir.y) > VERY_SMALL_NUMBER {
         if dir.x == 0 {
             return ifx dir.y > 0 then Y_POSITIVE_DIRECTION_2D else Y_NEGATIVE_DIRECTION_2D;
         }
@@ -180,10 +180,10 @@ to_direction2d :: (dir: Vector2) -> cardinal: Direction_2D {
         } else {
             return ifx dir.y > 0 then Y_POSITIVE_DIRECTION_2D else Y_NEGATIVE_DIRECTION_2D;
         }
-    } else if abs(dir.x) >= SMALL_NUMBER {
-        return ifx dir.x > 0 then .RIGHT else .LEFT;
+    } else if dir.x >= 0 {
+        return .RIGHT;
     } else {
-        return .UP;
+        return .LEFT;
     }
 }
 

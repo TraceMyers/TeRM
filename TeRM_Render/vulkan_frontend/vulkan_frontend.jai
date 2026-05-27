@@ -64,6 +64,7 @@ Renderer :: struct {
         camera_info: Camera_Info;
         camera_position: Vector3;
         camera_orientation: Quaternion;
+        light_direction: Vector3 = {0,0,-1};
 
         max_texture_count: int;
 
@@ -513,6 +514,7 @@ Per_Frame_Uniform_Buffer :: struct {
     camera_forward:  Vector3; _pad1: float32;
     camera_up:       Vector3; _pad2: float32;
     camera_right:    Vector3; _pad3: float32;
+    light_direction: Vector3; _pad4: float32;
     time:            float32;
     delta_time:      float32;
 }

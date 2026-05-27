@@ -85,6 +85,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         per_frame_uniform.camera_forward  = get_fore_direction(camera_orientation);
         per_frame_uniform.camera_up       = get_up_direction(camera_orientation);
         per_frame_uniform.camera_right    = get_right_direction(camera_orientation);
+        per_frame_uniform.light_direction = light_direction;
         per_frame_uniform.time            = global_shader_time;
         per_frame_uniform.delta_time      = global_shader_delta_time;
 

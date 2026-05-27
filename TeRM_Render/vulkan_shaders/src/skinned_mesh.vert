@@ -62,6 +62,8 @@ void main() {
 
     vec4 skinned_tangent = normalize(skinned_mesh_transform_vector(in_tangent));
     vec4 skinned_normal  = normalize(skinned_mesh_transform_vector(vec4(in_normal.xyz, 1)));
+    // vec4 skinned_tangent = in_tangent;
+    // vec4 skinned_normal  = vec4(in_normal.xyz, 1);
 
     // generating the orthonormal axes of this vertex in world space
     vec3 T = normalize(vec3(vec4(skinned_tangent.xyz, 0.0) * model));

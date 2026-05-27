@@ -7,6 +7,7 @@ Physics_Shape :: enum u8 {
     PILLBOX;
     SPHERE;
     CAPSULE;
+    CONVEX;
 }
 
 Shape_Plane :: struct {}
@@ -45,3 +46,15 @@ Shape_Capsule :: struct {
     half_height: float32;
     radius: float32;
 }
+
+Shape_Convex :: struct {
+    half_height: float32;
+    data_index: s32;
+}
+
+Shape_Convex_Data :: struct {
+    center: Vector3;
+    points:  []Vector3;
+    triangles: []uint16;
+}
+

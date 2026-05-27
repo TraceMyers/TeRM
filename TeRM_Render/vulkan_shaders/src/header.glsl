@@ -80,6 +80,7 @@ layout(set=2, binding=0) uniform Per_Frame_Uniform_Buffer {
     vec3  camera_forward;  float _pad1;
     vec3  camera_up;       float _pad2;
     vec3  camera_right;    float _pad3;
+    vec3  light_direction; float _pad4;
     float time;
     float delta_time;
 } frame;

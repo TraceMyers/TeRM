@@ -16,6 +16,6 @@ layout(set=4, binding=0, scalar) readonly buffer Mesh_Section_Data {
 } mesh_sections;
 
 void main() {
-    gl_Position = vec4(in_position, 1.0) * frame.view_projection;
+    gl_Position = vec4(in_position, 1.0) * frame.view_projections[0];
     out_color = in_color;
 }

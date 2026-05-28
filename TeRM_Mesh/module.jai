@@ -24,7 +24,7 @@ load_mesh :: (path: string) -> Mesh, bool {
 
     version := read_s32(file, *pos);
     assert(version == 1);
-
+ 
     array_reset(*context.term_mesh_buffer_table);
     array_reserve(*context.term_mesh_buffer_table, 256,, temp);
     array_reset(*context.term_mesh_texture_buffer_table);

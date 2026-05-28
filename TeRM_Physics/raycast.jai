@@ -152,11 +152,11 @@ raycast_rectangle :: (request: *Raycast_Request, result: *Raycast_Result, center
     if result.is_hit {
         toward_hit_diff := result.hit_location - center;
         width_dist := dot(width_direction, toward_hit_diff);
-        if width_dist > half_width {
+        if abs(width_dist) > half_width {
             result.clear_if_miss = {};
         }
         height_dist := dot(height_direction, toward_hit_diff);
-        if height_dist > half_height {
+        if abs(height_dist) > half_height {
             result.clear_if_miss = {};
         }
     }

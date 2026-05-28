@@ -16,13 +16,13 @@ draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
 add_specialization_to_last_static_mesh_draw :: (renderer: *Renderer, specialization: Mesh_Specialization_Params) {
     last_draw := *renderer.static_mesh_draws[renderer.static_mesh_draws.count-1];
     array_add(*renderer.mesh_draw_specializations, specialization);
-    last_draw.specialization = renderer.mesh_draw_specializations.count - 1;
+    last_draw.specialization = xx (renderer.mesh_draw_specializations.count - 1);
 }
 
 add_specialization_to_last_skinned_mesh_draw :: (renderer: *Renderer, specialization: Mesh_Specialization_Params) {
     last_draw := *renderer.skinned_mesh_draws[renderer.skinned_mesh_draws.count-1];
     array_add(*renderer.mesh_draw_specializations, specialization);
-    last_draw.specialization = renderer.mesh_draw_specializations.count - 1;
+    last_draw.specialization = xx (renderer.mesh_draw_specializations.count - 1);
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
@@ -32,18 +32,18 @@ draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
     array_add(*renderer.static_mesh_draws, draw);
 }
 
-draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}) {
+draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(is_static_mesh(mesh));
-    array_add(*renderer.static_mesh_draws, {position, orientation, {scale,scale,scale}, ref, -1});
+    array_add(*renderer.static_mesh_draws, {position, orientation, {scale,scale,scale}, ref, layer, -1});
 }
 
-draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}) {
+draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(is_static_mesh(mesh));
-    array_add(*renderer.static_mesh_draws, {position, orientation, scale, ref, -1});
+    array_add(*renderer.static_mesh_draws, {position, orientation, scale, ref, layer, -1});
 }
 
 draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
@@ -54,12 +54,12 @@ draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
     array_add(*renderer.skinned_mesh_draws, draw);
 }
 
-draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pose: *Skeletal_Pose = null, scale := Vector3.{1,1,1}, orientation := Quaternion.{}) {
+draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pose: *Skeletal_Pose = null, scale := Vector3.{1,1,1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(!is_static_mesh(mesh));
     new_draw := array_add(*renderer.skinned_mesh_draws);
-    new_draw.* = {static_draw={position, orientation, scale, ref, -1}, joint_data._interface.pose=pose};
+    new_draw.* = {static_draw={position, orientation, scale, ref, layer, -1}, joint_data._interface.pose=pose};
 
     add_skinning_joints(renderer, new_draw);
 }
@@ -108,9 +108,22 @@ draw_circle :: inline (renderer: *Renderer, center: Vector3, radius: float32, or
 }
 
 draw_triangle :: (renderer: *Renderer, a: Vector3, b: Vector3, c: Vector3, color: Color4b, line_width := 1.0, draw_in_front := false, time := 0.0) {
+    assert(!renderer.in_the_middle_of_rendering);
     draw_line(renderer, a, b, color, line_width, draw_in_front, time);
     draw_line(renderer, b, c, color, line_width, draw_in_front, time);
     draw_line(renderer, c, a, color, line_width, draw_in_front, time);
+}
+
+draw_rectangle :: (renderer: *Renderer, center: Vector3, half_width: float, half_height: float, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, draw_in_front := false, time := 0.0) {
+    assert(!renderer.in_the_middle_of_rendering);
+    ul := center + up * half_height - right * half_width;
+    ur := center + up * half_height + right * half_width;
+    ll := center - up * half_height - right * half_width;
+    lr := center - up * half_height + right * half_width;
+    draw_line(renderer, ul, ur, color, line_width, draw_in_front, time);
+    draw_line(renderer, ur, lr, color, line_width, draw_in_front, time);
+    draw_line(renderer, lr, ll, color, line_width, draw_in_front, time);
+    draw_line(renderer, ll, ul, color, line_width, draw_in_front, time);
 }
 
 draw_box :: (renderer: *Renderer, center: Vector3, extent: Vector3, up: Vector3, right: Vector3, forward: Vector3, color: Color4b, line_width := 1.0, draw_in_front := false, time := 0.0) {

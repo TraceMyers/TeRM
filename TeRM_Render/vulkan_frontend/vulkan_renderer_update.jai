@@ -78,16 +78,26 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
 
     per_frame_uniform: Per_Frame_Uniform_Buffer;
     {
-        projection_matrix := make_camera_projection_matrix(camera_info, viewport);
-        per_frame_uniform.view            = make_camera_view_matrix(camera_position, camera_orientation);
-        per_frame_uniform.view_projection = projection_matrix * per_frame_uniform.view;
-        per_frame_uniform.camera_position = camera_position;
-        per_frame_uniform.camera_forward  = get_fore_direction(camera_orientation);
-        per_frame_uniform.camera_up       = get_up_direction(camera_orientation);
-        per_frame_uniform.camera_right    = get_right_direction(camera_orientation);
-        per_frame_uniform.light_direction = light_direction;
-        per_frame_uniform.time            = global_shader_time;
-        per_frame_uniform.delta_time      = global_shader_delta_time;
+        projection_matrix_game   := make_camera_projection_matrix(camera_info, viewport, 0.       , 0.5);
+        projection_matrix_layer5 := make_camera_projection_matrix(camera_info, viewport, 0.5000001, 0.6);
+        projection_matrix_layer4 := make_camera_projection_matrix(camera_info, viewport, 0.6000001, 0.7);
+        projection_matrix_layer3 := make_camera_projection_matrix(camera_info, viewport, 0.7000001, 0.8);
+        projection_matrix_layer2 := make_camera_projection_matrix(camera_info, viewport, 0.8000001, 0.9);
+        projection_matrix_layer1 := make_camera_projection_matrix(camera_info, viewport, 0.9000001, 1.0);
+        per_frame_uniform.view                    = make_camera_view_matrix(camera_position, camera_orientation);
+        per_frame_uniform.view_projection_game    = projection_matrix_game * per_frame_uniform.view;
+        per_frame_uniform.view_projection_layer_1 = projection_matrix_layer1 * per_frame_uniform.view;
+        per_frame_uniform.view_projection_layer_2 = projection_matrix_layer2 * per_frame_uniform.view;
+        per_frame_uniform.view_projection_layer_3 = projection_matrix_layer3 * per_frame_uniform.view;
+        per_frame_uniform.view_projection_layer_4 = projection_matrix_layer4 * per_frame_uniform.view;
+        per_frame_uniform.view_projection_layer_5 = projection_matrix_layer5 * per_frame_uniform.view;
+        per_frame_uniform.camera_position         = camera_position;
+        per_frame_uniform.camera_forward          = get_fore_direction(camera_orientation);
+        per_frame_uniform.camera_up               = get_up_direction(camera_orientation);
+        per_frame_uniform.camera_right            = get_right_direction(camera_orientation);
+        per_frame_uniform.light_direction         = light_direction;
+        per_frame_uniform.time                    = global_shader_time;
+        per_frame_uniform.delta_time              = global_shader_delta_time;
 
         copy_to_gpu_buffer(*current_frame.per_frame_uniform_buffer, *per_frame_uniform, command_buffer=cmd);
     }

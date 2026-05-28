@@ -80,7 +80,7 @@ gjk :: (a: Shape_Convex, b: Shape_Convex, max_iterations := 1_000) -> bool {
 
         add_point(*simplex, support);
 
-        if narrow_search_space(*simplex, *axis) {
+        if narrow_search_space_toward_origin(*simplex, *axis) {
             return true;
         }
     }
@@ -104,7 +104,7 @@ add_point :: inline (simplex: *Simplex, point: Vector3) {
 }
 
 // returns true if the tetrahedron simplex contains the origin
-narrow_search_space :: (simplex: *Simplex, axis: *Vector3) -> bool {
+narrow_search_space_toward_origin :: (simplex: *Simplex, axis: *Vector3) -> bool {
     if simplex.point_count == {
     case 2;
         evaluate_support_line(simplex, axis);

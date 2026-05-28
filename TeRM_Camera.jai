@@ -10,8 +10,8 @@ Camera_Info :: struct {
     orthographic_scale := 1.0;
     perspective_vertical_fov := 80.0; // degrees
     aspect_ratio := 0.0; // 0 for default
-    near_plane := 0.1;
-    far_plane := 100_000.0;
+    near_plane := 0.05;
+    far_plane  := 10_000.0;
 }
 
 get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which := enum { X_OVER_Y; Y_OVER_X; }.X_OVER_Y) -> float {
@@ -38,7 +38,11 @@ make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaterni
     return view;
 }
 
-make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) -> Matrix4 {
+// z_min and z_max can be utilized to compress the projection into only some portion of z-space.
+// this could be used to, say, render the game with z in (0, 0.95) and the UI with z in (0.95 to 1).
+// note that z_max corresponds to the near plane and z_min corresponds to the far plane. this
+// strategy reduces z fighting for the bulk of things, since most things in view tend to be far away.
+make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2, z_min := 0.0, z_max := 1.0) -> Matrix4 {
     aspect := get_camera_aspect_ratio(camera, viewport);
     inv_plane_to_plane := 1 / (far_plane - near_plane);
     half_vertical_angle_radians := PI / 180 * perspective_vertical_fov * 0.5;
@@ -48,15 +52,25 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) 
         inv_far_plane_half_height := 1 / tan(half_vertical_angle_radians);
         inv_far_plane_half_width := inv_far_plane_half_height / aspect;
 
+        // I solved this with some intuitive thinking and I have never been very good at finding solutions like this,
+        // so I feel pretty proud of myself :).
+        // (-x1 * z * n + x2 + x3 * fn) / (f - n) + x4 -> (zmin, zmax)
+        // found with x1 = x3 = a, x2 = 0 and x4 = zmin * f...
+        // a * (-n^2 + fn) / (f - n) + b = zmax * n, to get the near clip
+        // a * (-fn  + fn) / (f - n) + b = zmin * f, to get the far clip
+        // a ('z_factor') is then = (zmax * n - zmin * f) / n
+        z_factor := (z_max * near_plane - z_min * far_plane) / near_plane;
+        z_far_plane_offset := z_min * far_plane;
+
         perspective := Matrix4.{
             // scale camera relative horizontal dist by the far plane half width
             _11 = inv_far_plane_half_width,
             // scale camera relative vertical dist by the far plane half height
             _22 = inv_far_plane_half_height,
             // normalized depth (1=near, 0=far) = fore dist * (-near / near far dist) ...
-            _33 = -near_plane * inv_plane_to_plane,
+            _33 = z_factor * -near_plane * inv_plane_to_plane,
             // ... + near * far dist / near far dist
-            _34 = near_plane * far_plane * inv_plane_to_plane,
+            _34 = z_far_plane_offset + z_factor * near_plane * far_plane * inv_plane_to_plane,
             // w = z, for ndc normalization using the depth coord I think
             _43 = 1,
             _44 = 0
@@ -67,6 +81,7 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2) 
         half_width := orthographic_scale * aspect;
         half_height := orthographic_scale;
 
+        // todo: z_min and z_max for orthographic
         orthographic := Matrix4.{
             // scale
             _11 = 1 / half_width,

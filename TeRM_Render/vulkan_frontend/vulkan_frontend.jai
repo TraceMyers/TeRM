@@ -174,9 +174,10 @@ GPU_Material :: struct {
 };
 
 Mesh_Specialization_Params :: struct {
-    flash_rate: float;
+    flash_rate: float = -1;
     flash_value: float;
     flash_begin_time: float;
+    tint: Color3f = {1,1,1};
 }
 
 Mesh_Specialization :: struct {
@@ -189,11 +190,13 @@ Mesh_Specialization :: struct {
 
 Mesh_Instance_Shader_Data :: struct {
     transform: Matrix4;
+    layer: Draw_Layer;
     specialization: Mesh_Specialization #align 4;
 }
 
 Skinned_Mesh_Instance_Shader_Data :: struct {
     transform: Matrix4;
+    layer: Draw_Layer;
     joint_offset: s32;
     specialization: Mesh_Specialization #align 4;
 };
@@ -205,12 +208,22 @@ Mesh_Section_Shader_Data :: struct {
     material: s32;
 }
 
+Draw_Layer :: enum u32 {
+    GAME; // farthest layer. uses vast majority of z-space.
+    LAYER_1; // closest of the near layers
+    LAYER_2;
+    LAYER_3;
+    LAYER_4;
+    LAYER_5; // farthest of the near layers
+}
+
 Static_Mesh_Draw :: struct {
     position: Vector3;
     orientation: Quaternion;
     scale: Vector3;
     ref: Mesh_Ref;
-    specialization := -1;
+    layer: Draw_Layer;
+    specialization : s32 = -1;
 }
 
 Timed_Draw :: struct($draw_type: Type) {
@@ -508,15 +521,20 @@ Billboard_Instance :: struct {
 }
 
 Per_Frame_Uniform_Buffer :: struct {
-    view:            Matrix4;
-    view_projection: Matrix4;
-    camera_position: Vector3; _pad0: float32;
-    camera_forward:  Vector3; _pad1: float32;
-    camera_up:       Vector3; _pad2: float32;
-    camera_right:    Vector3; _pad3: float32;
-    light_direction: Vector3; _pad4: float32;
-    time:            float32;
-    delta_time:      float32;
+    view:                    Matrix4;
+    view_projection_game:    Matrix4;
+    view_projection_layer_1: Matrix4;
+    view_projection_layer_2: Matrix4;
+    view_projection_layer_3: Matrix4;
+    view_projection_layer_4: Matrix4;
+    view_projection_layer_5: Matrix4;
+    camera_position:         Vector3; _pad0: float32;
+    camera_forward:          Vector3; _pad1: float32;
+    camera_up:               Vector3; _pad2: float32;
+    camera_right:            Vector3; _pad3: float32;
+    light_direction:         Vector3; _pad4: float32;
+    time:                    float32;
+    delta_time:              float32;
 }
 
 Sprite_Rect :: struct {

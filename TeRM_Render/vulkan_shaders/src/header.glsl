@@ -51,17 +51,20 @@ struct Mesh_Specialization {
     float flash_rate;
     float flash_value;
     float flash_begin_time;
+    vec3 tint;
     bool specialized;
 };
 
 struct Skinned_Mesh_Instance_Shader_Data {
     mat4 transform;
+    int layer;
     int joint_transform_offset;
     Mesh_Specialization specialization;
 };
 
 struct Mesh_Instance_Shader_Data {
     mat4 transform;
+    int layer;
     Mesh_Specialization specialization;
 };
 
@@ -75,7 +78,7 @@ layout(set=1, binding=0, scalar) readonly buffer Material_Block {
 
 layout(set=2, binding=0) uniform Per_Frame_Uniform_Buffer {
     mat4  view;
-    mat4  view_projection;
+    mat4  view_projections[6];
     vec3  camera_position; float _pad0;
     vec3  camera_forward;  float _pad1;
     vec3  camera_up;       float _pad2;

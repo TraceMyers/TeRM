@@ -144,12 +144,16 @@ prepare_draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, dr
     for 1..draws.count {
         prev_draw  := *draws[it-1];
 
+        inst := *mesh_instances[it-1];
+
         if prev_draw.specialization != -1 {
-            mesh_instances[it-1].specialization.specialized = true;
-            mesh_instances[it-1].specialization.params = mesh_draw_specializations[prev_draw.specialization];
+            inst.specialization.specialized = true;
+            inst.specialization.params = mesh_draw_specializations[prev_draw.specialization];
         }
+
+        inst.layer = prev_draw.layer;
         
-        prev_transform   := *mesh_instances[it-1].transform;
+        prev_transform   := *inst.transform;
 
         scale       := make_scale_matrix4(prev_draw.scale);
         rotation    := rotation_matrix(Matrix4, prev_draw.orientation);

@@ -25,7 +25,7 @@ void main() {
     vec3 world_offset = frame.camera_up * up_distance + frame.camera_right * right_distance;
     vec3 world_pos    = inst.position.xyz + world_offset;
 
-    gl_Position = vec4(world_pos, 1.0) * frame.view_projection;
+    gl_Position = vec4(world_pos, 1.0) * frame.view_projections[0];
 
     out_tint          = inst.tint;
     out_uv            = inst.uv_offset + in_uv_0 * inst.uv_scale;

@@ -13,7 +13,8 @@ layout(location=3) out      vec2 out_uv_0;
 layout(location=4) out      vec2 out_uv_1;
 layout(location=5) out      vec4 out_color;
 layout(location=6) out      vec4 add_color;
-layout(location=7) out flat int  out_material_id;
+layout(location=7) out      vec4 tint;
+layout(location=8) out flat int  out_material_id;
 
 layout(set=3, binding=0, scalar) readonly buffer Mesh_Instance_Data {
     Skinned_Mesh_Instance_Shader_Data array[];
@@ -58,7 +59,7 @@ void main() {
     vec4 skinned_position = skinned_mesh_transform_vector(homogenous_position);
     mat4 model = mesh_inst.transform;
 
-    gl_Position = skinned_position * model * frame.view_projection;
+    gl_Position = skinned_position * model * frame.view_projections[mesh_inst.layer];
 
     vec4 skinned_tangent = normalize(skinned_mesh_transform_vector(in_tangent));
     vec4 skinned_normal  = normalize(skinned_mesh_transform_vector(vec4(in_normal.xyz, 1)));
@@ -70,12 +71,15 @@ void main() {
     vec3 N = normalize(vec3(vec4(skinned_normal.xyz,  0.0) * model));
     vec3 B = cross(N, T) * skinned_tangent.w; // handedness - which direction does this ortho vector point of the two?
 
+    tint = vec4(1,1,1,1);
     add_color = vec4(0,0,0,0);
+
     if (mesh_inst.specialization.specialized) {
         if (mesh_inst.specialization.flash_rate > 0) {
             float flash_value = (sin((frame.time - mesh_inst.specialization.flash_begin_time) * mesh_inst.specialization.flash_rate) + 1) * 0.5 * mesh_inst.specialization.flash_value;
             add_color.rgb = vec3(flash_value, flash_value, flash_value);
         }
+        tint.rgb = mesh_inst.specialization.tint;
     }
 
     out_tbn         = mat3(T, B, N);

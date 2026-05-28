@@ -55,12 +55,12 @@ raycast_rectangle :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3
     if raycast_plane_simple(result, ray_origin, ray_direction, center, plane_normal) {
         toward_hit_diff := result.hit_location - center;
         width_dist := dot(width_direction, toward_hit_diff);
-        if width_dist > half_width {
+        if abs(width_dist) > half_width {
             result.* = {};
             return false;
         }
         length_dist := dot(length_direction, toward_hit_diff);
-        if length_dist > half_length {
+        if abs(length_dist) > half_length {
             result.* = {};
             return false;
         }

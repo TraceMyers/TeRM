@@ -11,7 +11,8 @@ layout(location=3) out      vec2 out_uv_0;
 layout(location=4) out      vec2 out_uv_1;
 layout(location=5) out      vec4 out_color;
 layout(location=6) out      vec4 add_color;
-layout(location=7) out flat int  out_material_id;
+layout(location=7) out      vec4 tint;
+layout(location=8) out flat int  out_material_id;
 
 layout(set=3, binding=0, scalar) readonly buffer Mesh_Instance_Data {
     Mesh_Instance_Shader_Data array[];
@@ -28,24 +29,30 @@ void main() {
 
     mat4 model = mesh_inst.transform;
 
-    gl_Position = vec4(in_position, 1.0) * model * frame.view_projection;
-
     // generating the orthonormal axes of this triangle in world space
     vec3 T = normalize(vec3(vec4(in_tangent.xyz, 0.0) * model));
     vec3 N = normalize(vec3(vec4(in_normal.xyz,  0.0) * model));
     vec3 B = cross(N, T) * in_tangent.w; // handedness - which direction does this ortho vector point of the two?
 
     add_color = vec4(0,0,0,0);
+    tint = vec4(1,1,1,1);
+
+    gl_Position = vec4(in_position, 1.0) * model * frame.view_projections[mesh_inst.layer];
+
     if (mesh_inst.specialization.specialized) {
         if (mesh_inst.specialization.flash_rate > 0) {
             float flash_value = (sin((frame.time - mesh_inst.specialization.flash_begin_time) * mesh_inst.specialization.flash_rate) + 1) * 0.5 * mesh_inst.specialization.flash_value;
             add_color.rgb = vec3(flash_value, flash_value, flash_value);
+        } else if (mesh_inst.specialization.flash_rate == 0) {
+            float flash_value = mesh_inst.specialization.flash_value;
+            add_color.rgb = vec3(flash_value, flash_value, flash_value);
         }
+        tint.rgb = mesh_inst.specialization.tint;
     }
 
     out_tbn         = mat3(T, B, N);
     out_uv_0        = in_uv_0;
     out_uv_1        = in_uv_1;
-    out_color       = in_color; 
+    out_color       = in_color * tint;
     out_material_id = mesh_section.material;
 }

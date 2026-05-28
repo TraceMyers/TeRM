@@ -8,6 +8,8 @@ Physics_Shape :: enum u8 {
     SPHERE;
     CAPSULE;
     CONVEX;
+    TRIANGLE_U16;
+    TRIANGLE_U32;
 }
 
 Shape_Plane :: struct {}
@@ -55,6 +57,20 @@ Shape_Convex :: struct {
 Shape_Convex_Data :: struct {
     center: Vector3;
     points:  []Vector3;
-    triangles: []uint16;
+    triangles: []u16;
+}
+ 
+Shape_Triangle_U16 :: struct {
+    indices: [3]u16;
+    #overlay(indices[0]) a: u16;
+    #overlay(indices[1]) b: u16;
+    #overlay(indices[2]) c: u16;
+}
+
+Shape_Triangle_U32 :: struct {
+    indices: [3]u32;
+    #overlay(indices[0]) a: u32;
+    #overlay(indices[1]) b: u32;
+    #overlay(indices[2]) c: u32;
 }
 

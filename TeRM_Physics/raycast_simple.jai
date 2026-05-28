@@ -1,3 +1,6 @@
+// optionally quicken hot path raycasts for a select few shapes. 
+// probably triangle and plane mostly.
+
 Raycast_Result_Simple :: struct {
     hit_location: Vector3;
     hit_distance: float;
@@ -14,6 +17,27 @@ raycast_plane :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3, ra
     result.hit_back_face      = signed_distance_to_plane > 0;
     result.hit_location       = ray_origin + ray_direction * result.hit_distance;
     return result.is_hit;
+}
+
+raycast_triangle :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3, ray_direction: Vector3, a: Vector3, b: Vector3, c: Vector3, out_normal: *Vector3) -> bool {
+    ab := b - a;
+    ac := c - a;
+    out_normal.* = normalize(cross(ac, ab));
+
+    if raycast_plane(result, ray_origin, ray_direction, a, out_normal.*) {
+        ac_scaled_normal := cross(out_normal.*, ac);
+        cb_scaled_normal := cross(out_normal.*, b - c);
+        ba_scaled_normal := cross(out_normal.*, -ab);
+        ah := result.hit_location - a;
+        bh := result.hit_location - b;
+        // each triangle edge is on a line bisecting the plane. check the point is on the side the triangle is on.
+        if dot(ac_scaled_normal, ah) < 0 || dot(cb_scaled_normal, bh) < 0 || dot(ba_scaled_normal, bh) < 0 { 
+            result.* = {};
+            return false;
+        }
+        return true;
+    }
+    return false;
 }
 
 raycast_circle :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3, ray_direction: Vector3, center: Vector3, radius: float, plane_normal: Vector3) -> bool {

@@ -61,6 +61,14 @@ raycast :: (request: *Raycast_Request, result: *Raycast_Result, center: Vector3,
         return raycast_sphere(request, result, center, collider.sphere);
     case .CAPSULE;
         return raycast_capsule(request, result, center, collider.capsule, get_up_direction(orientation));
+    case .CONVEX;
+        // todo: raycast_convex. true/false I think mostly done but not hit location, normal
+        return false;
+    case .TRIANGLE_U16;
+        #through;
+    case .TRIANGLE_U32;
+        assert(false, "triangles aren't stored on physics colliders, so this request can't be handled.");
+        return false;
     }
 }
 
@@ -114,7 +122,7 @@ raycast_plane :: (request: *Raycast_Request, result: *Raycast_Result, point_on_p
         }
     }
 
-    result.normal_is_degenerate |= !is_normalized(result.hit_normal, SMALL_NUMBER);
+    result.normal_is_degenerate = !is_normalized(result.hit_normal, SMALL_NUMBER);
     return result.is_hit;
 }
 
@@ -227,7 +235,7 @@ raycast_cylinder :: (request: *Raycast_Request, result: *Raycast_Result, center:
         }
     }
 
-    result.normal_is_degenerate |= !is_normalized(result.hit_normal);
+    result.normal_is_degenerate = !is_normalized(result.hit_normal);
     return result.is_hit;
 }
 
@@ -320,7 +328,7 @@ raycast_box :: (request: *Raycast_Request, result: *Raycast_Result, center: Vect
         }
     }
 
-    result.normal_is_degenerate |= !is_normalized(result.hit_normal);
+    result.normal_is_degenerate = !is_normalized(result.hit_normal);
     return result.is_hit;
 }
 
@@ -417,7 +425,7 @@ raycast_pillbox :: (request: *Raycast_Request, result: *Raycast_Result, center: 
         }
     }
 
-    result.normal_is_degenerate |= !is_normalized(result.hit_normal);
+    result.normal_is_degenerate = !is_normalized(result.hit_normal);
     return result.is_hit;
 }
 
@@ -470,7 +478,7 @@ raycast_sphere :: (request: *Raycast_Request, result: *Raycast_Result, sphere_ce
         }
     }
 
-    result.normal_is_degenerate |= !is_normalized(result.hit_normal);
+    result.normal_is_degenerate = !is_normalized(result.hit_normal);
     return result.is_hit;
 }
 
@@ -541,7 +549,38 @@ raycast_capsule :: (request: *Raycast_Request, result: *Raycast_Result, center: 
         }
     }
     
-    result.normal_is_degenerate |= !is_normalized(result.hit_normal);
+    result.normal_is_degenerate = !is_normalized(result.hit_normal);
+    return result.is_hit;
+}
+
+// assuming clockwise normal for a -> b -> c
+raycast_triangle :: (request: *Raycast_Request, result: *Raycast_Result, a: Vector3, b: Vector3, c: Vector3) -> bool {
+    calculate_ray_direction_and_length(request);
+    result.* = {ray_origin=request.ray_origin, ray_destination=request.ray_destination};
+
+    normal: Vector3 = ---;
+    simple_result: Raycast_Result_Simple = ---;
+
+    if raycast_triangle(*simple_result, request.ray_origin, request.ray_direction, a, b, c, *normal) && simple_result.hit_distance <= request.ray_length {
+        if simple_result.hit_back_face {
+            if request.can_hit_back_face {
+                result.is_hit = true;
+                result.hit_location = simple_result.hit_location;
+                result.hit_distance = simple_result.hit_distance;
+                result.hit_back_face = true;
+                if request.return_back_face_normal {
+                    result.hit_normal = -normal;
+                }
+            }
+        } else {
+            result.is_hit = true;
+            result.hit_normal = normal;
+            result.hit_location = simple_result.hit_location;
+            result.hit_distance = simple_result.hit_distance;
+        }
+    }
+
+    result.normal_is_degenerate = !is_normalized(result.hit_normal);
     return result.is_hit;
 }
 

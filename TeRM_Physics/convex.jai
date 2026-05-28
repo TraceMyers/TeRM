@@ -28,16 +28,17 @@ find_farthest_point_along_axis :: (points: []Vector3, axis: Vector3) -> Vector3 
     // repeat with the rest
     // at the end, store into an array and just compare four values to get the final winner.
 
+    farthest: int;
     max_distance_along_axis := -FLOAT32_MAX;
-    winner: int;
+
     for point : points {
         distance_along_axis := dot(point, axis);
         if distance_along_axis > max_distance_along_axis {
-            winner = it_index;
+            farthest = it_index;
             max_distance_along_axis = distance_along_axis;
         }
     }
-    return points[winner];
+    return points[farthest];
 }
 
 calculate_support :: inline (points_a: []Vector3, points_b: []Vector3, axis: Vector3) -> Vector3 {
@@ -46,7 +47,7 @@ calculate_support :: inline (points_a: []Vector3, points_b: []Vector3, axis: Vec
 
 // convex shapes must be pre-processed into world space
 // (triangles array and half_height not necessary.)
-gjk :: (a: Shape_Convex, b: Shape_Convex) -> bool {
+gjk :: (a: Shape_Convex, b: Shape_Convex, max_iterations := 1_000) -> bool {
     axis := a.center - b.center;
     axis_len_sq := length_squared(axis);
     if axis_len_sq < VERY_SMALL_NUMBER {
@@ -62,11 +63,9 @@ gjk :: (a: Shape_Convex, b: Shape_Convex) -> bool {
 
     axis = -support;
 
-    sanity_counter := 0;
-    SANITY_COUNTER_MAX :: 10_000;
-
-    while sanity_counter < SANITY_COUNTER_MAX {
-        defer sanity_counter += 1;
+    i := 0;
+    while i < max_iterations {
+        defer i += 1;
 
         support = calculate_support(a.points, b.points, axis);
 
@@ -85,6 +84,8 @@ gjk :: (a: Shape_Convex, b: Shape_Convex) -> bool {
             return true;
         }
     }
+
+    return false;
 }
 
 #scope_file
@@ -106,22 +107,23 @@ add_point :: inline (simplex: *Simplex, point: Vector3) {
 narrow_search_space :: (simplex: *Simplex, axis: *Vector3) -> bool {
     if simplex.point_count == {
     case 2;
-        evaluate_line(simplex, axis);
+        evaluate_support_line(simplex, axis);
     case 3;
-        evaluate_triangle(simplex, axis);
+        evaluate_support_triangle(simplex, axis);
     case 4;
-        return evaluate_tetrahedron(simplex, axis);
+        return evaluate_support_tetrahedron(simplex, axis);
     }
     return false;
 }
 
-evaluate_line :: inline (using simplex: *Simplex, axis: *Vector3) {
+evaluate_support_line :: inline (using simplex: *Simplex, axis: *Vector3) {
     ab :=  line.b - line.a;
     ao := -line.a;
+    // triple product ((a,b),a) will be perpendicular to a, in the direction of b
     axis.* = cross(cross(ab, ao), ab); // search toward origin
 }
 
-evaluate_triangle :: inline (using simplex: *Simplex, axis: *Vector3) {
+evaluate_support_triangle :: inline (using simplex: *Simplex, axis: *Vector3) {
     ab :=  triangle.b - triangle.a;
     ac :=  triangle.c - triangle.a;
     ao := -triangle.a;
@@ -133,13 +135,16 @@ evaluate_triangle :: inline (using simplex: *Simplex, axis: *Vector3) {
     if dot(ao, ab_outside_normal) > 0 {
         // triangle does not contain point
         axis.* = ab_outside_normal;
-        triangle.c = triangle.a;
-        simplex.point_count = 2;
+        // 0 = b, 1 = a
+        points[0] = triangle.b;
+        points[1] = triangle.a;
+        point_count = 2;
     } else if dot(ao, ac_outside_normal) > 0 {
         // triangle does not contain point
         axis.* = ac_outside_normal;
-        triangle.b = triangle.a;
-        simplex.point_count = 2;
+        // 0 = c, 1 = a
+        points[1] = triangle.a;
+        point_count = 2;
     } else {
         // triangle contains point. search in direction of triangle normal
         axis.* = cross(ab, ac);
@@ -149,13 +154,48 @@ evaluate_triangle :: inline (using simplex: *Simplex, axis: *Vector3) {
     }
 }
 
-evaluate_tetrahedron :: inline (using simplex: *Simplex, axis: *Vector3) -> bool {
+evaluate_support_tetrahedron :: inline (using simplex: *Simplex, axis: *Vector3) -> bool {
     ab :=  tetrahedron.b - tetrahedron.a;
     ac :=  tetrahedron.c - tetrahedron.a;
     ad :=  tetrahedron.d - tetrahedron.a;
     ao := -tetrahedron.a;
 
+    // todo: youtube tutorials for this don't seem to do this check. what are they seeing I'm not?
+    // I came up with a paper example where this was necessary, but maybe it was wrong.
+    // or maybe they just rely on a redundant shuffling of vertices through rejection.
+    maybe_flip_normal := 1.0;
+    abc_outside_normal := cross(ab, ac);
+    if dot(abc_outside_normal, axis.*) < 0 {
+        maybe_flip_normal = -1.0;
+        abc_outside_normal *= maybe_flip_normal;
+    }
+    acd_outside_normal := cross(ac, ad) * maybe_flip_normal;
+    adb_outside_normal := cross(ad, ab) * maybe_flip_normal;
 
+    if dot(abc_outside_normal, ao) > 0 {
+        point_count = 3;
+        // 0 = d, 1 = c, 2 = b
+        points[0] = tetrahedron.c;
+        points[1] = tetrahedron.b;
+        points[2] = tetrahedron.a;
+        axis.* = abc_outside_normal;
+        return false;
+    } else if dot(acd_outside_normal, ao) > 0 {
+        point_count = 3;
+        // 0 = d, 1 = c, 2 = a
+        points[2] = tetrahedron.a;
+        axis.* = acd_outside_normal;
+        return false;
+    } else if dot(adb_outside_normal, ao) > 0 { 
+        point_count = 3;
+        // 0 = d, 1 = b, 2 = a
+        points[1] = tetrahedron.b;
+        points[2] = tetrahedron.a;
+        axis.* = adb_outside_normal;
+        return false;
+    }
+
+    return true;
 }
 
 // Copyright (c) 2026 Trace Myers

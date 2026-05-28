@@ -1,4 +1,9 @@
-Physics_Body:: struct {
+// external type made to avoid changing shared properties on accident.
+Physics_Body :: Physics_Body_Base(void, void);
+// cast to this type for easy access to physics properties.
+Physics_Body_Internal :: Physics_Body_Base(Physics_Properties, Physics_Collider);
+
+Physics_Body_Base :: struct($properties_type: Type, $collider_type: Type) {
     linear_velocity: Vector3;
     angular_velocity: Vector3;
 
@@ -21,13 +26,29 @@ Physics_Body:: struct {
         #overlay(axes[2]) z_axis:     Vector3;
     }
 
-    using properties: *Physics_Properties;
+    properties: *properties_type;
+    collider: *collider_type;
     
     move_input: Vector2;
 
     #if user_types.extra_body_data != void {
         extra_data: user_types.extra_body_data;
     }
+}
+
+// a template which will be used to spawn bodies. templates are used in order
+// to encourage reusing physics properties. that is, if you create a body
+// from a template, its properties pointer is pointing to the properties instance
+// owned by the template. so, for all bodies with identical properties, you
+// get more cache-efficient reads for free during physics. note that
+// if properties are to be changed and you don't want to alter the template,
+// you need to call the 'change_property' procedure.
+// the body.properties pointer should be kept null, as it isn't used for anything.
+Physics_Body_Template :: struct {
+    flags:              Physics_Body_Flags;
+    collision_channels: Collision_Channel;
+    properties:         Physics_Properties;
+    collider:           Physics_Collider;
 }
 
 Physics_Body_Flags :: enum_flags u32 {
@@ -43,20 +64,6 @@ Physics_Body_Flags :: enum_flags u32 {
 
 PER_STEP_PHYSICS_BODY_FLAGS : Physics_Body_Flags : .CALCULATED_AXES | .CALCULATED_LINEAR_SPEED;
 
-// a template which will be used to spawn bodies. templates are used in order
-// to encourage reusing physics properties. that is, if you create a body
-// from a template, its properties pointer is pointing to the properties instance
-// owned by the template. so, for all bodies with identical properties, you
-// get more cache-efficient reads for free during physics. note that
-// if properties are to be changed and you don't want to alter the template,
-// you need to call the 'change_property' procedure.
-// the body.properties pointer should be kept null, as it isn't used for anything.
-Physics_Body_Template :: struct {
-    flags:              Physics_Body_Flags;
-    collision_channels: Collision_Channel;
-    properties:         Physics_Properties;
-}
-
 create_physics_body :: (template_name: string, entity_id: user_types.entity_id_type) -> *Physics_Body {
     assert(entity_id != get_null_entity_id());
     template := table_get(*world.body_templates, template_name);
@@ -71,20 +78,23 @@ create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.
     body_data.flags[i]              = template.flags;
     body_data.collision_channels[i] = template.collision_channels;
     body_data.bodies[i].properties  = *template.properties;
+    body_data.bodies[i].collider    = *template.collider;
     body_data.entity_ids[i]         = entity_id;
 
-    return *body_data.bodies[i];
+    return xx *body_data.bodies[i];
 }
 
 // if the body that was destroyed displaced another body, the entity pointers to
 // bodies (if you are doing things that way) will now be invalid. 
-destroy_physics_body :: (body: *Physics_Body) -> need_repoint: bool, id_to_repoint: user_types.entity_id_type {
+destroy_physics_body :: (in_body: *Physics_Body_Base) -> need_repoint: bool, id_to_repoint: user_types.entity_id_type {
     using world;
+
+    body := cast(*Physics_Body_Internal) in_body;
 
     need_repoint: bool;
     id_to_repoint := get_null_entity_id();
     
-    body_index := get_index(body);
+    body_index := get_index(in_body);
     body_count := soa_count(*body_data);
     assert(body_index >= 0 && body_index < body_count);
 
@@ -122,13 +132,13 @@ get_physics_body_template :: (name: string) -> *Physics_Body_Template {
     return table_get(*world.body_templates, name);
 }
 
-accelerate :: inline (body: *Physics_Body, accel: Vector3) {
+accelerate :: inline (body: *Physics_Body_Base, accel: Vector3) {
     if world.step_state != .PAUSED {
         body.linear_velocity += accel * PHYSICS_DELTA_TIME;
     }
 }
 
-push :: inline (body: *Physics_Body, force: Vector3) {
+push :: inline (body: *Physics_Body_Base, force: Vector3) {
     // todo: inv mass and probably that matrix thing I can't remember
     if world.step_state != .PAUSED {
         accel := force * body.inv_mass;
@@ -136,56 +146,56 @@ push :: inline (body: *Physics_Body, force: Vector3) {
     }
 }
 
-get_flags :: inline (body: *Physics_Body) -> Physics_Body_Flags {
+get_flags :: inline (body: *Physics_Body_Base) -> Physics_Body_Flags {
     return world.body_data.flags[get_index(body)];
 }
 
-set_flags :: inline (body: *Physics_Body, flags: Physics_Body_Flags) {
+set_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
     world.body_data.flags[get_index(body)] = flags;
 }
 
-add_flags :: inline (body: *Physics_Body, flags: Physics_Body_Flags) {
+add_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
     world.body_data.flags[get_index(body)] |= flags;
 }
 
-remove_flags :: inline (body: *Physics_Body, flags: Physics_Body_Flags) {
+remove_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
     world.body_data.flags[get_index(body)] &= ~flags;
 }
 
-can_translate :: inline (body: *Physics_Body) -> bool {
+can_translate :: inline (body: *Physics_Body_Base) -> bool {
     return (world.body_data.flags[get_index(body)] & .LOCK_TRANSLATION) == 0;
 }
 
-can_rotate :: inline (body: *Physics_Body) -> bool {
+can_rotate :: inline (body: *Physics_Body_Base) -> bool {
     ALL_AXES_LOCKED : Physics_Body_Flags : .LOCK_YAW | .LOCK_PITCH | .LOCK_ROLL;
     return (world.body_data.flags[get_index(body)] & ALL_AXES_LOCKED) != ALL_AXES_LOCKED;
 }
 
-get_x_axis :: (body: *Physics_Body) -> Vector3 {
+get_x_axis :: (body: *Physics_Body_Base) -> Vector3 {
     calculate_axes_if_needed(body);
     return body.x_axis;
 }
 
-get_y_axis :: (body: *Physics_Body) -> Vector3 {
+get_y_axis :: (body: *Physics_Body_Base) -> Vector3 {
     calculate_axes_if_needed(body);
     return body.y_axis;
 }
 
-get_z_axis :: (body: *Physics_Body) -> Vector3 {
+get_z_axis :: (body: *Physics_Body_Base) -> Vector3 {
     calculate_axes_if_needed(body);
     return body.z_axis;
 }
 
 #scope_module
 
-calculate_axes_if_needed :: inline (body: *Physics_Body) {
+calculate_axes_if_needed :: inline (body: *Physics_Body_Base) {
     flags := get_flags(body);
     if (flags & .CALCULATED_AXES) == 0 {
         calculate_axes(body, true);
     }
 }
 
-calculate_axes :: (body: *Physics_Body) {
+calculate_axes :: (body: *Physics_Body_Base) {
     body.x_axis = get_right_direction(body.next_orientation);
     body.y_axis = get_fore_direction(body.next_orientation);
     body.z_axis = normalize(cross(body.x_axis, body.y_axis));
@@ -199,8 +209,8 @@ calculate_axes :: (body: *Physics_Body) {
     set_flags(body, flags);
 }
 
-get_index :: inline (body: *Physics_Body) -> int {
-    return body - world.body_data.bodies.data;
+get_index :: inline (body: *Physics_Body_Base) -> int {
+    return cast(*Physics_Body_Internal) body - world.body_data.bodies.data;
 }
 
 // todo: maybe this is making a bad assumption, but tbh it's pretty reasonable
@@ -218,6 +228,16 @@ get_null_entity_id :: () -> user_types.entity_id_type {
         #assert(false);
     }
 }
+
+is_data_from_template :: (data: *u8) -> bool {
+    using world;
+    shared_byte_diff := data - cast(*u8) body_templates.values.data;
+    shared_byte_end  := size_of(type_of(body_templates.values[0])) * body_templates.values.count;
+    return shared_byte_diff >= 0 && shared_byte_diff < shared_byte_end;
+}
+
+#scope_module
+
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

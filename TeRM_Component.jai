@@ -14,13 +14,17 @@ Component_Array :: struct ($component_type: Type) {
     allocator: Allocator;
 }
 
+Component_Array_Iteration :: struct($component_type: Type) {
+    component: *component_type;
+    entity_id: user_types.entity_id_type;
+}
+
 for_expansion :: (array: Component_Array, body: Code, flags: For_Flags) #expand {
-    assert(flags == 0);
+    iteration_type :: Component_Array_Iteration(array.component_type);
     
-    for i : 0..array.components.count-1 {
-        `it        := *array.components[i];
+    for <=((flags & .REVERSE) != 0) i : 0..array.components.count-1 {
         `it_index  := i;
-        `entity_id := array.ids[i];
+        `it        := iteration_type.{*array.components[i], array.ids[i]};
 
         #insert body;
     }

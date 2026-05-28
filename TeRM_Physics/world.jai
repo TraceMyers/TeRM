@@ -1,8 +1,8 @@
 // todo: debug proc to validate that templates aren't being altered
-
 Physical_World :: struct {
     body_templates: Linear_Table(string, Physics_Body_Template);
     unique_properties: Pool(Physics_Properties);
+    unique_colliders: Pool(Physics_Collider);
     body_data: Physics_Body_SOA;
 
     step_state: Physics_Step_State;
@@ -18,11 +18,12 @@ Physical_World :: struct {
     allocator: Allocator;
 }
 
-create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique_properties_max := 4096) -> Physical_World {
+create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique_properties_max := 4096, unique_colliders_max := 32768) -> Physical_World {
     out_world: Physical_World;
 
     table_init(*out_world.body_templates, body_templates_max, true);
     pool_init(*out_world.unique_properties, unique_properties_max, true);
+    pool_init(*out_world.unique_colliders, unique_colliders_max, true);
 
     if bodies_max > 0 {
         soa_reserve(*out_world.body_data, bodies_max);
@@ -66,14 +67,14 @@ Physics_Body_Combined_Data :: struct {
     flags:              Physics_Body_Flags;
     collision_channels: Collision_Channel;
     entity_id:          user_types.entity_id_type;
-    using body:         Physics_Body;
+    using body:         Physics_Body_Internal;
 }
 
 Physics_Body_SOA :: struct {
     flags:              [..]Physics_Body_Flags;
     collision_channels: [..]Collision_Channel;
     entity_ids:         [..]user_types.entity_id_type;
-    bodies:             [..]Physics_Body;
+    bodies:             [..]Physics_Body_Internal;
     
     item_type   :: Physics_Body_Combined_Data;
     item_fields :: string.["flags", "collision_channels", "entity_id", "body"];

@@ -1,36 +1,31 @@
 Physics_Properties :: struct {
     mass:              float = 1.0;
-    inv_mass:          float;
-
-    pointing_friction:       Physics_Float_Property;
-    slide_friction:          Physics_Float_Property;
-    move_input_acceleration: Physics_Float_Property;
-
-    collider: Physics_Collider;
+    inv_mass:          float = 1.0;
+    pointing_friction: float = 0.5;
+    slide_friction:    float = 0.5;
+    move_input_acceleration: float;
 
     call_per_step: (*Physics_Body);
 }
 
-// most properties on Physics_Properties can either be a constant or a procedure call
-// if procedure call, it has the signature (*Physics_Body) -> float
-Physics_Float_Property :: struct {
-    type: enum u32 {
-        CONSTANT;
-        PROCEDURE_CALL;
+set_property :: (in_body: *Physics_Body_Base, $property_name: string, new_value: $T) 
+#modify {
+    // intercept ints and change them to floats so you can pass values like '1' for 
+    // float properties rather than '1.0'. minor convenience.
+    if (cast(*Type_Info) T).type == .INTEGER {
+        T = float;
     }
-    constant: float;
-    proc: (*Physics_Body) -> float;
-}
-
-change_property :: (body: *Physics_Body, $property_name: string, new_value: $T) {
+    return true;
+} {
     #assert(property_name != "inv_mass");
+    body := cast(*Physics_Body_Internal) in_body;
 
     PROPERTY_OFFSET :: #run -> int {
         props_tinfo := type_info(Physics_Properties);
         for member : props_tinfo.members {
             if member.name == property_name {
                 member_type := (cast(*Type) *member.type).*;
-                assert(member_type == T, "in Physics_Properties, % has type %, but a value of type % was passed to change_property", property_name, member_type, T);
+                assert(member_type == T, "in Physics_Properties, % has type %, but a value of type % was passed to set_property", property_name, member_type, T);
                 return member.offset_in_bytes;
             }
         }
@@ -48,37 +43,9 @@ change_property :: (body: *Physics_Body, $property_name: string, new_value: $T) 
     }
 }
 
-make_properties_unique :: (body: *Physics_Body) {
-    if !is_unique(body.properties) {
-        new_properties_index := pool_acquire(*world.unique_properties);
-        new_properties := *world.unique_properties[new_properties_index];
-        new_properties.* = body.properties.*;
-        body.properties = new_properties;
-    }
-}
-
-is_unique :: inline (properties: *Physics_Properties) -> shared: bool, unique_index: s32 {
-    using world;
-    unique_index := properties - unique_properties.items.data;
-    if unique_index >= 0 && unique_index < world.unique_properties.items.count {
-        assert(is_pool_item_in_use(*world.unique_properties, unique_index));
-        return true, xx unique_index;
-    }
-    shared_byte_diff := cast(*u8) properties - cast(*u8) body_templates.values.data;
-    shared_byte_end  := size_of(type_of(body_templates.values[0])) * body_templates.values.count;
-    assert(shared_byte_diff >= 0 && shared_byte_diff < shared_byte_end);
-    return false, -1;
-}
-
-evaluate :: inline (body: *Physics_Body, $prop_name: string) -> float {
-    prop := #insert #run tprint("*body.%;", prop_name);
-    if #complete prop.type == {
-    case .CONSTANT;
-        return prop.constant;
-    case .PROCEDURE_CALL;
-        proc := cast((*Physics_Body)->(float)) prop.proc;
-        return proc(body);
-    }
+get_property :: inline (in_body: *Physics_Body_Base, $property_name: string) -> float {
+    body := cast(*Physics_Body_Internal) in_body;
+    return #insert #run tprint("body.properties.%;", property_name);
 }
 
 // if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES (module param) is true, this can be called
@@ -104,6 +71,27 @@ debug_validate_template_properties :: () {
         for 0..body_templates.values.count-1 {
             assert(body_templates.values[it].properties == debug_template_properties[it]);
         }
+    }
+}
+
+is_unique :: inline (properties: *Physics_Properties) -> unique: bool, unique_index: s32 {
+    using world;
+    unique_index := properties - unique_properties.items.data;
+    if unique_index >= 0 && unique_index < unique_properties.items.count {
+        assert(is_pool_item_in_use(*unique_properties, unique_index));
+        return true, xx unique_index;
+    }
+    assert(is_data_from_template(xx properties));
+    return false, -1;
+}
+
+make_properties_unique :: inline (in_body: *Physics_Body_Base) {
+    body := cast(*Physics_Body_Internal) in_body;
+    if !is_unique(body.properties) {
+        new_properties_index := pool_acquire(*world.unique_properties);
+        new_properties := *world.unique_properties[new_properties_index];
+        new_properties.* = body.properties.*;
+        body.properties = new_properties;
     }
 }
 

@@ -107,6 +107,12 @@ draw_circle :: inline (renderer: *Renderer, center: Vector3, radius: float32, or
     draw_circle(renderer, center, radius, up, right, color, line_width, segment_count, draw_in_front, time);
 }
 
+draw_triangle :: (renderer: *Renderer, a: Vector3, b: Vector3, c: Vector3, color: Color4b, line_width := 1.0, draw_in_front := false, time := 0.0) {
+    draw_line(renderer, a, b, color, line_width, draw_in_front, time);
+    draw_line(renderer, b, c, color, line_width, draw_in_front, time);
+    draw_line(renderer, c, a, color, line_width, draw_in_front, time);
+}
+
 draw_box :: (renderer: *Renderer, center: Vector3, extent: Vector3, up: Vector3, right: Vector3, forward: Vector3, color: Color4b, line_width := 1.0, draw_in_front := false, time := 0.0) {
     assert(!renderer.in_the_middle_of_rendering);
     top_center := center + up * extent.z;

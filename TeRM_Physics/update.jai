@@ -49,12 +49,12 @@ run_physics_step :: (consecutive_step_index: int = 0) {
         if consecutive_step_index == 0 {
             body.prev_position = body.next_position;
         }
-        if body.call_per_step != null {
-            body.call_per_step(body);
+        if body.properties.call_per_step != null {
+            body.properties.call_per_step(xx body);
         }
         
         if body.move_input != {} {
-            input_accel := body.move_input * evaluate(body, "move_input_acceleration");
+            input_accel := body.move_input * body.properties.move_input_acceleration;
             body.linear_velocity.xy += input_accel * PHYSICS_DELTA_TIME;
             body.move_input = {};
         }
@@ -65,7 +65,7 @@ run_physics_step :: (consecutive_step_index: int = 0) {
 
         if linear_speed_sq > 0 {
             // todo: apply gravity as a force, naturally resulting against friction against surfaces with z-up components
-            pointing_friction := evaluate(body, "pointing_friction") * world.gravity;
+            pointing_friction := body.properties.pointing_friction * world.gravity;
             friction_delta_speed := pointing_friction * PHYSICS_DELTA_TIME;
 
             if square(friction_delta_speed) > linear_speed_sq {
@@ -94,14 +94,14 @@ physical_entity_transform_update :: (loop_body: Code) #expand {
     `physics_transform_alpha := get_physical_entity_transform_alpha();
 
     for *b, bi : world.body_data.bodies {
-        `flags := get_flags(b);
+        `flags := get_flags(cast(*Physics_Body) b);
         // if (`flags & .AWAKE) == 0 {
         //     continue;
         // }
         if (`flags & LOCK_TRANSLATE_AND_ROTATE) == LOCK_TRANSLATE_AND_ROTATE {
             continue;
         }
-        `body      := b;
+        `body      := cast(*Physics_Body) b;
         `it_index  := bi;
         `entity_id := world.body_data.entity_ids[bi];
 

@@ -65,13 +65,19 @@ draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pos
     add_skinning_joints(renderer, new_draw);
 }
 
+// todo: make lines use layer system. halves number of draw paths
 draw_line :: inline (renderer: *Renderer, begin: Vector3, end: Vector3, color: Color4b, width := 1.0, draw_in_front := false, time := 0.0) {
     assert(!renderer.in_the_middle_of_rendering);
     draw := Line_Draw.{begin, end, color, width};
     if draw_in_front {
-        array_add(*renderer.in_front_line_draws, draw);
-        if time > 0 {
-            array_add(*renderer.timed_in_front_line_draws, {draw=draw, time_remaining=time});
+        if color.a < 255 {
+            array_add(*renderer.transparent_in_front_line_draws, draw);
+            assert(time == 0, "don't support timed transparent line draws yet");
+        } else {
+            array_add(*renderer.in_front_line_draws, draw);
+            if time > 0 {
+                array_add(*renderer.timed_in_front_line_draws, {draw=draw, time_remaining=time});
+            }
         }
     } else {
         array_add(*renderer.line_draws, draw);

@@ -99,6 +99,8 @@ Renderer :: struct {
         draw_in_front_opaque_line_pipeline: VkPipeline;
         opaque_line_pipeline: VkPipeline;
 
+        draw_in_front_transparent_line_pipeline: VkPipeline;
+
         particle_draws: [..]Billboard_Instance;
         static_mesh_draws: [..]Static_Mesh_Draw;
         skinned_mesh_draws: [..]Skinned_Mesh_Draw;
@@ -107,6 +109,7 @@ Renderer :: struct {
 
         in_front_line_draws: [..]Line_Draw;
         line_draws: [..]Line_Draw;
+        transparent_in_front_line_draws: [..]Line_Draw;
 
         timed_in_front_line_draws: [..]Timed_Draw(Line_Draw);
         timed_line_draws: [..]Timed_Draw(Line_Draw);
@@ -117,6 +120,7 @@ Renderer :: struct {
         prepared_opaque_skinned_mesh_draw_commands: [..]VkDrawIndexedIndirectCommand;
         prepared_in_front_line_draw_batches: [..]Line_Draw_Batch;
         prepared_line_draw_batches: [..]Line_Draw_Batch;
+        prepared_transparent_in_front_line_draw_batches: [..]Line_Draw_Batch;
 
         in_the_middle_of_rendering: bool;
     };

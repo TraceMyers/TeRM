@@ -22,6 +22,11 @@ get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which 
     }
 }
 
+get_camera_perspective_horizontal_fov :: (using camera: Camera_Info, viewport: Vector2) -> float {
+    aspect := get_camera_aspect_ratio(camera, viewport);
+    return camera.perspective_vertical_fov * aspect;
+}
+
 make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaternion) -> Matrix4 {
     q     := normalize(camera_orientation);
     up    := get_up_direction(q); 

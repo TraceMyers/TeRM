@@ -23,10 +23,15 @@ draw_billboard_particles :: (cmd: VkCommandBuffer, current_frame: *Graphics_Fram
     vkCmdDraw(cmd, xx billboard_vertices.count, xx particle_draws.count, 0, 0); 
 }
 
-prepare_draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, in_front: bool) {
+prepare_draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, in_front: bool, transparent: bool) {
     using context.renderer;
 
-    draws := ifx in_front then in_front_line_draws else line_draws;
+    draws: []Line_Draw;
+    if transparent {
+        draws = transparent_in_front_line_draws;
+    } else {
+        draws = ifx in_front then in_front_line_draws else line_draws;
+    }
 
     if draws.count == 0 {
         return;
@@ -48,10 +53,18 @@ prepare_draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, in_
 
         if flush_draws {
             draw_batch: *Line_Draw_Batch;
-            if in_front {
-                draw_batch = array_add(*prepared_in_front_line_draw_batches);
+            if transparent {
+                if in_front {
+                    draw_batch = array_add(*prepared_transparent_in_front_line_draw_batches);
+                } else {
+                    assert(false, "don't support non-front transparent lines");
+                }
             } else {
-                draw_batch = array_add(*prepared_line_draw_batches);
+                if in_front {
+                    draw_batch = array_add(*prepared_in_front_line_draw_batches);
+                } else {
+                    draw_batch = array_add(*prepared_line_draw_batches);
+                }
             }
 
             draw_batch.width = batch_width;
@@ -94,6 +107,16 @@ draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame) {
         vkCmdBindPipeline(cmd, .GRAPHICS, opaque_line_pipeline);
 
         for prepared_line_draw_batches {
+            vkCmdSetLineWidth(cmd, it.width);
+            bind_vertex_buffer(cmd, it.buffer);
+            vkCmdDraw(cmd, xx it.count, 1, 0, 0);
+        }
+    }
+
+    if transparent_in_front_line_draws.count != 0 {
+        vkCmdBindPipeline(cmd, .GRAPHICS, draw_in_front_transparent_line_pipeline);
+
+        for prepared_transparent_in_front_line_draw_batches {
             vkCmdSetLineWidth(cmd, it.width);
             bind_vertex_buffer(cmd, it.buffer);
             vkCmdDraw(cmd, xx it.count, 1, 0, 0);

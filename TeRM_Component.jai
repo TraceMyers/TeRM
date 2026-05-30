@@ -12,6 +12,7 @@ Component_Array :: struct ($component_type: Type) {
     components: [..]component_type;
     ids:        [..]user_types.entity_id_type;
     allocator: Allocator;
+    initialized: bool;
 }
 
 Component_Array_Iteration :: struct($component_type: Type) {
@@ -42,6 +43,8 @@ component_array_init :: (array: *Component_Array, size: int) {
 
     // saving allocator if user wants to free later
     array.allocator = context.allocator;
+
+    array.initialized = true;
 }
 
 component_array_add :: (array: *Component_Array, id: user_types.entity_id_type) {

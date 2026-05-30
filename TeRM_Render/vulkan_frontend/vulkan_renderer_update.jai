@@ -22,11 +22,13 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     defer array_reset_keeping_memory(*skinned_mesh_draws);
     defer array_reset_keeping_memory(*line_draws);
     defer array_reset_keeping_memory(*in_front_line_draws);
+    defer array_reset_keeping_memory(*transparent_in_front_line_draws);
     defer array_reset_keeping_memory(*skinning_joints);
     defer array_reset_keeping_memory(*prepared_opaque_static_mesh_draw_commands);
     defer array_reset_keeping_memory(*prepared_opaque_skinned_mesh_draw_commands);
     defer array_reset_keeping_memory(*prepared_line_draw_batches);
     defer array_reset_keeping_memory(*prepared_in_front_line_draw_batches);
+    defer array_reset_keeping_memory(*prepared_transparent_in_front_line_draw_batches);
     defer array_reset_keeping_memory(*mesh_draw_specializations);
 
     for < *timed_in_front_line_draws {
@@ -78,6 +80,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
 
     per_frame_uniform: Per_Frame_Uniform_Buffer;
     {
+        // todo: do math to make it so z buffer overlap doesn't happen or is easy to avoid
         projection_matrix_game   := make_camera_projection_matrix(camera_info, viewport, 0.       , 0.5);
         projection_matrix_layer5 := make_camera_projection_matrix(camera_info, viewport, 0.5000001, 0.6);
         projection_matrix_layer4 := make_camera_projection_matrix(camera_info, viewport, 0.6000001, 0.7);
@@ -105,8 +108,9 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     prepare_draw_meshes(cmd, current_frame, static_mesh_draws);
     prepare_draw_meshes(cmd, current_frame, skinned_mesh_draws);
     prepare_draw_billboard_particles(cmd, current_frame);
-    prepare_draw_lines(cmd, current_frame, true);
-    prepare_draw_lines(cmd, current_frame, false);
+    prepare_draw_lines(cmd, current_frame, true, false);
+    prepare_draw_lines(cmd, current_frame, false, false);
+    prepare_draw_lines(cmd, current_frame, true, true);
 
     add_buffer_transfer_barrier(cmd);
 

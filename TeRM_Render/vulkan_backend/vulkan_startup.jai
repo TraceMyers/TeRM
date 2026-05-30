@@ -583,7 +583,11 @@ create_default_pipelines :: () -> bool {
         };
         draw_in_front_opaque_line_pipeline = build_pipeline(*build_info);
 
+        build_info.color_blend.attachment.blendEnable = VK_TRUE;
+        draw_in_front_transparent_line_pipeline = build_pipeline(*build_info);
+
         build_info.name = "opaque line pipeline";
+        build_info.color_blend.attachment.blendEnable = VK_FALSE;
         build_info.depth_stencil.create.depthTestEnable = VK_TRUE;
         opaque_line_pipeline = build_pipeline(*build_info);
     }

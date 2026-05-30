@@ -1,12 +1,30 @@
-COLOR4F_WHITE         :: Color4f.{1,1,1,1};
-COLOR4F_BLACK         :: Color4f.{0,0,0,1};
-COLOR4F_RED           :: Color4f.{1,0,0,1};
-COLOR4F_GREEN         :: Color4f.{0,1,0,1};
-COLOR4F_BLUE          :: Color4f.{0,0,1,1};
-COLOR4F_YELLOW        :: Color4f.{1,1,0,1};
-COLOR4F_CYAN          :: Color4f.{0,1,1,1};
-COLOR4F_MAGENTA       :: Color4f.{1,0,1,1};
-COLOR4F_BRIGHT_PURPLE :: Color4f.{0.65, 0.1, 0.82, 1};
+using Default_Color_Palette :: struct {
+    COLOR4F_WHITE         :: Color4f.{1,1,1,1};
+    COLOR4F_BLACK         :: Color4f.{0,0,0,1};
+    COLOR4F_RED           :: Color4f.{1,0,0,1};
+    COLOR4F_GREEN         :: Color4f.{0,1,0,1};
+    COLOR4F_BLUE          :: Color4f.{0,0,1,1};
+    COLOR4F_YELLOW        :: Color4f.{1,1,0,1};
+    COLOR4F_CYAN          :: Color4f.{0,1,1,1};
+    COLOR4F_MAGENTA       :: Color4f.{1,0,1,1};
+    COLOR4F_BRIGHT_PURPLE :: Color4f.{0.65, 0.1, 0.82, 1};
+}
+
+// generate 32 bit colors from float colors
+#insert #run -> string {
+    tinfo := cast(*Type_Info_Struct) type_info(Default_Color_Palette);
+    builder: String_Builder;
+    for member : tinfo.members {
+        constant_value := cast(*Color4f) *tinfo.constant_storage[member.offset_into_constant_storage];
+        _32bit_color_name := replace(member.name, "4F", "4B",, temp);
+        r := alter_cast(constant_value.r, u8, true, true);
+        g := alter_cast(constant_value.g, u8, true, true);
+        b := alter_cast(constant_value.b, u8, true, true);
+        a := alter_cast(constant_value.a, u8, true, true);
+        print(*builder, "% :: Color4b.{%,%,%,%};\n", _32bit_color_name, r, g, b, a);
+    }
+    return builder_to_string(*builder);
+};
 
 GREY_FACTORS :: Color3f.{0.2126, 0.7152, 0.0722};
 
@@ -492,6 +510,7 @@ ONE_SIXTH :: 1.0 / 6.0;
 
 #import "Basic";
 #import "Random";
+#import "String";
 #import "Math";
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_Array";

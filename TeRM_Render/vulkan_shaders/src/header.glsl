@@ -38,7 +38,8 @@ struct Billboard_Instance {
     vec2 scale;
     vec2 uv_offset;
     vec2 uv_scale;  
-    uint texture_index; float _pad1;
+    uint texture_index; 
+    int layer;
 };
 
 struct Mesh_Section_Shader_Data {

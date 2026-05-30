@@ -6,8 +6,12 @@ Physical_World :: struct {
     body_data: Physics_Body_SOA;
 
     step_state: Physics_Step_State;
-    time_accumulator: float;
     collision_iteration_count := 5;
+
+    start_time: float64;
+    update_timestamp: float64;
+    time_scale: float32;
+    step_count: int;
 
     #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
         debug_template_properties: [..]Physics_Properties;

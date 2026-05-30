@@ -60,6 +60,7 @@ Physics_Body_Flags :: enum_flags u32 {
     UPRIGHT;
     CALCULATED_AXES;
     CALCULATED_LINEAR_SPEED;
+    SKIP_UPDATE;
 }
 
 PER_STEP_PHYSICS_BODY_FLAGS : Physics_Body_Flags : .CALCULATED_AXES | .CALCULATED_LINEAR_SPEED;
@@ -201,7 +202,7 @@ calculate_axes :: (body: *Physics_Body_Base) {
     body.z_axis = normalize(cross(body.x_axis, body.y_axis));
 
     flags := get_flags(body) | .CALCULATED_AXES;
-    if abs(body.z_axis.x) < VERY_SMALL_NUMBER && abs(body.z_axis.y) < VERY_SMALL_NUMBER && abs(body.z_axis.z - 1) <= VERY_SMALL_NUMBER {
+    if abs(body.z_axis.x) <= VERY_SMALL_NUMBER && abs(body.z_axis.y) <= VERY_SMALL_NUMBER && abs(body.z_axis.z - 1) <= VERY_SMALL_NUMBER {
         flags |= .UPRIGHT;
     } else {
         flags &= ~.UPRIGHT;

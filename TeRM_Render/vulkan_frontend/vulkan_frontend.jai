@@ -265,6 +265,7 @@ Particle_Draw :: struct {
     color: Color4b = #run to_color4b(COLOR4F_WHITE);
     scale: float = 1.0;
     texture_index: s16 = -1;
+    layer: Draw_Layer;
 }
 
 Texture_Ref :: struct {
@@ -517,7 +518,8 @@ Billboard_Instance :: struct {
     scale:         Vector2; 
     uv_offset:     Vector2;
     uv_scale:      Vector2; 
-    texture_index: u32;     _pad1: float32;
+    texture_index: u32;
+    layer: Draw_Layer;
 }
 
 Per_Frame_Uniform_Buffer :: struct {

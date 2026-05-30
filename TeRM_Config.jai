@@ -1,4 +1,6 @@
 // string buffer has static allocation to make loading simpler. this must be called.
+// this is not done automatically because you should be intentional about what allocator
+// you call this procedure with.
 init_config :: (max_byte_count_for_all_strings := 8192) {
     // would cause issues since temp is assumed to be free-able during load
     assert(context.allocator.proc != temp.proc);
@@ -40,7 +42,7 @@ load_config :: (filename: string, data: *$T, shrink_strings_buffer := true) -> [
     
     load_data: Load_Data;
     table_init(*load_data.table, 512,, temp);
-    no_inline load_items(file_data, *load_data.table);
+    no_inline parse_file(file_data, *load_data.table);
 
     // not inlining to avoid code bloat
     no_inline struct_visit(data, *load_data, xx load_config_visitor, VISIT_OPTIONS);
@@ -76,7 +78,7 @@ Load_Data :: struct {
     strings: [..]*string;
 }
 
-load_items :: (file_data: string, table: *Linear_Table(string, Config_Item)) {
+parse_file :: (file_data: string, table: *Linear_Table(string, Config_Item)) {
     chirp_warning :: (line: string) {
         log("WARNING: improperly formatted config file line %", line);
     }
@@ -207,6 +209,7 @@ load_config_visitor :: (visit: *Struct_Visit, load_data: *Load_Data) -> Struct_V
             array_resize(*string_buffer, string_buffer.count + str.count);
             memcpy(str.data, item.values[0].data, str.count);
         }
+        return .CONTINUE;
     case .STRUCT;
         info_struct := cast(*Type_Info_Struct) visit.info;
         float_count: int;
@@ -286,6 +289,7 @@ save_config_visitor :: (visit: *Struct_Visit, save_data: *Save_Data) -> Struct_V
     case .STRING;
         str := cast(*string) visit.data;
         print(*save_data.file_builder, "% = %\n", view_string(visit.path), str.*);
+        return .CONTINUE;
     case .STRUCT;
         info_struct := cast(*Type_Info_Struct) visit.info;
         if info_struct.name == {
@@ -323,7 +327,7 @@ string_buffer: [..]u8;
 // 10.001 means the number of significant digits was N was 5
 // 10^(N-2) = 10^3 = 1,000
 // 10.000997 / 1,000 = 0.00100009997
-// is 0.000003 > 0.0010000997? no? insignificant change. trust the true value x, assuming the text was not changed.
+// is 0.000003 > 0.0010000997? no, so it's an insignificant change. trust the true value x, assuming the text was not changed.
 PRINT_FLOAT_SIGNIFICANT_DIGITS :: 6;
 LOAD_FLOAT_ERROR_FACTOR :: #run -> float {
     assert(PRINT_FLOAT_SIGNIFICANT_DIGITS >= 2);

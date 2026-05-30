@@ -1250,6 +1250,24 @@ sample :: (array: []$T, state: *Random_State = null) -> T {
     return array[i];
 }
 
+random_vector :: (x_range: Vector2, y_range: Vector2, z_range: Vector2, state: *Random_State = null) -> Vector3 {
+    x, y, z: float;
+    if state {
+        x = random_get_zero_to_one(state);
+        y = random_get_zero_to_one(state);
+        z = random_get_zero_to_one(state);
+    } else {
+        x = random_get_zero_to_one();
+        y = random_get_zero_to_one();
+        z = random_get_zero_to_one();
+    }
+    return {
+        respace(x, {0, 1}, x_range),
+        respace(y, {0, 1}, y_range),
+        respace(z, {0, 1}, z_range)
+    };
+}
+
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :Misc
 

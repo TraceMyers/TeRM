@@ -11,6 +11,7 @@ draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
     billboard_instance.uv_scale      = {1,1};
     billboard_instance.tint          = to_color4f(draw.color);
     billboard_instance.texture_index = xx draw.texture_index;
+    billboard_instance.layer         = draw.layer;
 }
 
 add_specialization_to_last_static_mesh_draw :: (renderer: *Renderer, specialization: Mesh_Specialization_Params) {

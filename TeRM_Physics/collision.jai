@@ -34,6 +34,7 @@ set_collider :: (in_body: *Physics_Body_Base, collider: Physics_Collider) {
     make_collider_unique(in_body);
     body := cast(*Physics_Body_Internal) in_body;
     body.collider.* = collider;
+    body.collider.initialized = true;
 }
 
 is_unique :: inline (collider: *Physics_Collider) -> unique: bool, unique_index: s32 {

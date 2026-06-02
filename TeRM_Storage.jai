@@ -189,6 +189,16 @@ pool_reset :: (using pool: *Pool($T), deinit_item_proc: (*T) = null) {
     top = -1;
 }
 
+pool_reset_keeping_memory :: (using pool: *Pool($T), deinit_item_proc: (*T) = null) {
+    if deinit_item_proc != null {
+        for *(pool.*) {
+            deinit_item_proc(it);
+        }
+    }
+    clear_all_bits(*in_use);
+    top = -1;
+}
+
 pool_acquire :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavior := Pool_Resize_Behavior.DEFAULT) -> s64 {
     index: s64 = -1;
 
@@ -204,7 +214,11 @@ pool_acquire :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavi
             assert(top < items.allocated);
             items.count = top + 1;
         }
-        items[index] = {};
+        #if type_info(T).type == .STRUCT {
+            items[index] = {};
+        } else {
+            items[index] = 0;
+        }
         if init_item_proc then init_item_proc(*items[index]);
         return index;
     }
@@ -220,7 +234,11 @@ pool_acquire :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavi
     new_item_count := max(items.count * 2, 8);
     pool_set_capacity(pool, new_item_count);
     set_bit(*in_use, index);
-    items[index] = {};
+    #if type_info(T).type == .STRUCT {
+        items[index] = {};
+    } else {
+        items[index] = 0;
+    }
     if init_item_proc then init_item_proc(*items[index]);
 
     return index;
@@ -624,6 +642,13 @@ table_init :: (table: *CT_Table, reserve_count := 256) {
         it.* = -1;
     }
     pool_init(*table.kv_containers, reserve_count);
+}
+
+table_reset_keeping_memory :: (table: *CT_Table) {
+    for *table.masked_hash_to_index {
+        it.* = -1;
+    }
+    pool_reset_keeping_memory(*table.kv_containers);
 }
 
 table_set :: (table: *CT_Table, key: table.key_type, value: table.value_type, edit_if := Table_Edit_Condition.ADD_OR_CHANGE) -> made_edit: bool, added_item: bool {

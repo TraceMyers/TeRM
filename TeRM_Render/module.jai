@@ -29,7 +29,8 @@ should_recreate_swapchain: bool;
 
 scope_set_renderer :: (in_renderer: *Renderer) #expand {
     context.renderer = in_renderer;
-    `defer context.renderer = null;
+    `prev_renderer := context.renderer;
+    `defer context.renderer = prev_renderer;
 }
 
 #if OS == .WINDOWS {
@@ -46,6 +47,7 @@ scope_set_renderer :: (in_renderer: *Renderer) #expand {
 #import "stb_image";
 #import "Input";
 
+#import "TeRM/TeRM_Allocation";
 #import "TeRM/TeRM_Scope";
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Array";

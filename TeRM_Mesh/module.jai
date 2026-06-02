@@ -271,8 +271,8 @@ Texture :: struct {
     min_filter: Texture_Filter;
     horizontal_wrap: Texture_Wrap;
     vertical_wrap:   Texture_Wrap;
-    local_buffer: s16;
-    global_buffer: s16;
+    local_buffer: s16 = -1;
+    global_buffer: s16 = -1;
 }
 
 Material :: struct {
@@ -597,12 +597,15 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
 }
 
 #load "animation.jai";
+#load "convex.jai";
 
 #import "Basic";
 #import "File";
 #import "Math";
 #import "Hash";
+#import "Bit_Array";
 #import "stb_image";
+
 #import "TeRM/TeRM_Color";
 #import "TeRM/TeRM_Allocation";
 #import "TeRM/TeRM_Scope";

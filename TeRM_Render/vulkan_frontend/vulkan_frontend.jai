@@ -149,6 +149,7 @@ MAX_STATIC_MESHES :: 128_000;
 MAX_SKINNED_MESHES :: 64_000;
 MAX_SKINNING_JOINTS :: MAX_SKINNED_MESHES * 8;
 MAX_GPU_HEAPS :: 128;
+MAX_UNIQUE_MESHES :: 1_000;
 
 Line_Draw_Batch :: struct {
     buffer: GPU_Buffer;
@@ -286,6 +287,7 @@ Mesh_Ref :: struct {
     path: string;
     index: int;
     playback: []Skeletal_Animation_Playback_Info;
+    do_not_load_at_startup: bool;
 }
 
 Render_Init_Options :: struct {
@@ -560,6 +562,7 @@ Mesh_Import_Types :: struct {
 #load "vulkan_renderer_update.jai";
 #load "vulkan_draw_interface.jai";
 #load "vulkan_dev_gui.jai";
+#load "vulkan_mesh.jai";
 
 #scope_module
 

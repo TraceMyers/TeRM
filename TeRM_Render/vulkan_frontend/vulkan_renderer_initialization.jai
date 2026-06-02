@@ -66,6 +66,9 @@ HERE,
     pool_init(*gpu_heap_pool, MAX_GPU_HEAPS,     true);
     pool_init(*image_pool,    max_texture_count, true);
     pool_init(*materials,     MAX_MATERIALS,     true);
+
+    array_reserve(*meshes, MAX_UNIQUE_MESHES);
+    meshes.allocator = no_allocator;
     
     run_init_proc(create_vk_instance);
     run_init_proc(create_surface);

@@ -1,61 +1,52 @@
-Physics_Collider :: struct {
-    using shape_data: union {
-        // the first field in every Shape struct is half_height (or radius for sphere, same thing).
-        // it can be read from the shape itself or directly from the collider due to the fields being aligned.
-        half_height:  float32;
-        circle:       Shape_Circle;
-        rectangle:    Shape_Rectangle;
-        cylinder:     Shape_Cylinder;
-        box:          Shape_Box;
-        pillbox:      Shape_Pillbox;
-        sphere:       Shape_Sphere;
-        capsule:      Shape_Capsule;
-        convex:       Shape_Convex;
-    };
-    shape:    Physics_Shape;
-    // PADDING 3
-    channels: Collision_Channel;
+Physics_Contact :: struct {
+    a_local_space_contact_point:  Vector3;
+    b_local_space_contact_point:  Vector3;
+    a_world_space_surface_normal: Vector3;
+    b_world_space_surface_normal: Vector3;
+    contact_normal: Vector3;
+    contact_time: float;
+    // only if contact_time is negative one
+    overlap: float;
 }
 
-Collision_Mesh : struct {
-    points: []Vector3;
-    triangle_type: Physics_Shape = .TRIANGLE_U16;
-    triangles: union {
-        _u16: []Shape_Triangle_U16;
-        _u32: []Shape_Triangle_U32 = ---;
-    };
-}
-
-get_collider :: inline (in_body: *Physics_Body_Base) -> Physics_Collider {
-    return (cast(*Physics_Body_Internal) in_body).collider;
-}
-
-set_collider :: (in_body: *Physics_Body_Base, collider: Physics_Collider) {
-    make_collider_unique(in_body);
-    body := cast(*Physics_Body_Internal) in_body;
-    body.collider.* = collider;
-    body.collider.initialized = true;
-}
-
-is_unique :: inline (collider: *Physics_Collider) -> unique: bool, unique_index: s32 {
+solve_contact_sphere_sphere :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal, contact: *Physics_Contact) -> bool {
+    assert(body_a.collider.shape == .SPHERE && body_b.collider.shape == .SPHERE);
     using world;
-    unique_index := collider - unique_colliders.items.data;
-    if unique_index >= 0 && unique_index < unique_colliders.items.count {
-        assert(is_pool_item_in_use(*unique_colliders, unique_index));
-        return true, xx unique_index;
-    }
-    assert(is_data_from_template(xx collider));
-    return false, -1;
-}
 
-make_collider_unique :: inline (in_body: *Physics_Body_Base) {
-    body := cast(*Physics_Body_Internal) in_body;
-    if !is_unique(body.collider) {
-        new_collider_index := pool_acquire(*world.unique_colliders);
-        new_collider := *world.unique_colliders[new_collider_index];
-        new_collider.* = body.collider.*;
-        body.collider = new_collider;
+    radius_sum       := body_a.collider.sphere.radius + body_b.collider.sphere.radius;
+
+    cur_position_diff = body_b.next_position - body_a.next_position;
+    cur_distance_sq  := length_squared(cur_position_diff);
+
+    if cur_distance_sq <= square(radius_sum) {
+        contact.a_local_space_contact_point  = {z= 1}
+        contact.b_local_space_contact_point  = {z=-1}
+        contact.a_world_space_surface_normal = {z= 1}
+        contact.b_world_space_surface_normal = {z=-1}
+        contact.contact_normal               = {z= 1};
+        contact.contact_time                 = -1;
+        contact.overlap                      = radius_sum;
+        return true;
     }
+
+    // worked out on paper but I'm usually wrong the first time
+    // t = (r1 + r2 - len(d) - dhat * px1 + dhat * px2) / (dhat * vx1 - dhat * vx2)
+    cur_distance          := sqrt(cur_distance_sq);
+    contact.contact_normal = cur_position_diff / cur_distance;
+    dhat_px1              := dot(body_a.next_position,   contact.normal);
+    dhat_px2              := dot(body_b.next_position,   contact.normal);
+    dhat_vx1              := dot(body_a.linear_velocity, contact.normal);
+    dhat_vx2              := dot(body_b.linear_velocity, contact.normal);
+    contact.contact_time   = (radius_sum - cur_distance - dhat_px1 + dhat_px2) / (dhat_vx1 - dhat_vx2);
+
+    if contact.contact_time >= 0 && contact.contact_time <= delta_time {
+        contact.a_local_space_contact_point  = rotate(contact.contact_normal, conjugate(body_a.next_rotation));
+        contact.b_local_space_contact_point  = rotate(contact.contact_normal, conjugate(body_b.next_rotation));
+        contact.a_world_space_surface_normal =  contact.contact_normal;
+        contact.b_world_space_surface_normal = -contact.contact_normal;
+        contact.overlap                      = 0;
+        return true;
+    } else return false;
 }
 
 // Copyright (c) 2026 Trace Myers

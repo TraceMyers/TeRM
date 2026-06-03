@@ -612,6 +612,7 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
 #import "TeRM/TeRM_Metaprogram";
 #import "TeRM/TeRM_Array";
 #import "TeRM/TeRM_Math";
+#import "TeRM/TeRM_Storage";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

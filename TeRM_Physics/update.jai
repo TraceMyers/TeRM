@@ -51,7 +51,9 @@ update_physics :: (in_time_scale: float) -> int {
 // if consecutive_step_index is 0, some extra initialization is done, as well
 // as (todo) warm starting
 run_physics_step :: (consecutive_step_index: int = 0) {
-    delta_time := physics_delta_time();
+    using world;
+
+    delta_time = physics_delta_time();
 
     for *body, bi : world.body_data.bodies {
         if (get_flags(body) & .SKIP_UPDATE) != 0 {

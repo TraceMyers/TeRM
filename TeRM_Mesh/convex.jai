@@ -2,7 +2,7 @@ create_convex_mesh :: (in_mesh: *Mesh, make_indices := true) -> Mesh {
     convex: Mesh;
     // for now, only static meshes
     for in_mesh.sections {
-        assert(section.vertices.type == .STATIC);
+        assert(it.vertices.type == .STATIC);
     }
     create_convex_mesh_impl(in_mesh, *convex, Static_Mesh_Vertex, make_indices);
     return convex;
@@ -14,7 +14,7 @@ create_convex_mesh :: (in_mesh: *Mesh, make_indices := true) -> Mesh {
 // at once. thought of a triangle-aware algorithm I think will work.
 create_convex_mesh_impl :: (in_mesh: *Mesh, convex: *Mesh, $vertex_type: Type, make_indices: bool) {
     greatest_triangle_count: int;
-    new_indices := make_dynamic_array([..]u32, in_mesh.sections,, temp);
+    new_indices := make_dynamic_array([..]u32, in_mesh.sections.count,, temp);
 
     for *new_indices {
         it.allocator = temp;
@@ -44,7 +44,7 @@ create_convex_mesh_impl :: (in_mesh: *Mesh, convex: *Mesh, $vertex_type: Type, m
             clear_all_bits(*triangle_removed);
             table_reset_keeping_memory(*edges);
         }
-        memset(tri_neighbors.data, 0xff, size_of(tri_neighbors[0]) * tri_neighbors.count);
+        memset(tri_neighbors.data, 0xff, size_of(type_of(tri_neighbors[0])) * tri_neighbors.count);
 
         section_triangle_count := section.indices.count / 3;
         for i : 0..section_triangle_count - 1 {
@@ -164,18 +164,18 @@ try_meet_neighbor :: (this_tri: int, this_edge: int, edge_a: u32, edge_b: u32) #
         neighbor_tri  := ab_edge.*[0];
         neighbor_edge := ab_edge.*[1];
         `tri_neighbors[this_tri]    [this_edge]     = xx neighbor_tri;
-        `tri_neighbors[neighbor_tri][neighbor_edge] = xx i;
+        `tri_neighbors[neighbor_tri][neighbor_edge] = xx this_tri;
     }
 }
 
 get_triangle :: inline (using tri: *Triangle, i: int, indices: *Mesh_Index_Buffer, vertices: []$vertex_type) {
-    a = get_tri_vert_index(*section.indices, i + 0);
-    b = get_tri_vert_index(*section.indices, i + 1);
-    c = get_tri_vert_index(*section.indices, i + 2);
+    a = get_tri_vert_index(indices, i + 0);
+    b = get_tri_vert_index(indices, i + 1);
+    c = get_tri_vert_index(indices, i + 2);
 
-    av := *vertices[array_order.a].position;
-    bv := *vertices[array_order.b].position;
-    cv := *vertices[array_order.c].position;
+    av := *vertices[a].position;
+    bv := *vertices[b].position;
+    cv := *vertices[c].position;
 
     ab := bv.* - av.*;
     ac := cv.* - av.*;
@@ -189,9 +189,10 @@ calc_ascending :: inline (using tri: *Triangle) {
 }
 
 Triangle :: struct {
-    using indices: struct {
-        a, b, c: u32;
-    }
+    array: [3]u32;
     normal: Vector3; // not normalized
-    #overlay(indices) array: [3]u32;
+
+    #overlay(array[0]) a: u32;
+    #overlay(array[1]) b: u32;
+    #overlay(array[2]) c: u32;
 }

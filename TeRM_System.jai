@@ -93,7 +93,28 @@ clear_console :: () {
     }
 }
 
-// ---------------------------- shennanigans
+accurate_wait :: (ms: float) -> float {
+    time := seconds_since_init();
+
+    new_time := time;
+    ms_spent := 0.0;
+    
+    ms_flat := cast(float) (cast(int) (ms - 0.25));
+    while ms_spent < ms_flat {
+        sleep_milliseconds(1);
+        new_time = seconds_since_init();
+        ms_spent = xx ((new_time - time) * 1000.0);
+    }
+
+    while ms_spent < ms {
+        new_time = seconds_since_init();
+        ms_spent = xx ((new_time - time) * 1000.0);
+    }
+
+    return ms_spent;
+}
+
+// ---------------------------- below is only shennanigans
 
 Console_Text_Image :: struct {
     // row first, so [y][x]

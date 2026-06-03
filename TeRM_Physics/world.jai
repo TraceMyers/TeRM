@@ -13,6 +13,8 @@ Physical_World :: struct {
     time_scale: float32;
     step_count: int;
 
+    delta_time: float32;
+
     #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
         debug_template_properties: [..]Physics_Properties;
     }

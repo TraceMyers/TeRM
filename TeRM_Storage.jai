@@ -627,10 +627,10 @@ CT_Table_KV_Container :: struct($value_type: Type) {
     next: s32 = -1;
 }
 
-CT_Table :: struct($key_type: Type, $value_type: Type, $lookup_table_size := 8192) {
+CT_Table :: struct($key_type: Type, $value_type: Type, $use_simple_key_hash := true, $lookup_table_size := 8192) {
     using #as base: Table_Base(key_type, value_type, use_simple_key_hash);
     masked_hash_to_index: [lookup_table_size]s32;
-    kv_containers: Pool(CT_Table_KV_Container);
+    kv_containers: Pool(CT_Table_KV_Container(value_type));
 
     #run assert(is_power_of_two(lookup_table_size));
     #run assert(lookup_table_size >= 8);
@@ -658,13 +658,13 @@ table_set :: (table: *CT_Table, key: table.key_type, value: table.value_type, ed
     added_item: bool;
 
     if existing_value != null {
-        #if edit_if == .ONLY_CHANGE || edit_if == .ADD_OR_CHANGE {
+        if edit_if == .ONLY_CHANGE || edit_if == .ADD_OR_CHANGE {
             existing_value.* = value;
 
             made_edit = true;
         }
     } else {
-        #if edit_if == .ONLY_ADD || edit_if == .ADD_OR_CHANGE {
+        if edit_if == .ONLY_ADD || edit_if == .ADD_OR_CHANGE {
             container_index : s32 = xx pool_acquire(*table.kv_containers);
             if searched_up_to_index == -1 {
                 // container list is empty
@@ -672,10 +672,10 @@ table_set :: (table: *CT_Table, key: table.key_type, value: table.value_type, ed
                 table.masked_hash_to_index[lut_i] = container_index;
             } else {
                 // append to end of container list
-                kv_containers[searched_up_to_index].next = container_index;
+                table.kv_containers[searched_up_to_index].next = container_index;
             }
 
-            new_container := *kv_containers[container_index];
+            new_container := *table.kv_containers[container_index];
             new_container.key_hash = key_hash;
             new_container.value = value;
             new_container.prev = searched_up_to_index;
@@ -703,9 +703,9 @@ table_get_by_key_hash :: (table: *CT_Table, key_hash: u32) -> value: *table.valu
     container := *table.kv_containers[itm_i];
     assert(container.prev == -1);
 
-    ITER_MAX :: kv_containers.count;
     i := 0;
-    while i < ITER_MAX {
+    iter_max := table.kv_containers.items.count;
+    while i < iter_max {
         defer i += 1;
         if container.key_hash == key_hash    then return *container.value, itm_i;
         if container.next == -1              then break;

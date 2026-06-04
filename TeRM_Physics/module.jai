@@ -36,6 +36,7 @@ Raycast_Channel :: enum_flags u32 {
 #load "properties.jai";
 #load "world.jai";
 #load "collision.jai";
+#load "collider.jai";
 #load "raycast.jai";
 #load "raycast_simple.jai";
 #load "shape.jai";
@@ -45,6 +46,7 @@ Raycast_Channel :: enum_flags u32 {
 #load "overlap.jai";
 #load "convex.jai";
 #load "config.jai";
+#load "friction.jai";
 
 #scope_module
 

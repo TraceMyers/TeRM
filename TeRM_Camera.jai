@@ -208,6 +208,27 @@ get_window_position_from_camera_ray :: (using camera: Camera_Info, camera_center
     }
 }
 
+Draw_Plane :: struct {
+    centerline_distance: float;    
+    half_plane_height: float;
+    half_plane_width:  float;
+}
+
+make_draw_plane :: (camera: Camera_Info, viewport: Vector2, distance: float) -> Draw_Plane {
+    draw_plane := Draw_Plane.{centerline_distance=distance}; 
+    vt_fov := camera.perspective_vertical_fov;
+    hz_fov := get_camera_perspective_horizontal_fov(camera, viewport);
+    draw_plane.half_plane_height = distance * tan(0.5 * vt_fov * (PI / 180));
+    draw_plane.half_plane_width  = distance * tan(0.5 * hz_fov * (PI / 180));
+    return draw_plane;
+}
+
+// 0,0 -> bottom left
+get_point_on_draw_plane :: (draw_plane: Draw_Plane, camera: Camera_Info, camera_center: Vector3, camera_fore: Vector3, camera_up: Vector3, norm_point: Vector2) -> Vector3 {
+    camera_right := cross(camera_up, camera_fore);
+    return camera_center + camera_fore * draw_plane.centerline_distance - camera_right * ((norm_point.x-0.5) * 2 * draw_plane.half_plane_width) + camera_up * ((norm_point.y-0.5) * 2 * draw_plane.half_plane_height);
+}
+
 #scope_file
 
 WORLD_AXIS_FORE  :: Vector3.{0, 1, 0};

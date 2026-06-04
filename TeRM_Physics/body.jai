@@ -5,7 +5,7 @@ Physics_Body_Internal :: Physics_Body_Base(Physics_Properties, Physics_Collider)
 
 Physics_Body_Base :: struct($properties_type: Type, $collider_type: Type) {
     linear_velocity: Vector3;
-    angular_velocity: Vector3;
+    angular_velocity: Vector3; //ehhhh
 
     prev_position: Vector3;
     next_position: Vector3;

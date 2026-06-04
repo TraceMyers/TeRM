@@ -11,7 +11,7 @@
 // Smoothing
 // Clamp
 // Lines
-// Trigonometry and Trig Helpers
+// Trigonometry and Exponentials
 // Wrap
 // Power of 2 Related
 // Conversion, Rounding and Respace
@@ -651,7 +651,7 @@ distance_squared_from_line :: inline (point: Vector3, seg_beg: Vector3, seg_end:
 }
 
 // -----------------------------------------------------------------------------------
-// ---------------------------------------------------- :Trigonometry and Trig Helpers
+// ---------------------------------------------------- :Trigonometry and Exponentials
 
 log_with_base :: (x: float, $base: float) -> float {
     INV_LOG_OF_BASE :: #run 1.0 / log(base);
@@ -731,6 +731,30 @@ sin_cos :: inline (x: float32) -> sin_x: float32, cos_x: float32 {
 	pos_val_sin := (((((-0.000000023889859 * x2 + 0.0000027525562) * x2 - 0.00019840874) * x2 + 0.0083333310) * x2 - 0.16666667) * x2 + 1.0) * x1;
 	pos_val_cos := ((((-0.00000026051615 * x2 + 0.000024760495) * x2 - 0.0013888378) * x2 + 0.041666638) * x2 - 0.5) * x2 + 1.0;
     return pos_val_sin * sin_sign, pos_val_cos * cos_sign;
+}
+
+// convenience wrapper for exp_approx_with_positive_x.
+exp_approx :: inline (x: float) -> float {
+    if x < 0 {
+        return 1.0 / exp_approx_with_positive_x(-x);
+    } else {
+        return exp_approx_with_positive_x(x);
+    }
+}
+
+// linearization of e^x between each e(x) = 2^(x/ln(2))
+// x must be positive for this to work
+exp_approx_with_positive_x :: inline (x: float) -> float {
+    ONE_OVER_LOG_2 :: #run 1.0 / log(2.0);
+
+    power := x * ONE_OVER_LOG_2;
+    power_int := cast(int) power;
+    power_remainder := power - cast(float) power_int;
+
+    value_lower := 1 << power_int;
+    value_upper := 1 << (power_int + 1);
+    
+    return value_lower + cast(float) (value_upper - value_lower) * power_remainder;
 }
 
 // -----------------------------------------------------------------------------------

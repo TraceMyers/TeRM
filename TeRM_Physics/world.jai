@@ -22,10 +22,19 @@ Physical_World :: struct {
     gravity := 9.8;
 
     allocator: Allocator;
+
+    contact_grid: CT_Table(u32, Collision_Cell, true, 1024);
+    contact_grid_cell_allocator: Super_Allocator;
+
+    world_width := 1024.0;
+    world_center_2d := Vector2.{0, 0};
+    collision_grid_scale := 1.0;
 }
 
 create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique_properties_max := 4096, unique_colliders_max := 32768) -> Physical_World {
     out_world: Physical_World;
+
+    assert(bodies_max < 65536); // using u16's as body indexes internally
 
     table_init(*out_world.body_templates, body_templates_max, true);
     pool_init(*out_world.unique_properties, unique_properties_max, true);
@@ -35,6 +44,10 @@ create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique
         soa_reserve(*out_world.body_data, bodies_max);
     }
     soa_set_allocator(*out_world.body_data, no_allocator);
+
+    // note: contact grid allocation is not locked, in case a bug comes of it
+    table_init(*out_world.contact_grid, 65536);
+    initialize_super_allocator(*out_world.contact_grid_cell_allocator, add_chunk_lists=16);
 
     out_world.allocator = context.allocator;
     return out_world;

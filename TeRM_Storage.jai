@@ -637,11 +637,11 @@ CT_Table :: struct($key_type: Type, $value_type: Type, $use_simple_key_hash := t
     #run assert(lookup_table_size < get_max_value(u32));
 }
 
-table_init :: (table: *CT_Table, reserve_count := 256) {
+table_init :: (table: *CT_Table, reserve_count := 256, lock_allocation := false) {
     for *table.masked_hash_to_index {
         it.* = -1;
     }
-    pool_init(*table.kv_containers, reserve_count);
+    pool_init(*table.kv_containers, reserve_count, lock_allocation);
 }
 
 table_reset_keeping_memory :: (table: *CT_Table) {

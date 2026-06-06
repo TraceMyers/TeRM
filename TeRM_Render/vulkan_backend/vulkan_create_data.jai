@@ -90,7 +90,7 @@ begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
         // resolveImageLayout: VkImageLayout;
         loadOp = .CLEAR,
         storeOp = .STORE,
-        clearValue = {color={_float32=COLOR4F_WHITE.array}}
+        clearValue = {color={_float32=clear_color.array}}
     };
 
     depth_attachment := VkRenderingAttachmentInfo.{

@@ -59,22 +59,32 @@ INV_2_PI        :: 1.0 / (2.0 * PI);
 
 COS_0            :: 1.0;
 ALMOST_COS_0     :: COS_PI_OVER_2048;
-COS_PI_OVER_2048 :: 0.9999988; // ~0.09 degrees
-COS_PI_OVER_128  :: 0.9996988;
-COS_PI_OVER_64   :: 0.9987955;
-COS_PI_OVER_32   :: 0.9951847;
-COS_PI_OVER_28   :: 0.9937122;
-COS_PI_OVER_24   :: 0.9914449;
-COS_PI_OVER_20   :: 0.9876883;
-COS_PI_OVER_16   :: 0.9807853;
-COS_PI_OVER_12   :: 0.9659258;
-COS_PI_OVER_8    :: 0.9238795;
-COS_PI_OVER_7    :: 0.9009689;
-COS_PI_OVER_6    :: 0.8660254;
-COS_PI_OVER_5    :: 0.8090170;
-COS_PI_OVER_4    :: 0.7071067;
-COS_PI_OVER_3    :: 0.5;
+COS_PI_OVER_2048 :: #run cos(PI/2048); // ~0.09 degrees
+COS_PI_OVER_128  :: #run cos(PI/128);
+COS_PI_OVER_64   :: #run cos(PI/64);
+COS_PI_OVER_32   :: #run cos(PI/32);
+COS_PI_OVER_28   :: #run cos(PI/28);
+COS_PI_OVER_24   :: #run cos(PI/24);
+COS_PI_OVER_20   :: #run cos(PI/20);
+COS_PI_OVER_16   :: #run cos(PI/16);
+COS_PI_OVER_12   :: #run cos(PI/12);
+COS_PI_OVER_8    :: #run cos(PI/8);
+COS_PI_OVER_7    :: #run cos(PI/7);
+COS_PI_OVER_6    :: #run cos(PI/6);
+COS_PI_OVER_5    :: #run cos(PI/5);
+COS_PI_OVER_4    :: #run cos(PI/4);
+COS_PI_OVER_3    :: #run cos(PI/2);
 COS_PI_OVER_2    :: 0.0;
+
+SIN_PI_OVER_16   :: #run sin(PI/16);
+SIN_PI_OVER_12   :: #run sin(PI/12);
+SIN_PI_OVER_8    :: #run sin(PI/8);
+SIN_PI_OVER_7    :: #run sin(PI/7);
+SIN_PI_OVER_6    :: #run sin(PI/6);
+SIN_PI_OVER_5    :: #run sin(PI/5);
+SIN_PI_OVER_4    :: #run sin(PI/4);
+SIN_PI_OVER_3    :: #run sin(PI/2);
+SIN_PI_OVER_2    :: 1.0;
 
 FloatTypes :: Type.[float32, float64];
 VectorTypes :: Type.[Vector2, Vector3, Vector4, Vector2d, Quaternion];  // Used for type restriction in normalize().
@@ -1155,7 +1165,7 @@ is_point_inside_cylinder :: inline (point: Vector3, cylinder_center: Vector3, cy
 }
 
 // if an AABB were to move, what would the bounding box containing the previous and new AABB be?
-sweep_aabb :: inline  (aabb: AABB, displacement: Vector3) -> AABB {
+sweep_aabb :: inline (aabb: AABB, displacement: Vector3) -> AABB {
     min := aabb.center - aabb.extent;
     max := aabb.center + aabb.extent;
     if displacement.x < 0 then min.x += displacement.x; else max.x += displacement.x;
@@ -1589,8 +1599,16 @@ to_vector2 :: inline (v: Vector2i) -> Vector2 {
     return .{xx v.x, xx v.y};
 }
 
-to_vector2i :: inline (v: Vector2) -> Vector2i {
-    return .{xx v.x, xx v.y};
+to_vector2i :: inline (v: Vector2, $floor_toward_neg_inf := false) -> Vector2i {
+    #if floor_toward_neg_inf {
+        x := v.x;
+        y := v.y;
+        if x < 0 then x -= .9999999;
+        if y < 0 then y -= .9999999;
+        return .{xx x, xx y};
+    } else {
+        return .{xx v.x, xx v.y};
+    }
 }
 
 // -----------------------------------------------------------------------------------

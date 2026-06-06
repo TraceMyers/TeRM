@@ -34,6 +34,8 @@ Renderer :: struct {
 
         window: Window_Type;
 
+        clear_color: Color4f = COLOR4F_WHITE;
+
         vk_instance: VkInstance;
         surface: VkSurfaceKHR;
         physical: Physical_Device;

@@ -47,6 +47,7 @@ Raycast_Channel :: enum_flags u32 {
 #load "convex.jai";
 #load "config.jai";
 #load "friction.jai";
+#load "collision_broad_phase.jai";
 
 #scope_module
 
@@ -58,6 +59,8 @@ world: *Physical_World;
 #import "TeRM/TeRM_Storage";
 #import "TeRM/TeRM_Allocation";
 #import "TeRM/TeRM_Math";
+#import "TeRM/TeRM_Metaprogram";
+#import "TeRM/TeRM_NumberInterpretation";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

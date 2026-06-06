@@ -1,4 +1,3 @@
-
 #run {
     set_build_options_dc({do_output=false});
 
@@ -50,6 +49,26 @@
             log("failed reading input file. exiting.");
             exit(1);
         }
+
+        // find paste directives written into the shader code.
+        // they will be formatted like "## some_file_name", alone on a line.
+        // just find 'some_file_name.glsl' in the src folder and paste the contents.
+        shader_text_rebuilder: String_Builder;
+        for :per_line shader_text {
+            trimmed := trim(it);
+            if begins_with(trimmed, "##") {
+                found_space, left, right := split_from_left(trimmed, " ");
+                filename := tprint("src/%.glsl", right);
+                lines_to_paste, success := read_entire_file(filename,, temp);
+                assert(success);
+                print(*shader_text_rebuilder, "\n%\n", lines_to_paste);
+            } else {
+                print(*shader_text_rebuilder, tprint("%\n", it));
+            }
+        }
+
+        shader_text = builder_to_string(*shader_text_rebuilder);
+
         combined_shader_text := tprint("%\n%", header_text, shader_text);
         write_success := write_entire_file("temp.glsl", combined_shader_text);
         if !write_success {
@@ -83,6 +102,8 @@
 #import "Compiler";
 #import "Process";
 #import "File";
+
+#import "TeRM/TeRM_String";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

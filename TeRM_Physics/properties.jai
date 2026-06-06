@@ -1,9 +1,11 @@
 Physics_Properties :: struct {
     mass:              float = 1.0;
-    inv_mass:          float = 1.0;
     pointing_friction: float = 0.5;
     slide_friction:    float = 0.5;
     move_input_acceleration: float;
+
+    // auto-set
+    inv_mass:          float = 1.0;
 
     call_per_step: (*Physics_Body);
 }

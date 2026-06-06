@@ -74,13 +74,7 @@ void main() {
     tint = vec4(1,1,1,1);
     add_color = vec4(0,0,0,0);
 
-    if (mesh_inst.specialization.specialized) {
-        if (mesh_inst.specialization.flash_rate > 0) {
-            float flash_value = (sin((frame.time - mesh_inst.specialization.flash_begin_time) * mesh_inst.specialization.flash_rate) + 1) * 0.5 * mesh_inst.specialization.flash_value;
-            add_color.rgb = vec3(flash_value, flash_value, flash_value);
-        }
-        tint.rgb = mesh_inst.specialization.tint;
-    }
+    ## mesh_specialization
 
     out_tbn         = mat3(T, B, N);
     out_uv_0        = in_uv_0;

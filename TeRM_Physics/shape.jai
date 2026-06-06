@@ -8,6 +8,7 @@ Physics_Shape :: enum u8 {
     SPHERE;
     CAPSULE;
     CONVEX;
+    // raycast only
     TRIANGLE_U16;
     TRIANGLE_U32;
 }
@@ -74,3 +75,5 @@ Shape_Triangle_U32 :: struct {
     #overlay(indices[2]) c: u32;
 }
 
+// Copyright (c) 2026 Trace Myers
+// Licensed under the MIT License. See LICENSE file in the project root for license information.

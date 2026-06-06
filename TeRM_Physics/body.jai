@@ -18,16 +18,16 @@ Physics_Body_Base :: struct($properties_type: Type, $collider_type: Type) {
     // if the field is not up to date and it is requested through get_...
     // then it will be updated on-demand.
     using per_step: struct {
-        axes: [3]Vector3 = .[{1, 0, 0}, {0, 1, 0}, {0, 0, 1}];
         linear_speed: float;
-
-        #overlay(axes[0]) x_axis:     Vector3;
-        #overlay(axes[1]) y_axis:     Vector3;
-        #overlay(axes[2]) z_axis:     Vector3;
     }
 
     properties: *properties_type;
     collider: *collider_type;
+
+    contact_grid_min_x: s16;
+    contact_grid_min_y: s16;
+    contact_grid_max_x: s16;
+    contact_grid_max_y: s16;
     
     move_input: Vector2;
 
@@ -61,6 +61,8 @@ Physics_Body_Flags :: enum_flags u32 {
     CALCULATED_AXES;
     CALCULATED_LINEAR_SPEED;
     SKIP_UPDATE;
+    APPLY_GRAVITY;
+    PLACED_INTO_CONTACT_GRID;
 }
 
 PER_STEP_PHYSICS_BODY_FLAGS : Physics_Body_Flags : .CALCULATED_AXES | .CALCULATED_LINEAR_SPEED;
@@ -82,6 +84,9 @@ create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.
     body_data.bodies[i].collider    = *template.collider;
     body_data.entity_ids[i]         = entity_id;
 
+    // todo: only if the template calls for it
+    place_into_contact_grid(*body_data.bodies[i]);
+
     return xx *body_data.bodies[i];
 }
 
@@ -102,6 +107,11 @@ destroy_physics_body :: (in_body: *Physics_Body_Base) -> need_repoint: bool, id_
     props_are_unique, unique_index := is_unique(body.properties);
     if props_are_unique {
         pool_release(*unique_properties, unique_index);
+    }
+
+    collider_is_unique:, unique_index = is_unique(body.collider);
+    if collider_is_unique {
+        pool_release(*unique_colliders, unique_index);
     }
 
     if body_index < body_count - 1 {
@@ -139,10 +149,11 @@ accelerate :: inline (body: *Physics_Body_Base, accel: Vector3) {
     }
 }
 
-push :: inline (body: *Physics_Body_Base, force: Vector3) {
+push :: inline (_body: *Physics_Body_Base, force: Vector3) {
     // todo: inv mass and probably that matrix thing I can't remember
+    body := cast(*Physics_Body_Internal) _body;
     if world.step_state != .PAUSED {
-        accel := force * body.inv_mass;
+        accel := force * body.properties.inv_mass;
         body.linear_velocity += accel * PHYSICS_DELTA_TIME;
     }
 }
@@ -159,6 +170,16 @@ add_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
     world.body_data.flags[get_index(body)] |= flags;
 }
 
+has_any_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) -> bool {
+    return (world.body_data.flags[get_index(body)] & flags) != 0;
+}
+
+has_all_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) -> bool {
+    return (world.body_data.flags[get_index(body)] & flags) == flags;
+}
+
+has_flags :: has_all_flags;
+
 remove_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
     world.body_data.flags[get_index(body)] &= ~flags;
 }
@@ -172,43 +193,62 @@ can_rotate :: inline (body: *Physics_Body_Base) -> bool {
     return (world.body_data.flags[get_index(body)] & ALL_AXES_LOCKED) != ALL_AXES_LOCKED;
 }
 
-get_x_axis :: (body: *Physics_Body_Base) -> Vector3 {
-    calculate_axes_if_needed(body);
-    return body.x_axis;
+x_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
+    return get_right_direction(body.next_orientation);
 }
 
-get_y_axis :: (body: *Physics_Body_Base) -> Vector3 {
-    calculate_axes_if_needed(body);
-    return body.y_axis;
+y_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
+    return get_fore_direction(body.next_orientation);
 }
 
-get_z_axis :: (body: *Physics_Body_Base) -> Vector3 {
-    calculate_axes_if_needed(body);
-    return body.z_axis;
+z_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
+    return get_up_direction(body.next_orientation);
 }
+
+get_position :: (_body: *Physics_Body_Base) -> Vector3 {
+    body := cast(*Physics_Body_Internal) _body;
+    alpha := get_physical_entity_transform_alpha();
+    return lerp(body.prev_position, body.next_position, alpha);
+}
+
+
+// get_x_axis :: (body: *Physics_Body_Base) -> Vector3 {
+//     calculate_axes_if_needed(body);
+//     return body.x_axis;
+// }
+
+// get_y_axis :: (body: *Physics_Body_Base) -> Vector3 {
+//     calculate_axes_if_needed(body);
+//     return body.y_axis;
+// }
+
+// get_z_axis :: (body: *Physics_Body_Base) -> Vector3 {
+//     calculate_axes_if_needed(body);
+//     return body.z_axis;
+// }
 
 #scope_module
 
-calculate_axes_if_needed :: inline (body: *Physics_Body_Base) {
-    flags := get_flags(body);
-    if (flags & .CALCULATED_AXES) == 0 {
-        calculate_axes(body, true);
-    }
-}
+// calculate_axes_if_needed :: inline (body: *Physics_Body_Base) {
+//     flags := get_flags(body);
+//     if (flags & .CALCULATED_AXES) == 0 {
+//         calculate_axes(body, true);
+//     }
+// }
 
-calculate_axes :: (body: *Physics_Body_Base) {
-    body.x_axis = get_right_direction(body.next_orientation);
-    body.y_axis = get_fore_direction(body.next_orientation);
-    body.z_axis = normalize(cross(body.x_axis, body.y_axis));
+// calculate_axes :: (body: *Physics_Body_Base) {
+//     body.x_axis = get_right_direction(body.next_orientation);
+//     body.y_axis = get_fore_direction(body.next_orientation);
+//     body.z_axis = normalize(cross(body.x_axis, body.y_axis));
 
-    flags := get_flags(body) | .CALCULATED_AXES;
-    if abs(body.z_axis.x) <= VERY_SMALL_NUMBER && abs(body.z_axis.y) <= VERY_SMALL_NUMBER && abs(body.z_axis.z - 1) <= VERY_SMALL_NUMBER {
-        flags |= .UPRIGHT;
-    } else {
-        flags &= ~.UPRIGHT;
-    }
-    set_flags(body, flags);
-}
+//     flags := get_flags(body) | .CALCULATED_AXES;
+//     if abs(body.z_axis.x) <= VERY_SMALL_NUMBER && abs(body.z_axis.y) <= VERY_SMALL_NUMBER && abs(body.z_axis.z - 1) <= VERY_SMALL_NUMBER {
+//         flags |= .UPRIGHT;
+//     } else {
+//         flags &= ~.UPRIGHT;
+//     }
+//     set_flags(body, flags);
+// }
 
 get_index :: inline (body: *Physics_Body_Base) -> int {
     return cast(*Physics_Body_Internal) body - world.body_data.bodies.data;
@@ -237,8 +277,31 @@ is_data_from_template :: (data: *u8) -> bool {
     return shared_byte_diff >= 0 && shared_byte_diff < shared_byte_end;
 }
 
-#scope_module
+calculate_aabb :: inline (_body: *Physics_Body_Base) -> AABB {
+    body := cast(*Physics_Body_Internal) _body;
+    using body.collider;
 
+    aabb := AABB.{center=body.next_position};
+
+    if shape == {
+    case .CIRCLE;
+        aabb.extent = (abs(x_axis(body)) + abs(y_axis(body))) * circle.radius;
+    case .RECTANGLE;
+        aabb.extent = abs(x_axis(body) * rectangle.half_width) + abs(y_axis(body) * rectangle.half_height);
+    case .CYLINDER;
+        aabb.extent = abs(x_axis(body) * cylinder.radius) + abs(y_axis(body) * cylinder.radius) + abs(z_axis(body) * cylinder.half_height);
+    case .BOX;
+        aabb.extent = abs(x_axis(body) * box.half_width) + abs(y_axis(body) * box.half_length) + abs(z_axis(body) * box.half_height);
+    case .PILLBOX;
+        aabb.extent = abs(x_axis(body) * pillbox.radius) + abs(y_axis(body) * (pillbox.half_box_length + pillbox.radius)) + abs(z_axis(body) * pillbox.half_height);
+    case .SPHERE;
+        aabb.extent = splat(sphere.radius, 3);
+    case .CAPSULE;
+        aabb.extent = abs(x_axis(body) * capsule.radius) + abs(y_axis(body) * capsule.radius) + abs(z_axis(body) * capsule.half_height);
+    }
+
+    return aabb;
+}
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

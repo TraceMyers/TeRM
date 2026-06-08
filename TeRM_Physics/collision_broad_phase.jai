@@ -154,7 +154,7 @@ add_to_cell :: (using cell: *Contact_Cell, body: u16) {
     } 
 
     assert(internal.allocation == .EXTERNAL);
-    assert(external.count > Contact_Cell.internal.bodies.count && external.count < 0xffff_ffff);
+    assert(external.count > Contact_Cell.internal.bodies.count && external.count < 0xffff_ff);
     array_add(*external, body);
 }
 

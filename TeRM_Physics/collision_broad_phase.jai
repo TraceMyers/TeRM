@@ -1,7 +1,7 @@
 // todo: detecting common bugs like double-put or forgetting to remove
 // todo: optimization, instead of doing a full remove, re-place, do a diff placement.
 
-Collision_Cell :: struct {
+Contact_Cell :: struct {
     external: [..]u16;
     #overlay(external) internal : struct {
         // prob dont' need to explicitly align to 8. correct sizing only thing that matters,
@@ -27,15 +27,8 @@ calculate_grid_overlap :: (_body: *Physics_Body_Base) -> Vector2i, Vector2i {
     aabb_swept := sweep_aabb(aabb, body.linear_velocity * world.delta_time);
     aabb_swept.extent *= 1.25;
 
-    aabb_swept.center -= {xy=world.world_center_2d};
-    aabb_swept.center *= world.collision_grid_scale;
-    aabb_swept.extent *= world.collision_grid_scale;
-
-    min        := to_vector2i(aabb_swept.center.xy - aabb_swept.extent.xy, true);
-    max_float  := aabb_swept.center.xy + aabb_swept.extent.xy;
-    add_to_x : s32 = ifx max_float.x > 0 then cast(s32) 1 else cast(s32) 0;
-    add_to_y : s32 = ifx max_float.y > 0 then cast(s32) 1 else cast(s32) 0;
-    max        := to_vector2i(max_float) + Vector2i.{add_to_x, add_to_y};
+    min := world_to_grid(aabb_swept.center - aabb_swept.extent, true);
+    max := world_to_grid(aabb_swept.center + aabb_swept.extent, false);
 
     assert(min.x <= max.x);
     assert(min.y <= max.y);
@@ -43,12 +36,40 @@ calculate_grid_overlap :: (_body: *Physics_Body_Base) -> Vector2i, Vector2i {
     return min, max;
 }
 
-for_all_cells_in_overlap :: (_body: *Physics_Body_Base, $code: Code) #expand {
+world_to_grid :: inline (v: Vector3, $lower_bound := true) -> Vector2i {
+    transformed := v.xy;
+    transformed -= world.grid_origin;
+    transformed *= world.grid_scale;
+    transformed = clamp(transformed, {0, 0}, {xx (world.grid_width - 1), xx (world.grid_width - 1)});
+    #if lower_bound {
+        return to_vector2i(transformed);
+    } else {
+        return to_vector2i(transformed) + Vector2i.{1, 1};
+    }
+}
+
+Grid_To_World_Placement :: enum { UPPER_LEFT; CENTER; LOWER_RIGHT; }
+
+grid_to_world :: inline (v: Vector2i, $placement := Grid_To_World_Placement.UPPER_LEFT) -> Vector3 {
+    transformed := Vector2.{xx v.x, xx v.y};
+    transformed /= world.grid_scale;
+    #if placement == {
+    case .UPPER_LEFT;
+        transformed += world.grid_origin;
+    case .CENTER;
+        transformed += world.grid_origin + splat(world.grid_scale * 0.5, 2);
+    case .LOWER_RIGHT;
+        transformed += world.grid_origin + splat(world.grid_scale, 2);
+    }
+    return Vector3.{xy=transformed};
+}
+
+for_all_cells_in_overlap :: (_body: *Physics_Body_Base, $code: Code, $allocate_cell_if_empty: bool) #expand {
     `min, `max := calculate_grid_overlap(_body);
 
     for `y : min.y..max.y {
         for `x : min.y..max.y {
-            `cell := get_collision_cell({_s16=.[xx x, xx y]});
+            `cell := get_contact_cell({_s16=.[xx x, xx y]}, allocate_cell_if_empty);
             #insert code;
         }
     }
@@ -57,11 +78,15 @@ for_all_cells_in_overlap :: (_body: *Physics_Body_Base, $code: Code) #expand {
 place_into_contact_grid :: (_body: *Physics_Body_Base) {
     using world;
 
+    // modification of grid is only allowed until the first body is placed into it.
+    // todo: make reset feature?
+    world.grid_in_use = true;
+
     assert(!has_flags(_body, .PLACED_INTO_CONTACT_GRID));
 
     body_index: u16 = xx get_index(_body);
 
-    for_all_cells_in_overlap(_body, #code add_to_cell(cell, body_index));
+    for_all_cells_in_overlap(_body, #code add_to_cell(cell, body_index), true);
 
     _body.contact_grid_min_x = xx min.x;
     _body.contact_grid_min_y = xx min.y;
@@ -80,7 +105,7 @@ remove_from_contact_grid :: (_body: *Physics_Body_Base) {
 
     body_index: u16 = xx get_index(_body);
 
-    for_all_cells_in_overlap(_body, #code remove_from_cell(cell, body_index));
+    for_all_cells_in_overlap(_body, #code remove_from_cell(cell, body_index), false);
 
     // intentionally invalid (max < min)
     _body.contact_grid_min_x = 0;
@@ -91,10 +116,14 @@ remove_from_contact_grid :: (_body: *Physics_Body_Base) {
     remove_flags(_body, .PLACED_INTO_CONTACT_GRID);
 }
 
+get_contact_cell :: inline (coords: Vector2i) -> *Contact_Cell {
+    return get_contact_cell({_u16=.[xx coords.x, xx cords.y]});
+}
+
 // NOTE: assumes cell needs to be created if it doesn't exist
-get_collision_cell :: inline (key: num32) -> *Collision_Cell {
+get_contact_cell :: inline (key: num32, allocate_if_empty := false) -> *Contact_Cell {
     cell := table_get_by_key_hash(*world.contact_grid, key._u32);
-    if cell == null {
+    if cell == null && allocate_if_empty {
         table_set(*world.contact_grid, key._u32, {});
         cell = table_get_by_key_hash(*world.contact_grid, key._u32);
         cell.internal.allocation = .INTERNAL;
@@ -102,7 +131,7 @@ get_collision_cell :: inline (key: num32) -> *Collision_Cell {
     return cell;
 }
 
-add_to_cell :: (using cell: *Collision_Cell, body: u16) {
+add_to_cell :: (using cell: *Contact_Cell, body: u16) {
     if internal.allocation == .INTERNAL {
         if internal.count < internal.bodies.count {
             internal.bodies[internal.count] = body;
@@ -125,15 +154,15 @@ add_to_cell :: (using cell: *Collision_Cell, body: u16) {
     } 
 
     assert(internal.allocation == .EXTERNAL);
-    assert(external.count > Collision_Cell.internal.bodies.count && external.count < 0xffff_ffff);
+    assert(external.count > Contact_Cell.internal.bodies.count && external.count < 0xffff_ffff);
     array_add(*external, body);
 }
 
-remove_from_cell :: (using cell: *Collision_Cell, body: u16) {
+remove_from_cell :: (using cell: *Contact_Cell, body: u16) {
     if internal.allocation == .EXTERNAL {
-        assert(external.count > Collision_Cell.bodies.count && external.count < 0xffff_ffff);
+        assert(external.count > Contact_Cell.bodies.count && external.count < 0xffff_ffff);
         array_unordered_remove_by_value(*external, body);   
-        if external.count <= #run Collision_Cell.bodies.count / 2 {
+        if external.count <= #run Contact_Cell.bodies.count / 2 {
             data  := external.data;
             count := external.count;
             memcpy(internal.bodies.data, data, count * size_of(u16));

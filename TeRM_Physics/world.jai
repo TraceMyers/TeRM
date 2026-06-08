@@ -23,12 +23,40 @@ Physical_World :: struct {
 
     allocator: Allocator;
 
-    contact_grid: CT_Table(u32, Collision_Cell, true, 1024);
+    contact_grid: CT_Table(u32, Contact_Cell, true, 1024);
     contact_grid_cell_allocator: Super_Allocator;
 
-    world_width := 1024.0;
-    world_center_2d := Vector2.{0, 0};
-    collision_grid_scale := 1.0;
+    // grid settings for size, origin, broad phase resolution (scale)
+    grid_origin := Vector2.{-512.0, -512.0};
+    grid_width : s32 = 1024;
+    grid_scale := 1.0;
+
+    grid_in_use: bool;
+}
+
+// optional params can be left 0 if you want them to stay the same
+set_grid_origin:: (origin: Vector2, width: s32 = 0, scale := 0.0) {
+    assert(!world.grid_in_use);
+    if width > 0 {
+        world.grid_width = width;
+    }
+    if scale > 0 {
+        world.grid_scale = scale;
+    }
+    world.grid_origin = origin;
+}
+
+// optional params can be left 0 if you want them to stay the same
+set_grid_center :: (center: Vector2, width: s32 = 0, scale := 0.0) {
+    assert(!world.grid_in_use);
+    if width > 0 {
+        world.grid_width = width;
+    }
+    if scale > 0 {
+        world.grid_scale = scale;
+    }
+    half_world_width := (world.grid_width / world.grid_scale) * 0.5;
+    world.grid_origin = center - splat(half_world_width, 2);
 }
 
 create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique_properties_max := 4096, unique_colliders_max := 32768) -> Physical_World {

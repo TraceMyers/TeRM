@@ -1599,16 +1599,8 @@ to_vector2 :: inline (v: Vector2i) -> Vector2 {
     return .{xx v.x, xx v.y};
 }
 
-to_vector2i :: inline (v: Vector2, $floor_toward_neg_inf := false) -> Vector2i {
-    #if floor_toward_neg_inf {
-        x := v.x;
-        y := v.y;
-        if x < 0 then x -= .9999999;
-        if y < 0 then y -= .9999999;
-        return .{xx x, xx y};
-    } else {
-        return .{xx v.x, xx v.y};
-    }
+to_vector2i :: inline (v: Vector2) -> Vector2i {
+    return .{xx v.x, xx v.y};
 }
 
 // -----------------------------------------------------------------------------------

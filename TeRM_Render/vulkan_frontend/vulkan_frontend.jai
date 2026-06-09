@@ -124,6 +124,7 @@ Renderer :: struct {
         prepared_line_draw_batches: [..]Line_Draw_Batch;
         prepared_transparent_in_front_line_draw_batches: [..]Line_Draw_Batch;
 
+        last_mesh_draw_was_static: bool;
         in_the_middle_of_rendering: bool;
     };
 
@@ -190,15 +191,36 @@ Mesh_Specialization_Tint :: struct {
     using color: Color3f = {1,1,1};
 }
 
-Mesh_Specialization_Params :: struct {
-    flags: Mesh_Specialization_Flags;
-    flash: Mesh_Specialization_Flash;
-    tint:  Mesh_Specialization_Tint;
+#insert #run generate_mesh_specialization_params(.[
+    {"flash", Mesh_Specialization_Flash},
+    {"tint",  Mesh_Specialization_Tint},
+]);
+
+Mesh_Specialization_Field_Create_Info :: struct {
+    name: string;
+    type: Type;
 }
 
-Mesh_Specialization_Flags :: enum_flags s32 {
-    FLASH;
-    TINT;
+generate_mesh_specialization_params :: (fields: []Mesh_Specialization_Field_Create_Info) -> string {
+    // flag count
+    assert(fields.count <= 32);
+
+    builder: String_Builder;
+
+    print(*builder, "Mesh_Specialization_Params :: struct {\n");
+    print(*builder, "\tflags: Mesh_Specialization_Flags;\n");
+    for fields {
+        print(*builder, "\t%: %;\n", it.name, it.type);
+    }
+    print(*builder, "}\n");
+
+    print(*builder, "Mesh_Specialization_Flags :: enum_flags s32 {\n");
+    for fields {
+        print(*builder, "\t%;\n", to_upper(it.name));
+    }
+    print(*builder, "}\n");
+
+    return builder_to_string(*builder);
 }
 
 // todo: specialization params should be put into their own buffer

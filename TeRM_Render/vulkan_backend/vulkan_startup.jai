@@ -583,6 +583,7 @@ create_default_pipelines :: () -> bool {
         };
         draw_in_front_opaque_line_pipeline = build_pipeline(*build_info);
 
+        build_info.name = "draw in front transparent line pipeline";
         build_info.color_blend.attachment.blendEnable = VK_TRUE;
         draw_in_front_transparent_line_pipeline = build_pipeline(*build_info);
 

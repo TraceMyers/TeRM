@@ -12,7 +12,7 @@ dev_gui_process_input_event :: (event: Event) {
         mouse_button = 2;
     }
     if mouse_button != -1 {
-        AddMouseButtonEvent(io, 0, event.key_pressed != 0);
+        AddMouseButtonEvent(io, mouse_button, event.key_pressed != 0);
         return;
     }
 

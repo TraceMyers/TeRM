@@ -211,6 +211,37 @@ get_position :: (_body: *Physics_Body_Base) -> Vector3 {
     return lerp(body.prev_position, body.next_position, alpha);
 }
 
+get_index :: inline (body: *Physics_Body_Base) -> int {
+    return cast(*Physics_Body_Internal) body - world.body_data.bodies.data;
+}
+
+calculate_aabb :: inline (_body: *Physics_Body_Base) -> AABB {
+    body := cast(*Physics_Body_Internal) _body;
+    using body.collider;
+
+    aabb := AABB.{center=body.next_position};
+
+    if shape == {
+    case .CIRCLE;
+        aabb.extent = (abs(x_axis(body)) + abs(y_axis(body))) * circle.radius;
+    case .RECTANGLE;
+        aabb.extent = abs(x_axis(body) * rectangle.half_width) + abs(y_axis(body) * rectangle.half_height);
+    case .CYLINDER;
+        aabb.extent = abs(x_axis(body) * cylinder.radius) + abs(y_axis(body) * cylinder.radius) + abs(z_axis(body) * cylinder.half_height);
+    case .BOX;
+        aabb.extent = abs(x_axis(body) * box.half_width) + abs(y_axis(body) * box.half_length) + abs(z_axis(body) * box.half_height);
+    case .PILLBOX;
+        aabb.extent = abs(x_axis(body) * pillbox.radius) + abs(y_axis(body) * (pillbox.half_box_length + pillbox.radius)) + abs(z_axis(body) * pillbox.half_height);
+    case .SPHERE;
+        aabb.extent = splat(sphere.radius, 3);
+    case .CAPSULE;
+        aabb.extent = abs(x_axis(body) * capsule.radius) + abs(y_axis(body) * capsule.radius) + abs(z_axis(body) * capsule.half_height);
+    }
+
+    return aabb;
+}
+
+
 
 // get_x_axis :: (body: *Physics_Body_Base) -> Vector3 {
 //     calculate_axes_if_needed(body);
@@ -250,9 +281,6 @@ get_position :: (_body: *Physics_Body_Base) -> Vector3 {
 //     set_flags(body, flags);
 // }
 
-get_index :: inline (body: *Physics_Body_Base) -> int {
-    return cast(*Physics_Body_Internal) body - world.body_data.bodies.data;
-}
 
 // todo: maybe this is making a bad assumption, but tbh it's pretty reasonable
 get_null_entity_id :: () -> user_types.entity_id_type {
@@ -276,32 +304,5 @@ is_data_from_template :: (data: *u8) -> bool {
     shared_byte_end  := size_of(type_of(body_templates.values[0])) * body_templates.values.count;
     return shared_byte_diff >= 0 && shared_byte_diff < shared_byte_end;
 }
-
-calculate_aabb :: inline (_body: *Physics_Body_Base) -> AABB {
-    body := cast(*Physics_Body_Internal) _body;
-    using body.collider;
-
-    aabb := AABB.{center=body.next_position};
-
-    if shape == {
-    case .CIRCLE;
-        aabb.extent = (abs(x_axis(body)) + abs(y_axis(body))) * circle.radius;
-    case .RECTANGLE;
-        aabb.extent = abs(x_axis(body) * rectangle.half_width) + abs(y_axis(body) * rectangle.half_height);
-    case .CYLINDER;
-        aabb.extent = abs(x_axis(body) * cylinder.radius) + abs(y_axis(body) * cylinder.radius) + abs(z_axis(body) * cylinder.half_height);
-    case .BOX;
-        aabb.extent = abs(x_axis(body) * box.half_width) + abs(y_axis(body) * box.half_length) + abs(z_axis(body) * box.half_height);
-    case .PILLBOX;
-        aabb.extent = abs(x_axis(body) * pillbox.radius) + abs(y_axis(body) * (pillbox.half_box_length + pillbox.radius)) + abs(z_axis(body) * pillbox.half_height);
-    case .SPHERE;
-        aabb.extent = splat(sphere.radius, 3);
-    case .CAPSULE;
-        aabb.extent = abs(x_axis(body) * capsule.radius) + abs(y_axis(body) * capsule.radius) + abs(z_axis(body) * capsule.half_height);
-    }
-
-    return aabb;
-}
-
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

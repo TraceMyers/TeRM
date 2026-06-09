@@ -110,11 +110,16 @@ Physics_Step_State :: enum {
     PAUSE_ON_COLLISION;
 }
 
-Physics_Body_Combined_Data :: struct {
+Physics_Body_Combined_Data :: struct($as_pointers := false) {
     flags:              Physics_Body_Flags;
     collision_channels: Collision_Channel;
     entity_id:          user_types.entity_id_type;
     using body:         Physics_Body_Internal;
+}
+
+Physics_Body_Iteration :: struct {
+    body: *Physics_Body;
+    entity_id: user_types.entity_id_type;
 }
 
 Physics_Body_SOA :: struct {
@@ -125,6 +130,15 @@ Physics_Body_SOA :: struct {
     
     item_type   :: Physics_Body_Combined_Data;
     item_fields :: string.["flags", "collision_channels", "entity_id", "body"];
+}
+
+for_expansion :: (physics_soa: *Physics_Body_SOA, body: Code, flags: For_Flags) #expand {
+    for i : 0..physics_soa.bodies.count - 1 {
+        `it := Physics_Body_Iteration.{xx *physics_soa.bodies[i], physics_soa.entity_ids[i]};
+        `it_index := i;
+
+        #insert body;
+    }
 }
 
 #scope_module

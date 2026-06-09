@@ -17,6 +17,23 @@ Contact_Cell :: struct {
     INTERNAL_BODY_COUNT :: #run (size_of([..]u16) - 2) / 2;
 }
 
+for_expansion :: (cell: *Contact_Cell, body: Code, flags: For_Flags) #expand {
+    bodies: []u16 = ---;
+    if cell.internal.allocation == .INTERNAL {
+        bodies.data  = cell.internal.bodies.data;
+        bodies.count = cell.internal.count;
+    } else {
+        bodies = cell.external;
+    }
+
+    for b, bi : bodies {
+        `it := cast(*Physics_Body) *world.body_data.bodies[b];
+        `it_index := bi;
+
+        #insert body;
+    }
+}
+
 initialize_broad_phase :: () {
     using world;
 }
@@ -117,7 +134,7 @@ remove_from_contact_grid :: (_body: *Physics_Body_Base) {
 }
 
 get_contact_cell :: inline (coords: Vector2i) -> *Contact_Cell {
-    return get_contact_cell({_u16=.[xx coords.x, xx cords.y]});
+    return get_contact_cell({_u16=.[xx coords.x, xx coords.y]});
 }
 
 // NOTE: assumes cell needs to be created if it doesn't exist
@@ -154,7 +171,7 @@ add_to_cell :: (using cell: *Contact_Cell, body: u16) {
     } 
 
     assert(internal.allocation == .EXTERNAL);
-    assert(external.count > Contact_Cell.internal.bodies.count && external.count < 0xffff_ff);
+    assert(external.count > Contact_Cell.internal.bodies.count && external.count < 0xff_ffff);
     array_add(*external, body);
 }
 

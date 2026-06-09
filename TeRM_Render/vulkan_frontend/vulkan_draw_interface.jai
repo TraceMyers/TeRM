@@ -14,16 +14,41 @@ draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
     billboard_instance.layer         = draw.layer;
 }
 
-add_specialization_to_last_static_mesh_draw :: (renderer: *Renderer, specialization: Mesh_Specialization_Params) {
-    last_draw := *renderer.static_mesh_draws[renderer.static_mesh_draws.count-1];
-    array_add(*renderer.mesh_draw_specializations, specialization);
-    last_draw.specialization = xx (renderer.mesh_draw_specializations.count - 1);
+add_specialization_to_last_static_mesh_draw :: (renderer: *Renderer, specialization: $T) {
+    add_specialization(renderer, false, specialization);
 }
 
-add_specialization_to_last_skinned_mesh_draw :: (renderer: *Renderer, specialization: Mesh_Specialization_Params) {
-    last_draw := *renderer.skinned_mesh_draws[renderer.skinned_mesh_draws.count-1];
-    array_add(*renderer.mesh_draw_specializations, specialization);
-    last_draw.specialization = xx (renderer.mesh_draw_specializations.count - 1);
+add_specialization_to_last_skinned_mesh_draw :: (renderer: *Renderer, specialization: $T) {
+    add_specialization(renderer, true, specialization);
+}
+
+add_specialization :: (params: *Mesh_Specialization_Params, specialization: $spec_type) {
+    Member_Offset_And_Flag :: struct {
+        offset: int;
+        flag: Mesh_Specialization_Flags;
+    }
+
+    MEMBER :: #run -> Member_Offset_And_Flag {
+        spec_type_info := cast(*Type_Info_Struct) type_info(Mesh_Specialization_Params);
+        flag_index := 0;
+
+        for member : spec_type_info.members {
+            if member.name == "flags" {
+                continue;
+            }
+            defer flag_index += 1;
+
+            if (cast(*Type) (*member.type)).* == spec_type {
+                return {member.offset_in_bytes, xx (1 << flag_index)};
+            }
+        }
+        assert(false, "member type % not found in Mesh_Specialization_Params", spec_type);
+        return {};
+    }
+
+    params.flags |= MEMBER.flag;
+    spec_member := cast(*spec_type) ((cast(*u8) params) + MEMBER.offset);
+    spec_member.* = specialization;
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
@@ -325,6 +350,22 @@ draw_raycast :: (renderer: *Renderer, result: Raycast_Result, origin_color := CO
 }
 
 #scope_file
+
+add_specialization :: (renderer: *Renderer, $skinned: bool, specialization: $spec_type) {
+    #if skinned {
+        last_draw := *renderer.skinned_mesh_draws[renderer.skinned_mesh_draws.count-1];
+    } else {
+        last_draw := *renderer.static_mesh_draws[renderer.static_mesh_draws.count-1];
+    }
+
+    if last_draw.specialization == -1 {
+        array_add(*renderer.mesh_draw_specializations, {});
+        last_draw.specialization = xx (renderer.mesh_draw_specializations.count - 1);
+    }
+
+    spec := *renderer.mesh_draw_specializations[last_draw.specialization];
+    add_specialization(spec, specialization);
+}
 
 add_skinning_joints :: (renderer: *Renderer, draw: *Skinned_Mesh_Draw) {
     assert(draw.pose != null);

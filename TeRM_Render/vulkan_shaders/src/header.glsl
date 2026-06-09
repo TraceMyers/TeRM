@@ -38,7 +38,7 @@ struct Billboard_Instance {
     vec2 scale;
     vec2 uv_offset;
     vec2 uv_scale;  
-    uint texture_index; 
+    uint texture_index;
     int layer;
 };
 
@@ -49,11 +49,11 @@ struct Mesh_Section_Shader_Data {
 };
 
 struct Mesh_Specialization {
+    int flags;
     float flash_rate;
     float flash_value;
     float flash_begin_time;
     vec3 tint;
-    bool specialized;
 };
 
 struct Skinned_Mesh_Instance_Shader_Data {

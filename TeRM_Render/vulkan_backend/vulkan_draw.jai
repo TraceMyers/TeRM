@@ -170,8 +170,7 @@ prepare_draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, dr
         inst := *mesh_instances[it-1];
 
         if prev_draw.specialization != -1 {
-            inst.specialization.specialized = true;
-            inst.specialization.params = mesh_draw_specializations[prev_draw.specialization];
+            inst.specialization = mesh_draw_specializations[prev_draw.specialization];
         }
 
         inst.layer = prev_draw.layer;

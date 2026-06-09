@@ -180,16 +180,25 @@ GPU_Material :: struct {
     orm_tex: s32;
 };
 
-Mesh_Specialization_Params :: struct {
-    flash_rate: float = -1;
-    flash_value: float;
-    flash_begin_time: float;
-    tint: Color3f = {1,1,1};
+Mesh_Specialization_Flash :: struct {
+    rate: float = -1;
+    value: float;
+    begin_time: float;
 }
 
-Mesh_Specialization :: struct {
-    using params: Mesh_Specialization_Params;
-    specialized: bool;
+Mesh_Specialization_Tint :: struct {
+    using color: Color3f = {1,1,1};
+}
+
+Mesh_Specialization_Params :: struct {
+    flags: Mesh_Specialization_Flags;
+    flash: Mesh_Specialization_Flash;
+    tint:  Mesh_Specialization_Tint;
+}
+
+Mesh_Specialization_Flags :: enum_flags s32 {
+    FLASH;
+    TINT;
 }
 
 // todo: specialization params should be put into their own buffer
@@ -198,14 +207,14 @@ Mesh_Specialization :: struct {
 Mesh_Instance_Shader_Data :: struct {
     transform: Matrix4;
     layer: Draw_Layer;
-    specialization: Mesh_Specialization #align 4;
+    specialization: Mesh_Specialization_Params #align 4;
 }
 
 Skinned_Mesh_Instance_Shader_Data :: struct {
     transform: Matrix4;
     layer: Draw_Layer;
     joint_offset: s32;
-    specialization: Mesh_Specialization #align 4;
+    specialization: Mesh_Specialization_Params #align 4;
 };
 
 // this is on the per-draw level

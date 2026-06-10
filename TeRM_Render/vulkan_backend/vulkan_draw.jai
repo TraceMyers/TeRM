@@ -150,6 +150,7 @@ prepare_draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, dr
         return;
     }
 
+    // todo: this should really be pre-sorted
     quick_sort(draws, draw => draw.ref.index);
 
     mesh_instances := make_static_array(instance_type, draws.count,, temp);

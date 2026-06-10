@@ -131,6 +131,8 @@ create_physics_body_template :: (name: string, template: Physics_Body_Template) 
     assert(template_copy.properties.mass > 0);
     template_copy.properties.inv_mass = 1.0 / template_copy.properties.mass;
 
+    set_collider_data_for_fast_aabb_calculation(*template_copy.collider);
+
     _, success := table_set(*body_templates, name, template_copy, .ONLY_ADD);
     // todo: probably should make it so the tables have hash collision resolution...
     assert(success, "table failed to add template % either because of a hash collision or because a template has already been added under that name", name);
@@ -205,6 +207,22 @@ z_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
     return get_up_direction(body.next_orientation);
 }
 
+// teleport a body to a location
+set_position :: (_body: *Physics_Body_Base, position: Vector3) {
+    using body := cast(*Physics_Body_Internal) _body;
+    next_position = position;
+    prev_position = position;
+    on_move(body);
+}
+
+// teleport a body to an orientation
+set_orientation :: (_body: *Physics_Body_Base, orientation: Quaternion) {
+    using body := cast(*Physics_Body_Internal) _body;
+    next_orientation = orientation;
+    prev_orientation = orientation;
+    on_move(body);
+}
+
 get_position :: (_body: *Physics_Body_Base) -> Vector3 {
     body := cast(*Physics_Body_Internal) _body;
     alpha := get_physical_entity_transform_alpha();
@@ -219,68 +237,26 @@ calculate_aabb :: inline (_body: *Physics_Body_Base) -> AABB {
     body := cast(*Physics_Body_Internal) _body;
     using body.collider;
 
-    aabb := AABB.{center=body.next_position};
-
-    if shape == {
-    case .CIRCLE;
-        aabb.extent = (abs(x_axis(body)) + abs(y_axis(body))) * circle.radius;
-    case .RECTANGLE;
-        aabb.extent = abs(x_axis(body) * rectangle.half_width) + abs(y_axis(body) * rectangle.half_height);
-    case .CYLINDER;
-        aabb.extent = abs(x_axis(body) * cylinder.radius) + abs(y_axis(body) * cylinder.radius) + abs(z_axis(body) * cylinder.half_height);
-    case .BOX;
-        aabb.extent = abs(x_axis(body) * box.half_width) + abs(y_axis(body) * box.half_length) + abs(z_axis(body) * box.half_height);
-    case .PILLBOX;
-        aabb.extent = abs(x_axis(body) * pillbox.radius) + abs(y_axis(body) * (pillbox.half_box_length + pillbox.radius)) + abs(z_axis(body) * pillbox.half_height);
-    case .SPHERE;
-        aabb.extent = splat(sphere.radius, 3);
-    case .CAPSULE;
-        aabb.extent = abs(x_axis(body) * capsule.radius) + abs(y_axis(body) * capsule.radius) + abs(z_axis(body) * capsule.half_height);
-    }
+    aabb := AABB.{
+        center = body.next_position,
+        extent = 
+              abs(z_axis(body) * shape_data.array[0]) 
+            + abs(x_axis(body) * shape_data.array[1]) 
+            + abs(y_axis(body) * shape_data.array[2])
+    };
 
     return aabb;
 }
 
+on_move :: (_body: *Physics_Body_Base) {
+    body := cast(*Physics_Body_Internal) _body;
 
-
-// get_x_axis :: (body: *Physics_Body_Base) -> Vector3 {
-//     calculate_axes_if_needed(body);
-//     return body.x_axis;
-// }
-
-// get_y_axis :: (body: *Physics_Body_Base) -> Vector3 {
-//     calculate_axes_if_needed(body);
-//     return body.y_axis;
-// }
-
-// get_z_axis :: (body: *Physics_Body_Base) -> Vector3 {
-//     calculate_axes_if_needed(body);
-//     return body.z_axis;
-// }
+    // todo: diff placement instead of this
+    remove_from_contact_grid(body);
+    place_into_contact_grid(body);
+}
 
 #scope_module
-
-// calculate_axes_if_needed :: inline (body: *Physics_Body_Base) {
-//     flags := get_flags(body);
-//     if (flags & .CALCULATED_AXES) == 0 {
-//         calculate_axes(body, true);
-//     }
-// }
-
-// calculate_axes :: (body: *Physics_Body_Base) {
-//     body.x_axis = get_right_direction(body.next_orientation);
-//     body.y_axis = get_fore_direction(body.next_orientation);
-//     body.z_axis = normalize(cross(body.x_axis, body.y_axis));
-
-//     flags := get_flags(body) | .CALCULATED_AXES;
-//     if abs(body.z_axis.x) <= VERY_SMALL_NUMBER && abs(body.z_axis.y) <= VERY_SMALL_NUMBER && abs(body.z_axis.z - 1) <= VERY_SMALL_NUMBER {
-//         flags |= .UPRIGHT;
-//     } else {
-//         flags &= ~.UPRIGHT;
-//     }
-//     set_flags(body, flags);
-// }
-
 
 // todo: maybe this is making a bad assumption, but tbh it's pretty reasonable
 get_null_entity_id :: () -> user_types.entity_id_type {

@@ -26,13 +26,14 @@ save_config :: (filename: string, data: *$T) {
 
 // all string fields are allocated into one buffer. that buffer is returned
 // so all strings can be freed with an array_reset on that buffer.
-load_config :: (filename: string, data: *$T, shrink_strings_buffer := true) -> []u8 {
+load_config :: (filename: string, data: *$T, shrink_strings_buffer := true, post_clear_callback: (*T) = null) -> []u8 {
     assert(initialized);
     mark := get_temporary_storage_mark();
     defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(mark);
     defer array_reset_keeping_memory(*string_buffer);
 
     data.* = {};
+    post_clear_callback(data);
 
     file_data, success := read_entire_file(filename,, temp);
     if !success {
@@ -239,7 +240,7 @@ load_config_visitor :: (visit: *Struct_Visit, load_data: *Load_Data) -> Struct_V
     return .PUSH_MEMBER_OR_CONTINUE;
 }
 
-VISIT_OPTIONS :: Struct_Visit_Options.{visit_pointers=false};
+VISIT_OPTIONS :: Struct_Visit_Options.{};
 
 save_config_visitor :: (visit: *Struct_Visit, save_data: *Save_Data) -> Struct_Visitor_Command {
 

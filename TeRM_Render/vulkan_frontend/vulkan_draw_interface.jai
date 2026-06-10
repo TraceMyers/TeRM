@@ -1,4 +1,4 @@
-get_mesh :: (renderer: *Renderer, ref: Mesh_Ref) -> *Mesh {
+get_mesh :: (renderer: *Renderer, ref: *Mesh_Ref) -> *Mesh {
     return *renderer.meshes[ref.index];
 }
 
@@ -22,19 +22,19 @@ draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
     renderer.last_mesh_draw_was_static = true;
 }
 
-draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
+draw_static_mesh :: inline (renderer: *Renderer, ref: *Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(is_static_mesh(mesh));
-    array_add(*renderer.static_mesh_draws, {position, orientation, {scale,scale,scale}, ref, layer, -1});
+    array_add(*renderer.static_mesh_draws, {ref, position, orientation, {scale,scale,scale}, layer, -1});
     renderer.last_mesh_draw_was_static = true;
 }
 
-draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
+draw_static_mesh :: inline (renderer: *Renderer, ref: *Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(is_static_mesh(mesh));
-    array_add(*renderer.static_mesh_draws, {position, orientation, scale, ref, layer, -1});
+    array_add(*renderer.static_mesh_draws, {ref, position, orientation, scale, layer, -1});
     renderer.last_mesh_draw_was_static = true;
 }
 
@@ -47,12 +47,12 @@ draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
     renderer.last_mesh_draw_was_static = false;
 }
 
-draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pose: *Skeletal_Pose = null, scale := Vector3.{1,1,1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
+draw_skinned_mesh :: (renderer: *Renderer, ref: *Mesh_Ref, position: Vector3, pose: *Skeletal_Pose = null, scale := Vector3.{1,1,1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     assert(!renderer.in_the_middle_of_rendering);
     mesh := *renderer.meshes[ref.index];
     assert(!is_static_mesh(mesh));
     new_draw := array_add(*renderer.skinned_mesh_draws);
-    new_draw.* = {static_draw={position, orientation, scale, ref, layer, -1}, joint_data._interface.pose=pose};
+    new_draw.* = {static_draw={ref, position, orientation, scale, layer, -1}, joint_data._interface.pose=pose};
     add_skinning_joints(renderer, new_draw);
     renderer.last_mesh_draw_was_static = false;
 }

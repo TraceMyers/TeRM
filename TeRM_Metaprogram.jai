@@ -74,6 +74,13 @@ get_struct_field :: (s: *$struct_type, $field_type: Type) -> *field_type {
     }
 }
 
+type_2_is_pointer_to_type_1 :: (T1: Type, T2: Type) -> bool {
+    tinfo := cast(*Type_Info) T2;
+    if tinfo.type != .POINTER then return false;
+    tinfo_ptr := cast(*Type_Info_Pointer) tinfo;
+    return tinfo_ptr.pointer_to == cast(*Type_Info) T1;
+}
+
 Struct_Visit_Item :: struct {
     data: *u8;
     info: *Type_Info;

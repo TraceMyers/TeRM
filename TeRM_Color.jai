@@ -8,6 +8,7 @@ using Default_Color_Palette :: struct {
     COLOR4F_CYAN          :: Color4f.{0,1,1,1};
     COLOR4F_MAGENTA       :: Color4f.{1,0,1,1};
     COLOR4F_BRIGHT_PURPLE :: Color4f.{0.65, 0.1, 0.82, 1};
+    COLOR4F_DARK_PURPLE   :: Color4f.{0.4, 0.02, 0.5, 1};
     COLOR4F_SKY_BLUE      :: #run to_color4f(0x87ceeb);
 }
 

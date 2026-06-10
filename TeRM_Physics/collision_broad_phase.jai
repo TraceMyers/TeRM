@@ -17,6 +17,12 @@ Contact_Cell :: struct {
     INTERNAL_BODY_COUNT :: #run (size_of([..]u16) - 2) / 2;
 }
 
+body_count :: (cell :*Contact_Cell) -> int {
+    if cell.internal.allocation == .INTERNAL {
+        return cell.internal.count;
+    } else return cell.external.count;
+}
+
 for_expansion :: (cell: *Contact_Cell, body: Code, flags: For_Flags) #expand {
     bodies: []u16 = ---;
     if cell.internal.allocation == .INTERNAL {
@@ -44,8 +50,8 @@ calculate_grid_overlap :: (_body: *Physics_Body_Base) -> Vector2i, Vector2i {
     aabb_swept := sweep_aabb(aabb, body.linear_velocity * world.delta_time);
     aabb_swept.extent *= 1.25;
 
-    min := world_to_grid(aabb_swept.center - aabb_swept.extent, true);
-    max := world_to_grid(aabb_swept.center + aabb_swept.extent, false);
+    min := world_to_grid(aabb_swept.center - aabb_swept.extent);
+    max := world_to_grid(aabb_swept.center + aabb_swept.extent);
 
     assert(min.x <= max.x);
     assert(min.y <= max.y);
@@ -53,43 +59,53 @@ calculate_grid_overlap :: (_body: *Physics_Body_Base) -> Vector2i, Vector2i {
     return min, max;
 }
 
-world_to_grid :: inline (v: Vector3, $lower_bound := true) -> Vector2i {
+world_to_grid :: inline (v: Vector3) -> Vector2i {
     transformed := v.xy;
     transformed -= world.grid_origin;
     transformed *= world.grid_scale;
     transformed = clamp(transformed, {0, 0}, {xx (world.grid_width - 1), xx (world.grid_width - 1)});
-    #if lower_bound {
-        return to_vector2i(transformed);
-    } else {
-        return to_vector2i(transformed) + Vector2i.{1, 1};
-    }
+    return to_vector2i(transformed);
 }
 
 Grid_To_World_Placement :: enum { UPPER_LEFT; CENTER; LOWER_RIGHT; }
 
 grid_to_world :: inline (v: Vector2i, $placement := Grid_To_World_Placement.UPPER_LEFT) -> Vector3 {
     transformed := Vector2.{xx v.x, xx v.y};
-    transformed /= world.grid_scale;
+    inv_grid_scale := splat(1.0 / world.grid_scale, 2);
+    transformed *= inv_grid_scale;
+
     #if placement == {
     case .UPPER_LEFT;
         transformed += world.grid_origin;
     case .CENTER;
-        transformed += world.grid_origin + splat(world.grid_scale * 0.5, 2);
+        transformed += world.grid_origin + inv_grid_scale * 0.5;
     case .LOWER_RIGHT;
-        transformed += world.grid_origin + splat(world.grid_scale, 2);
+        transformed += world.grid_origin + inv_grid_scale;
     }
+
     return Vector3.{xy=transformed};
 }
 
-for_all_cells_in_overlap :: (_body: *Physics_Body_Base, $code: Code, $allocate_cell_if_empty: bool) #expand {
-    `min, `max := calculate_grid_overlap(_body);
+for_all_cells_in_overlap :: (_body: *Physics_Body_Base, $code: Code, $allocate_cell_if_empty: bool, $use_coords_on_body: bool) -> bool #expand {
+    body := cast(*Physics_Body_Internal) _body;
+    if !has_extent(body.collider.shape) {
+        return false;
+    }
+
+    #if use_coords_on_body {
+        `min := Vector2i.{body.contact_grid_min_x, body.contact_grid_min_y};
+        `max := Vector2i.{body.contact_grid_max_x, body.contact_grid_max_y};
+    } else {
+        `min, `max := calculate_grid_overlap(_body);
+    }
 
     for `y : min.y..max.y {
-        for `x : min.y..max.y {
+        for `x : min.x..max.x {
             `cell := get_contact_cell({_s16=.[xx x, xx y]}, allocate_cell_if_empty);
             #insert code;
         }
     }
+    return true;
 }
 
 place_into_contact_grid :: (_body: *Physics_Body_Base) {
@@ -103,7 +119,9 @@ place_into_contact_grid :: (_body: *Physics_Body_Base) {
 
     body_index: u16 = xx get_index(_body);
 
-    for_all_cells_in_overlap(_body, #code add_to_cell(cell, body_index), true);
+    if !for_all_cells_in_overlap(_body, #code add_to_cell(cell, body_index), true, false) {
+        return;
+    }
 
     _body.contact_grid_min_x = xx min.x;
     _body.contact_grid_min_y = xx min.y;
@@ -122,7 +140,7 @@ remove_from_contact_grid :: (_body: *Physics_Body_Base) {
 
     body_index: u16 = xx get_index(_body);
 
-    for_all_cells_in_overlap(_body, #code remove_from_cell(cell, body_index), false);
+    for_all_cells_in_overlap(_body, #code remove_from_cell(cell, body_index), false, true);
 
     // intentionally invalid (max < min)
     _body.contact_grid_min_x = 0;
@@ -177,9 +195,9 @@ add_to_cell :: (using cell: *Contact_Cell, body: u16) {
 
 remove_from_cell :: (using cell: *Contact_Cell, body: u16) {
     if internal.allocation == .EXTERNAL {
-        assert(external.count > Contact_Cell.bodies.count && external.count < 0xffff_ffff);
+        assert(external.count > Contact_Cell.internal.bodies.count && external.count < 0xffff_ffff);
         array_unordered_remove_by_value(*external, body);   
-        if external.count <= #run Contact_Cell.bodies.count / 2 {
+        if external.count <= #run Contact_Cell.internal.bodies.count / 2 {
             data  := external.data;
             count := external.count;
             memcpy(internal.bodies.data, data, count * size_of(u16));
@@ -189,7 +207,7 @@ remove_from_cell :: (using cell: *Contact_Cell, body: u16) {
         return;
     }
 
-    assert(cell.allocation == .INTERNAL);
+    assert(internal.allocation == .INTERNAL);
     if internal.count > 0 then for 0..internal.count-1 {
         if internal.bodies[it] == body {
             if it != internal.count - 1 {

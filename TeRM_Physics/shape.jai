@@ -4,7 +4,6 @@ Physics_Shape :: enum u8 {
     RECTANGLE;
     CYLINDER;
     BOX;
-    PILLBOX;
     SPHERE;
     CAPSULE;
     CONVEX;
@@ -31,14 +30,8 @@ Shape_Cylinder :: struct {
 
 Shape_Box :: struct {
     half_height: float32;
-    half_length: float32;
     half_width: float32;
-}
-
-Shape_Pillbox :: struct {
-    half_height: float32;
-    half_box_length: float32;
-    radius: float32;
+    half_length: float32;
 }
 
 Shape_Sphere :: struct {
@@ -73,6 +66,12 @@ Shape_Triangle_U32 :: struct {
     #overlay(indices[0]) a: u32;
     #overlay(indices[1]) b: u32;
     #overlay(indices[2]) c: u32;
+}
+
+has_extent :: inline (shape: Physics_Shape) -> bool {
+    if shape == .PLANE {
+        return false;
+    } else return true;
 }
 
 // Copyright (c) 2026 Trace Myers

@@ -35,28 +35,28 @@ Physical_World :: struct {
 }
 
 // optional params can be left 0 if you want them to stay the same
-set_grid_origin:: (origin: Vector2, width: s32 = 0, scale := 0.0) {
+set_physics_grid_origin:: (origin: Vector2) {
     assert(!world.grid_in_use);
-    if width > 0 {
-        world.grid_width = width;
-    }
-    if scale > 0 {
-        world.grid_scale = scale;
-    }
     world.grid_origin = origin;
 }
 
 // optional params can be left 0 if you want them to stay the same
-set_grid_center :: (center: Vector2, width: s32 = 0, scale := 0.0) {
+set_physics_grid_center :: (center: Vector2) {
     assert(!world.grid_in_use);
-    if width > 0 {
-        world.grid_width = width;
-    }
-    if scale > 0 {
-        world.grid_scale = scale;
-    }
     half_world_width := (world.grid_width / world.grid_scale) * 0.5;
     world.grid_origin = center - splat(half_world_width, 2);
+}
+
+set_physics_grid_scale :: (scale: float, recenter := true) {
+    assert(!world.grid_in_use);
+    assert(scale > 0);
+    world.grid_scale = scale;
+}
+
+set_physics_grid_width :: (width: s32) {
+    assert(!world.grid_in_use);
+    assert(width > 0);
+    world.grid_width = width;
 }
 
 create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique_properties_max := 4096, unique_colliders_max := 32768) -> Physical_World {

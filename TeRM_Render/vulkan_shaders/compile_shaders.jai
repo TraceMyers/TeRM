@@ -52,7 +52,7 @@
 
         // find paste directives written into the shader code.
         // they will be formatted like "## some_file_name", alone on a line.
-        // just find 'some_file_name.glsl' in the src folder and paste the contents.
+        // this finds 'some_file_name.glsl' in the src folder and pastes the contents.
         shader_text_rebuilder: String_Builder;
         for :per_line shader_text {
             trimmed := trim(it);

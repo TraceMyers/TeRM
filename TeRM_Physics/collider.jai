@@ -2,15 +2,15 @@ Physics_Collider :: struct {
     using shape_data: union {
         // the first field in every Shape struct is half_height (or radius for sphere, same thing).
         // it can be read from the shape itself or directly from the collider due to the fields being aligned.
-        half_height:  float32;
-        circle:       Shape_Circle;
-        rectangle:    Shape_Rectangle;
-        cylinder:     Shape_Cylinder;
-        box:          Shape_Box;
-        pillbox:      Shape_Pillbox;
-        sphere:       Shape_Sphere;
-        capsule:      Shape_Capsule;
-        convex:       Shape_Convex;
+        half_height:  float32         = ---;
+        circle:       Shape_Circle    = ---;
+        rectangle:    Shape_Rectangle = ---;
+        cylinder:     Shape_Cylinder  = ---;
+        box:          Shape_Box       = ---;
+        sphere:       Shape_Sphere    = ---;
+        capsule:      Shape_Capsule   = ---;
+        convex:       Shape_Convex    = ---;
+        array:        [3]float32      = ---; // z, x, y
     };
     shape:    Physics_Shape;
     // PADDING 3
@@ -32,9 +32,45 @@ get_collider :: inline (in_body: *Physics_Body_Base) -> Physics_Collider {
 
 set_collider :: (in_body: *Physics_Body_Base, collider: Physics_Collider) {
     make_collider_unique(in_body);
+
     body := cast(*Physics_Body_Internal) in_body;
     body.collider.* = collider;
+    set_collider_data_for_fast_aabb_calculation(body.collider);
+
     body.collider.initialized = true;
+}
+
+set_collider_data_for_fast_aabb_calculation :: (using collider: *Physics_Collider) {
+    data := shape_data;
+    // lay out dimensions for fast aabb calculation
+    if shape == {
+    case .CIRCLE;
+        array[0] = data.circle.radius;
+        array[1] = data.circle.radius;
+        array[2] = 0;
+    case .RECTANGLE;
+        array[0] = data.rectangle.half_height;
+        array[1] = data.rectangle.half_width;
+        array[2] = 0;
+    case .CYLINDER;
+        array[0] = data.cylinder.half_height;
+        array[1] = data.cylinder.radius;
+        array[2] = data.cylinder.radius;
+    case .BOX;
+        array[0] = data.box.half_height;
+        array[1] = data.box.half_width;
+        array[2] = data.box.half_length;
+    case .SPHERE;
+        array[0] = data.sphere.radius;
+        array[1] = data.sphere.radius;
+        array[2] = data.sphere.radius;
+    case .CAPSULE;
+        array[0] = data.capsule.half_height;
+        array[1] = data.capsule.radius;
+        array[2] = data.capsule.radius;
+    case;
+        memset(array.data, 0, size_of(type_of(shape_data)));
+    }
 }
 
 is_unique :: inline (collider: *Physics_Collider) -> unique: bool, unique_index: s32 {

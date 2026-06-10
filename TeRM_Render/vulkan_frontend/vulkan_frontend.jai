@@ -256,10 +256,10 @@ Draw_Layer :: enum u32 {
 }
 
 Static_Mesh_Draw :: struct {
+    ref: *Mesh_Ref;
     position: Vector3;
     orientation: Quaternion;
     scale: Vector3;
-    ref: Mesh_Ref;
     layer: Draw_Layer;
     specialization : s32 = -1;
 }

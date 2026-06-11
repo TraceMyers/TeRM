@@ -517,6 +517,14 @@ informed_clamp :: inline (x: float, min: float, max: float) -> float, s32 {
     }
 }
 
+clamp_point_to_rect :: inline (point: Vector3, rect_center: Vector3, rect_up: Vector3, rect_right: Vector3, half_height: float, half_width: float) -> Vector3 {
+    toward_point := point - rect_center;
+    // todo: for collisions only, axes will be cached
+    clamped_z_dist := clamp(dot(toward_point, rect_up),    -half_height, half_height);
+    clamped_x_dist := clamp(dot(toward_point, rect_right), -half_width,  half_width);
+    return rect_center + rect_up * clamped_z_dist + rect_right * clamped_x_dist;
+}
+
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------- :Lines
 
@@ -1046,6 +1054,10 @@ max :: inline (a: $T, b: T, $a_less_than_b: (T, T) -> bool) -> min: T {
 
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------- :Boxes
+
+is_point_in_box_2d :: inline (a_x: s32, a_y: s32, b_xmin: s32, b_ymin: s32, b_xmax: s32, b_ymax: s32) -> bool {
+    return a_x >= b_xmin && a_x <= b_xmax && a_y >= b_ymin && a_y <= b_ymax;
+}
 
 AABB :: struct {
     center: Vector3;

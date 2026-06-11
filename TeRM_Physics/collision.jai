@@ -25,13 +25,20 @@ solve_contact :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal
             is_contact = solve_contact_sphere_sphere(body_a, body_b, *contact);
         case .PLANE;
             is_contact = solve_contact_sphere_plane(body_a, body_b, *contact);
+        case .RECTANGLE;
+            is_contact = solve_contact_sphere_rectangle(body_a, body_b, *contact);
         }
     case .PLANE;
         if body_b.collider.shape == {
         case .SPHERE;
             is_contact = solve_contact_sphere_plane(body_b, body_a, *contact);
             flip(*contact);
-        case .PLANE;
+        }
+    case .RECTANGLE;
+        if body_b.collider.shape == {
+        case .SPHERE;
+            is_contact = solve_contact_sphere_rectangle(body_b, body_a, *contact);
+            flip(*contact);
         }
     }
 
@@ -74,35 +81,52 @@ solve_contact :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal
         moving_body: *Physics_Body_Internal;
         static_body: *Physics_Body_Internal;
         surface_normal: Vector3;
-        surface_speed: float;
 
         if a_moves && !b_moves {
             moving_body = body_a;
             static_body = body_b;
             surface_normal = contact.b_surface_normal;
-            surface_speed  = length(body_a.linear_velocity);
         } else if !a_moves && b_moves {
             moving_body = body_b;
             static_body = body_a;
             surface_normal = contact.a_surface_normal;
-            surface_speed  = length(body_b.linear_velocity);
         }
+        surface_tangent_x := cross(moving_body.linear_velocity, surface_normal);
+        surface_speed     := length(surface_tangent_x);
+        surface_tangent_x /= surface_speed;
+        surface_tangent_y := cross(surface_normal, surface_tangent_x);
         
+        time_in_contact := world.delta_time - contact.contact_time;
+
         if surface_speed > 0 {
             // might be other forces at work...
-            // normal_force := world.gravity * dot(surface_normal, {z=1}) * moving_body.properties.mass;
+            normal_force := world.gravity * dot(surface_normal, {z=1}) * moving_body.properties.mass;
             
-            // friction := calculate_stribeck_friction(FRICTION_DEFAULT, normal_force, surface_speed);
-            // friction_accel := friction * moving_body.properties.inv_mass;
+            friction := calculate_stribeck_friction(FRICTION_DEFAULT, normal_force, surface_speed);
+            friction_accel := friction * moving_body.properties.inv_mass;
             // friction_velocity_delta := friction_accel * world.delta_time;
+            friction_velocity_delta := friction_accel * time_in_contact;
 
-            // new_surface_speed := max(surface_speed - friction_velocity_delta, 0);
-            // moving_body.linear_velocity *= new_surface_speed / surface_speed;
+            new_surface_speed := max(surface_speed - friction_velocity_delta, 0);
+            moving_body.linear_velocity -= surface_tangent_y * dot(moving_body.linear_velocity, surface_tangent_y);
+            if new_surface_speed > 0 {
+                moving_body.linear_velocity += surface_tangent_y * new_surface_speed;
+            }
 
-            assert(moving_body.collider.shape == .SPHERE);
-            axis_of_acceleration := cross(surface_normal, moving_body.linear_velocity);
-            moving_body.angular_velocity += axis_of_acceleration / moving_body.collider.sphere.radius * world.delta_time;
-            moving_body.linear_velocity = {};
+            // todo: at end of step
+            if abs(moving_body.linear_velocity.x) < MIN_BODY_SPEED_ALONG_AXIS {
+                moving_body.linear_velocity.x = 0;
+            }
+            if abs(moving_body.linear_velocity.y) < MIN_BODY_SPEED_ALONG_AXIS {
+                moving_body.linear_velocity.y = 0;
+            }
+            if abs(moving_body.linear_velocity.z) < MIN_BODY_SPEED_ALONG_AXIS {
+                moving_body.linear_velocity.z = 0;
+            }
+
+            // assert(moving_body.collider.shape == .SPHERE);
+            // moving_body.angular_velocity += axis_of_acceleration / moving_body.collider.sphere.radius * world.delta_time;
+            // moving_body.linear_velocity = {};
         }
     }
 }
@@ -150,9 +174,8 @@ solve_contact_sphere_plane :: (body_a: *Physics_Body_Internal, body_b: *Physics_
     assert(body_a.collider.shape == .SPHERE && body_b.collider.shape == .PLANE);
     using world;
 
-    sphere_center_projection_onto_plane, distance_from_plane := project_point_onto_plane(body_a.next_position, body_b.next_position, z_axis(body_b));
-
-    contact.contact_normal = -z_axis(body_b);
+    contact.contact_normal = -y_axis(body_b);
+    sphere_center_projection_onto_plane, distance_from_plane := project_point_onto_plane(body_a.next_position, body_b.next_position, y_axis(body_b));
 
     // todo: negative side
     if distance_from_plane <= body_a.collider.sphere.radius {
@@ -170,12 +193,75 @@ solve_contact_sphere_plane :: (body_a: *Physics_Body_Internal, body_b: *Physics_
 
     // assuming side
 
-    contact.contact_time   = calculate_contact_time(contact.contact_normal, body_a.next_position, body_b.next_position, body_a.linear_velocity, body_b.linear_velocity, distance_from_plane, body_a.collider.sphere.radius);
+    contact.contact_time = calculate_contact_time(contact.contact_normal, body_a.next_position, body_b.next_position, body_a.linear_velocity, body_b.linear_velocity, distance_from_plane, body_a.collider.sphere.radius);
 
     contact_point := body_a.next_position + body_a.linear_velocity * contact.contact_time + contact.contact_normal * body_a.collider.sphere.radius;
+    plane_position_at_contact_time := body_b.next_position + body_b.linear_velocity * contact.contact_time;
 
     contact.a_contact_offset =  contact.contact_normal * body_a.collider.sphere.radius;
-    contact.b_contact_offset =  contact_point - body_b.next_position;
+    contact.b_contact_offset =  contact_point - plane_position_at_contact_time;
+    contact.a_surface_normal =  contact.contact_normal;
+    contact.b_surface_normal = -contact.contact_normal;
+    contact.overlap          = 0;
+
+    return_is_contact();
+}
+
+solve_contact_sphere_rectangle :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal, contact: *Physics_Contact) -> bool {
+    assert(body_a.collider.shape == .SPHERE && body_b.collider.shape == .RECTANGLE);
+    
+    contact.contact_normal = -y_axis(body_b);
+    sphere_center_projection_onto_plane, distance_from_plane := project_point_onto_plane(body_a.next_position, body_b.next_position, y_axis(body_b));
+
+    // todo: negative side
+    if distance_from_plane <= body_a.collider.sphere.radius {
+        if distance_from_plane < -body_a.collider.sphere.radius {
+            return false;
+        }
+
+        clamped_projection := clamp_point_to_rect(sphere_center_projection_onto_plane, body_b.next_position, z_axis(body_b), x_axis(body_b), body_b.collider.rectangle.half_height, body_b.collider.rectangle.half_width);
+        diff    := clamped_projection - body_a.next_position;
+        dist_sq := length_squared(diff);
+
+        if dist_sq < square(body_a.collider.sphere.radius) {
+            dist := 0.0;
+            if dist_sq > VERY_SMALL_NUMBER {
+                dist                   = sqrt(dist_sq);
+                contact.contact_normal = diff / dist;
+            }
+            contact.a_contact_offset = contact.contact_normal * body_a.collider.sphere.radius;
+            contact.b_contact_offset = clamped_projection - body_b.next_position;
+            contact.a_surface_normal = contact.contact_normal;
+            contact.b_surface_normal = -contact.contact_normal;
+            contact.contact_time     = 0;
+            contact.overlap          = body_a.collider.sphere.radius - dist;
+            return true;
+        }
+        // else, could still be a side hit
+    }
+
+    contact.contact_time = calculate_contact_time(contact.contact_normal, body_a.next_position, body_b.next_position, body_a.linear_velocity, body_b.linear_velocity, distance_from_plane, body_a.collider.sphere.radius);
+
+    plane_contact_point := body_a.next_position + body_a.linear_velocity * contact.contact_time + contact.contact_normal * body_a.collider.sphere.radius;
+
+    if contact.contact_time < 0 || contact.contact_time > world.delta_time {
+        return false;
+    }
+
+    b_position_at_toc     := body_b.next_position + body_b.linear_velocity * contact.contact_time;
+    clamped_contact_point := clamp_point_to_rect(plane_contact_point, b_position_at_toc, z_axis(body_b), x_axis(body_b), body_b.collider.rectangle.half_height, body_b.collider.rectangle.half_width);
+
+    toward_clamped_contact_diff   := clamped_contact_point - body_a.next_position;
+    distance_from_clamped_contact := length(toward_clamped_contact_diff);
+
+    contact.contact_normal = toward_clamped_contact_diff / distance_from_clamped_contact;
+    contact.contact_time   = calculate_contact_time(contact.contact_normal, body_a.next_position, clamped_contact_point, body_a.linear_velocity, body_b.linear_velocity, distance_from_clamped_contact, body_a.collider.sphere.radius);
+
+    rectangle_contact_point            := body_a.next_position + body_a.linear_velocity * contact.contact_time + contact.contact_normal * body_a.collider.sphere.radius;
+    rectangle_position_at_contact_time := body_b.next_position + body_b.linear_velocity * contact.contact_time;
+
+    contact.a_contact_offset =  contact.contact_normal * body_a.collider.sphere.radius;
+    contact.b_contact_offset =  rectangle_contact_point - rectangle_position_at_contact_time;
     contact.a_surface_normal =  contact.contact_normal;
     contact.b_surface_normal = -contact.contact_normal;
     contact.overlap          = 0;

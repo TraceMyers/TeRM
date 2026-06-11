@@ -51,13 +51,29 @@ update_physics :: (in_time_scale: float) -> int {
 
 // if consecutive_step_index is 0, some extra initialization is done, as well
 // as (todo) warm starting
-run_physics_step :: (consecutive_step_index: int = 0) {
+run_physics_step :: (consecutive_step_index: int) {
     using world;
 
-    delta_time = physics_delta_time();
+    auto_release_temp();
 
-    for *body, bi : world.body_data.bodies {
-        flags := get_flags(body);
+    delta_time = physics_delta_time();
+    run_physics_step_pre_contact(consecutive_step_index);
+    run_contacts_broad_phase();
+    run_contacts_narrow_phase();
+    run_physics_step_post_contact();
+}
+
+run_physics_step_pre_contact :: (consecutive_step_index: int) {
+    using world;
+    // todo: warm starting
+
+    contact_pairs.allocator = temp;
+    array_reserve(*contact_pairs, body_data.bodies.count * 2);
+    defer array_reset(*contact_pairs);
+
+    for *body, bi : body_data.bodies {
+        flags := body_data.flags[bi];
+
         if (flags & .SKIP_UPDATE) != 0 {
             continue;
         }
@@ -67,61 +83,36 @@ run_physics_step :: (consecutive_step_index: int = 0) {
             body.prev_orientation = body.next_orientation;
         }
 
-        if body.properties.call_per_step != null {
-            body.properties.call_per_step(xx body);
+        moved_or_accelerated: bool;
+        defer if moved_or_accelerated {
+            on_move_or_accelerate(body);
         }
 
         if (flags & .APPLY_GRAVITY) != 0 {
-            body.linear_velocity.z -= world.gravity * delta_time;
+            body.linear_velocity.z -= gravity * delta_time;
+            moved_or_accelerated = true;
         }
         
-        if body.move_input != {} {
-            // input_accel := body.move_input * body.properties.move_input_acceleration;
-            // body.linear_velocity.xy += input_accel * delta_time;
-            // body.move_input = {};
-        }
-
-        // calculate_axes(body);
-
-        if bi < world.body_data.bodies.count - 1 {
-            for other_bi : bi+1..world.body_data.bodies.count - 1 {
-                other_body := *world.body_data.bodies[other_bi];
-                solve_contact(body, other_body);
-            }
-        }
-
-        // linear_speed_sq := length_squared(body.linear_velocity);
-
-        // if linear_speed_sq > 0 {
-        //     // todo: apply gravity as a force, naturally resulting against friction against surfaces with z-up components
-        //     pointing_friction := body.properties.pointing_friction * world.gravity;
-        //     friction_delta_speed := pointing_friction * delta_time;
-
-        //     if square(friction_delta_speed) > linear_speed_sq {
-        //         body.linear_velocity = {};
-        //         body.linear_speed    = 0;
-        //     } else {
-        //         // todo: introduce movement against contact surface, which is where friction is generated.
-        //         linear_speed            := sqrt(linear_speed_sq);
-        //         velocity_direction      := body.linear_velocity / linear_speed;
-        //         friction_velocity_delta := -velocity_direction * friction_delta_speed;
-        //         body.linear_velocity    += friction_velocity_delta;
-        //         body.linear_speed        = length(body.linear_velocity);
-        //     }
-
-        //     // velocity applied after friction to allow for static friction (no movement)
-            body.next_position += body.linear_velocity * delta_time;
-            speed_sq := length_squared(body.angular_velocity);
-            if speed_sq > 0 {
-                speed := sqrt(speed_sq);
-                rotation_axis := body.angular_velocity / speed;
-                rotate(*body.next_orientation, rotation_axis, speed * delta_time);
-                // calculate_axes(body);
-            }
-        // } else {
-            // body.linear_speed = 0;
+        // if body.move_input != {} {
+        //     input_accel := body.move_input * body.properties.move_input_acceleration;
+        //     body.linear_velocity.xy += input_accel * delta_time;
+        //     body.move_input = {};
+        //     moved_or_accelerated = true;
         // }
+
+        if body.properties.call_per_step != null {
+            old_tform := body.transform;
+            body.properties.call_per_step(xx body);
+            if memcmp(*body.transform, *old_tform, size_of(Physics_Body_Transform)) != 0 {
+                moved_or_accelerated = true;
+            }
+        }
+
     }
+}
+
+run_physics_step_post_contact :: () {
+
 }
 
 physical_entity_transform_update :: (loop_body: Code) #expand {

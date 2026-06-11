@@ -1,8 +1,3 @@
-#module_parameters()(
-    // must be true if you want to use TeRM vulkan renderer
-    IMPORT_VULKAN := false
-);
-
 // -- sections --
 // Misc
 // Bit_Array Helpers
@@ -10,6 +5,7 @@
 // Struct_Of_Arrays
 // Linear_Table
 // CT_Table
+// Hybrid_Array
 
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :Misc
@@ -793,6 +789,130 @@ table_remove_container :: (table: *CT_Table, container: *CT_Table_KV_Container) 
     pool_release(*table.kv_containers, container_index); 
 }
 
+#scope_export
+
+// -----------------------------------------------------------------------------------
+// --------------------------------------------------------------------- :Hybrid_Array
+// an inline & heap hybrid array wherein data is stored on-struct until
+// it's too big. note that you can set the allocator, since there is
+// an allocator field stored on both 'internal' and 'external' in
+// the same place in memory. there is no setting the number of items
+// stored on the struct. it's just however many fit. if 0, compile error.
+// 32 bits -> 5 items. 16 bits -> 11 items.
+
+Hybrid_Array :: struct($T: Type) {
+    internal: Hybrid_Array_Internal(T);
+    #overlay(internal) external: [..]T;
+}
+
+// make sure the context has the right allocator set when calling
+array_add :: (using array: *Hybrid_Array($T), item: T) {
+    if internal.allocation == .INTERNAL {
+        if internal.count < internal.items.count {
+            internal.items[internal.count] = item;
+            internal.count += 1;
+            return;
+        }
+
+        assert(internal.count == internal.items.count);
+
+        internal.allocation = .EXTERNAL;
+
+        external_temp: [..]T;
+        external_temp.allocator = context.allocator;
+
+        array_resize(*external_temp, internal.items.count * 2);
+        external_temp.count = internal.items.count;
+        memcpy(external_temp.data, internal.items.data, internal.items.count * size_of(T));
+
+        external = external_temp;
+    } 
+
+    assert(internal.allocation == .EXTERNAL);
+    array_add(*external, item);
+}
+
+array_unordered_remove_by_value :: (using array: *Hybrid_Array($T), item: T) {
+    if internal.allocation == .EXTERNAL {
+        array_unordered_remove_by_value(*external, item);   
+        if external.count <= #run Hybrid_Array(T).internal.items.count / 2 {
+            data  := external.data;
+            count := external.count;
+            memcpy(internal.items.data, data, count * size_of(T));
+            internal.count      = xx count;
+            internal.allocation = .INTERNAL;
+        }
+        return;
+    }
+
+    assert(internal.allocation == .INTERNAL);
+    if internal.count > 0 then for 0..internal.count-1 {
+        if internal.items[it] == item {
+            if it != internal.count - 1 {
+                internal.items[it] = internal.items[internal.count-1];
+            }
+            internal.count -= 1;
+            return;
+        }
+    }
+}
+
+for_expansion :: (array: *Hybrid_Array($T), body: Code, flags: For_Flags) #expand {
+    items: []T = ---;
+    if array.internal.allocation == .INTERNAL {
+        items.data  = array.internal.items.data;
+        items.count = array.internal.count;
+    } else {
+        items = array.external;
+    }
+
+    for item, ind : items {
+        `it := item;
+        `it_index := ind;
+
+        #insert body;
+    }
+}
+
+Hybrid_Array_Allocation :: enum u8 {
+    EXTERNAL :: 0x00;
+    INTERNAL :: 0x80;
+}
+
+Hybrid_Array_Internal :: struct($T: Type) {
+    // this block can be no larger than the size of the elements in Resizable_Array *before* the allocator.
+    allocation: Hybrid_Array_Allocation = .INTERNAL;
+    count: s8;
+    items: [INTERNAL_COUNT]T;
+
+    // forces external_allocator to be at 24 bytes from the top of the struct.
+    #if ALLOCATOR_OFFSET_BUFFER > 0 then #insert #code _allocator_align_buffer: [ALLOCATOR_OFFSET_BUFFER]u8;
+
+    // aligned with the external resize array's allocator so it can be set before being used.
+    external_allocator: Allocator;
+
+    // this is all of the comptime stuff that sizes things correctly and makes sure
+    // external_allocator aligns with external.allocator on Hybrid_Array.
+    INTERNAL_SIZE_BEFORE_ARRAY     :: #run size_of(Hybrid_Array_Allocation) + size_of(s8);
+    INTERNAL_SIZE_BEFORE_ALLOCATOR :: size_of(Resize_Array_Partial);
+    ITEMS_OFFSET                   :: #run max(align_of(T), INTERNAL_SIZE_BEFORE_ARRAY);
+    INTERNAL_COUNT                 :: #run (INTERNAL_SIZE_BEFORE_ALLOCATOR - ITEMS_OFFSET) / size_of(T);
+    ALLOCATOR_OFFSET_PADDING       :: #run INTERNAL_SIZE_BEFORE_ALLOCATOR - (ITEMS_OFFSET + INTERNAL_COUNT * size_of(T));
+    ALLOCATOR_OFFSET_BUFFER        :: #run ALLOCATOR_OFFSET_PADDING - (ALLOCATOR_OFFSET_PADDING % 8);
+    ALLOCATOR_LOCATION             :: #run ITEMS_OFFSET + INTERNAL_COUNT * size_of(T) + ALLOCATOR_OFFSET_PADDING;
+    #assert(INTERNAL_COUNT > 0 && ALLOCATOR_LOCATION == 24);
+}
+
+#scope_file
+
+Resize_Array_Partial :: struct {
+    count: s64;
+    data: *void;
+    allocated: s64;
+}
+
+#scope_export
+
 // ------
 
 #scope_file
@@ -815,12 +935,9 @@ BIT_ARRAY_SLOT_BIT_COUNT :: BIT_ARRAY_SLOT_SIZE * 8;
 #import "Hash";
 #import "Bit_Array";
 
-#if IMPORT_VULKAN {
-    #import "TeRM/TeRM_Render/vulkan-jai";
-}
-
 #import "TeRM/TeRM_Allocation";
 #import "TeRM/TeRM_Math";
+#import "TeRM/TeRM_Metaprogram";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

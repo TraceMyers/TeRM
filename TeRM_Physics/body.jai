@@ -4,22 +4,7 @@ Physics_Body :: Physics_Body_Base(void, void);
 Physics_Body_Internal :: Physics_Body_Base(Physics_Properties, Physics_Collider);
 
 Physics_Body_Base :: struct($properties_type: Type, $collider_type: Type) {
-    linear_velocity: Vector3;
-    angular_velocity: Vector3; //ehhhh
-
-    prev_position: Vector3;
-    next_position: Vector3;
-    prev_orientation: Quaternion;
-    next_orientation: Quaternion;
-
-    // this data is calculated every physics step (that the body is awake).
-    // it represents the most up-to-date information the body had on
-    // the frame of the last physics step, so it may not be accurate to the frame.
-    // if the field is not up to date and it is requested through get_...
-    // then it will be updated on-demand.
-    using per_step: struct {
-        linear_speed: float;
-    }
+    using transform: Physics_Body_Transform;
 
     properties: *properties_type;
     collider: *collider_type;
@@ -34,6 +19,15 @@ Physics_Body_Base :: struct($properties_type: Type, $collider_type: Type) {
     #if user_types.extra_body_data != void {
         extra_data: user_types.extra_body_data;
     }
+}
+
+Physics_Body_Transform :: struct {
+    linear_velocity: Vector3;
+    angular_velocity: Vector3;
+    prev_position: Vector3;
+    next_position: Vector3;
+    prev_orientation: Quaternion;
+    next_orientation: Quaternion;
 }
 
 // a template which will be used to spawn bodies. templates are used in order
@@ -58,14 +52,10 @@ Physics_Body_Flags :: enum_flags u32 {
     LOCK_PITCH;
     LOCK_ROLL;
     UPRIGHT;
-    CALCULATED_AXES;
-    CALCULATED_LINEAR_SPEED;
     SKIP_UPDATE;
     APPLY_GRAVITY;
     PLACED_INTO_CONTACT_GRID;
 }
-
-PER_STEP_PHYSICS_BODY_FLAGS : Physics_Body_Flags : .CALCULATED_AXES | .CALCULATED_LINEAR_SPEED;
 
 create_physics_body :: (template_name: string, entity_id: user_types.entity_id_type) -> *Physics_Body {
     assert(entity_id != get_null_entity_id());
@@ -78,7 +68,8 @@ create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.
 
     soa_add(*body_data);
     i := soa_count(*body_data) - 1;
-    body_data.flags[i]              = template.flags;
+    // todo: making everything awake all the time for now, but that needs to change.
+    body_data.flags[i]              = template.flags | .AWAKE;
     body_data.collision_channels[i] = template.collision_channels;
     body_data.bodies[i].properties  = *template.properties;
     body_data.bodies[i].collider    = *template.collider;
@@ -212,7 +203,7 @@ set_position :: (_body: *Physics_Body_Base, position: Vector3) {
     using body := cast(*Physics_Body_Internal) _body;
     next_position = position;
     prev_position = position;
-    on_move(body);
+    on_move_or_accelerate(body);
 }
 
 // teleport a body to an orientation
@@ -220,7 +211,7 @@ set_orientation :: (_body: *Physics_Body_Base, orientation: Quaternion) {
     using body := cast(*Physics_Body_Internal) _body;
     next_orientation = orientation;
     prev_orientation = orientation;
-    on_move(body);
+    on_move_or_accelerate(body);
 }
 
 get_position :: (_body: *Physics_Body_Base) -> Vector3 {
@@ -237,23 +228,23 @@ calculate_aabb :: inline (_body: *Physics_Body_Base) -> AABB {
     body := cast(*Physics_Body_Internal) _body;
     using body.collider;
 
-    aabb := AABB.{
-        center = body.next_position,
-        extent = 
+    aabb := AABB.{center = body.next_position};
+
+    if shape == .SPHERE {
+        aabb.extent = splat(shape_data.array[0], 3);
+    } else {
+        aabb.extent = 
               abs(z_axis(body) * shape_data.array[0]) 
             + abs(x_axis(body) * shape_data.array[1]) 
-            + abs(y_axis(body) * shape_data.array[2])
-    };
+            + abs(y_axis(body) * shape_data.array[2]);
+    }
 
     return aabb;
 }
 
-on_move :: (_body: *Physics_Body_Base) {
+on_move_or_accelerate :: (_body: *Physics_Body_Base) {
     body := cast(*Physics_Body_Internal) _body;
-
-    // todo: diff placement instead of this
-    remove_from_contact_grid(body);
-    place_into_contact_grid(body);
+    diff_place_into_contact_grid(body);
 }
 
 #scope_module

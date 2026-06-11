@@ -17,39 +17,66 @@ type_has_tag :: (T: Type, tag: Type_Info_Tag) -> bool {
     return info.type == tag;
 }
 
-align_of :: inline ($T: Type) -> u8 {
+align_of :: inline ($T: Type) -> int {
     return align_of(T.(*Type_Info));
 }
 
-align_of_element_type :: inline ($T: Type) -> u8 {
+align_of_element_type :: inline ($T: Type) -> int {
     info := T.(*Type_Info);
     assert(info.type == .ARRAY);
     array_info := T.(*Type_Info_Array);
     return type_alignment(info.element_type);
 }
 
-struct_alignment :: (info: *Type_Info) -> u8 {
+struct_alignment :: (info: *Type_Info, align_of_depth := 0, max_depth := 10) -> int {
     assert(info.type == .STRUCT);
-    struct_info := info.(*Type_Info_Struct);
-    max_align : u8 = 1;
-    for struct_info.members {
-        max_align = max(max_align, align_of(xx it.type));
+
+    if align_of_depth >= max_depth {
+        return 8;
     }
+
+    struct_info := info.(*Type_Info_Struct);
+    max_align: int = 1;
+
+    for struct_info.members {
+        max_align = max(max_align, align_of(xx it.type, align_of_depth, max_depth));
+    }
+
     return max_align;
 }
 
-align_of :: inline (info: *Type_Info) -> u8 {
-    t := info.type;
-    if t == .INTEGER    then return xx info.runtime_size;
-    if t == .FLOAT      then return xx info.runtime_size; 
-    if t == .POINTER    then return xx info.runtime_size;
-    if t == .PROCEDURE  then return xx info.runtime_size;
-    if t == .ENUM       then return xx info.runtime_size;
-    if t == .BOOL       then return xx info.runtime_size;
-    if t == .STRING     then return 8;
-    if t == .STRUCT     then return struct_alignment(info);
-    if t == .ARRAY      then return 8;
-    return 1;
+align_of :: inline (info: *Type_Info, start_depth := 0, max_depth := 10) -> int {
+    use_info := info;
+
+    i := start_depth;
+    while i < max_depth {
+        defer i += 1;
+        if use_info.type == {
+        case .INTEGER;
+            return info.runtime_size;
+        case .FLOAT;
+            return info.runtime_size; 
+        case .POINTER;
+            return info.runtime_size;
+        case .PROCEDURE;
+            return info.runtime_size;
+        case .ENUM;
+            return info.runtime_size;
+        case .BOOL;
+            return info.runtime_size;
+        case .STRING;
+            return 8;
+        case .STRUCT;
+            return struct_alignment(use_info, i, max_depth);
+        case .ARRAY;
+            tinfo_array := cast(*Type_Info_Array) info;
+            use_info = tinfo_array.element_type;
+        case;
+            break;
+        }
+    }
+
+    return 8;
 }
 
 get_struct_field :: (s: *$struct_type, $field_type: Type) -> *field_type {
@@ -80,6 +107,7 @@ type_2_is_pointer_to_type_1 :: (T1: Type, T2: Type) -> bool {
     tinfo_ptr := cast(*Type_Info_Pointer) tinfo;
     return tinfo_ptr.pointer_to == cast(*Type_Info) T1;
 }
+
 
 Struct_Visit_Item :: struct {
     data: *u8;

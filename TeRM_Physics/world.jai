@@ -15,6 +15,8 @@ Physical_World :: struct {
 
     delta_time: float32;
 
+    debug_entity_id: user_types.entity_id_type;
+
     #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
         debug_template_properties: [..]Physics_Properties;
     }
@@ -25,6 +27,8 @@ Physical_World :: struct {
 
     contact_grid: CT_Table(u32, Contact_Cell, true, 1024);
     contact_grid_cell_allocator: Super_Allocator;
+    // stored
+    contact_pair_islands: [..]Contact_Island;
 
     // grid settings for size, origin, broad phase resolution (scale)
     grid_origin := Vector2.{-512.0, -512.0};

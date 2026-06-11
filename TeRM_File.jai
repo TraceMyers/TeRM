@@ -79,12 +79,74 @@ get_final_path :: (path: string) -> string {
     }
 }
 
+// extension filter for if it's a directory. e.g. string.["jai", "c", "txt"] to count
+// lines in files of those extension
+count_lines :: (file_or_directory_path: string, extension_filter: []string = .[]) -> total: int, non_blank: int {
+    auto_release_temp();
+
+    path, filename, ext := path_decomp(file_or_directory_path);
+    count := File_Lines_Count.{ext_filter=extension_filter}; 
+
+    if ext.count > 0 {
+        // file
+        count_file_lines(file_or_directory_path, *count);
+    } else {
+        // directory
+        visit_files(file_or_directory_path, recursive=true, *count, count_file_lines_visitor,, temp);
+    }
+
+    return count.total, count.non_blank;
+}
 
 #scope_file
 
+File_Lines_Count :: struct {
+    total:     int;
+    non_blank: int;
+    ext_filter: []string;
+}
+
+count_file_lines_visitor :: (info: *File_Visit_Info, count: *File_Lines_Count) {
+    file_ext := path_extension(info.full_name);
+    if count.ext_filter.count == 0 {
+        count_file_lines(info.full_name, count);
+    } else for ext : count.ext_filter {
+        if ext == file_ext {
+            count_file_lines(info.full_name, count);
+            return;
+        }
+    }
+}
+
+count_file_lines :: (file_path: string, count: *File_Lines_Count) {
+    auto_release_temp();
+
+    text, read_success := read_entire_file(file_path, true,, temp);
+
+    if read_success {
+        for :per_line line : text {
+            non_blank: bool;
+            for c : line {
+                if !is_space(c) {
+                    non_blank = true;
+                    break;
+                }
+            }
+
+            count.total += 1;
+            if non_blank {
+                count.non_blank += 1;
+            }
+        }
+    }
+}
 
 #import "Basic";
 #import "String";
+#import "File";
+#import "File_Utilities";
+
+#import "TeRM/TeRM_String";
 
 #if OS == .WINDOWS {
     #import "Windows";

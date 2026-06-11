@@ -1,47 +1,64 @@
 // todo: detecting common bugs like double-put or forgetting to remove
 // todo: optimization, instead of doing a full remove, re-place, do a diff placement.
 
-Contact_Cell :: struct {
-    external: [..]u16;
-    #overlay(external) internal : struct {
-        // prob dont' need to explicitly align to 8. correct sizing only thing that matters,
-        // unless instances are being made outside of allocations returned by heap allocators,
-        // because those will all be aligned to 8 bytes.
-        allocation: enum u8 {
-            EXTERNAL :: 0x00;
-            INTERNAL :: 0x80;
-        };
-        count: s8;
-        bodies: [INTERNAL_BODY_COUNT]u16;
+Contact_Cell   :: Hybrid_Array(u16);
+Contact_Island :: Hybrid_Array(s32);
+
+Contact_Pair :: struct {
+    a: u16;
+    b: u16;
+}
+
+run_contacts_broad_phase :: () {
+    using world;
+
+    array_reset_keeping_memory(*contact_pair_islands);
+
+    seen_body       := make_bit_array(body_data.bodies.count,, temp);
+    body_island_ids := make_static_array(u16, body_data.bodies.count,, temp);
+
+    // todo: rotation being ignored because it's annoying. don't do that.
+    SHOULD_VISIT_QUESTION : Physics_Body_Flags : .PLACED_INTO_CONTACT_GRID | .AWAKE | .LOCK_TRANSLATION; 
+    SHOULD_VISIT_ANSWER   : Physics_Body_Flags : .PLACED_INTO_CONTACT_GRID | .AWAKE;
+
+    for *body, bi : body_data.bodies {
+        flags := body_data.flags[bi];
+
+        if (flags & SHOULD_VISIT_QUESTION) != SHOULD_VISIT_ANSWER {
+            continue;
+        }
+
+        // seen self = easy way to never pair with self
+        seen_body[bi] = true;
+
+        for_all_cells_in_overlap(body, false, true, #code {
+            for obi : cell {
+                // only visit bodies with indexes higher than this one...
+                if obi < bi {
+                    other_flags := body_data.flags[obi];
+                    // ... but only as long as the other body already iterated
+                    if (other_flags & SHOULD_VISIT_QUESTION) == SHOULD_VISIT_ANSWER {
+                        continue;
+                    }
+                }
+
+                if seen_body[obi] {
+                    continue;
+                }
+                seen_body[obi] = true;
+
+                array_add(*contact_pairs, {xx bi, xx obi});
+            }
+        });
+
+        clear_all_bits(*seen_body);
     }
-    INTERNAL_BODY_COUNT :: #run (size_of([..]u16) - 2) / 2;
 }
 
 body_count :: (cell :*Contact_Cell) -> int {
     if cell.internal.allocation == .INTERNAL {
         return cell.internal.count;
     } else return cell.external.count;
-}
-
-for_expansion :: (cell: *Contact_Cell, body: Code, flags: For_Flags) #expand {
-    bodies: []u16 = ---;
-    if cell.internal.allocation == .INTERNAL {
-        bodies.data  = cell.internal.bodies.data;
-        bodies.count = cell.internal.count;
-    } else {
-        bodies = cell.external;
-    }
-
-    for b, bi : bodies {
-        `it := cast(*Physics_Body) *world.body_data.bodies[b];
-        `it_index := bi;
-
-        #insert body;
-    }
-}
-
-initialize_broad_phase :: () {
-    using world;
 }
 
 calculate_grid_overlap :: (_body: *Physics_Body_Base) -> Vector2i, Vector2i {
@@ -71,7 +88,7 @@ Grid_To_World_Placement :: enum { UPPER_LEFT; CENTER; LOWER_RIGHT; }
 
 grid_to_world :: inline (v: Vector2i, $placement := Grid_To_World_Placement.UPPER_LEFT) -> Vector3 {
     transformed := Vector2.{xx v.x, xx v.y};
-    inv_grid_scale := splat(1.0 / world.grid_scale, 2);
+    inv_grid_scale := splat(1 / world.grid_scale, 2);
     transformed *= inv_grid_scale;
 
     #if placement == {
@@ -86,7 +103,7 @@ grid_to_world :: inline (v: Vector2i, $placement := Grid_To_World_Placement.UPPE
     return Vector3.{xy=transformed};
 }
 
-for_all_cells_in_overlap :: (_body: *Physics_Body_Base, $code: Code, $allocate_cell_if_empty: bool, $use_coords_on_body: bool) -> bool #expand {
+for_all_cells_in_overlap :: (_body: *Physics_Body_Base, $allocate_cell_if_empty: bool, $use_coords_on_body: bool, $code: Code) -> bool #expand {
     body := cast(*Physics_Body_Internal) _body;
     if !has_extent(body.collider.shape) {
         return false;
@@ -119,7 +136,7 @@ place_into_contact_grid :: (_body: *Physics_Body_Base) {
 
     body_index: u16 = xx get_index(_body);
 
-    if !for_all_cells_in_overlap(_body, #code add_to_cell(cell, body_index), true, false) {
+    if !for_all_cells_in_overlap(_body, true, false, #code array_add(cell, body_index)) {
         return;
     }
 
@@ -140,7 +157,7 @@ remove_from_contact_grid :: (_body: *Physics_Body_Base) {
 
     body_index: u16 = xx get_index(_body);
 
-    for_all_cells_in_overlap(_body, #code remove_from_cell(cell, body_index), false, true);
+    for_all_cells_in_overlap(_body, false, true, #code array_unordered_remove_by_value(cell, body_index));
 
     // intentionally invalid (max < min)
     _body.contact_grid_min_x = 0;
@@ -149,6 +166,55 @@ remove_from_contact_grid :: (_body: *Physics_Body_Base) {
     _body.contact_grid_max_y = -1;
 
     remove_flags(_body, .PLACED_INTO_CONTACT_GRID);
+}
+
+diff_place_into_contact_grid :: (_body: *Physics_Body_Base) {
+    using world;
+
+    body := cast(*Physics_Body_Internal) _body;
+
+    if !has_extent(body.collider.shape) {
+        remove_from_contact_grid(body);
+        return;
+    }
+
+    new_min, new_max := calculate_grid_overlap(_body);
+
+    if new_min.x == body.contact_grid_min_x
+    && new_min.y == body.contact_grid_min_y
+    && new_max.x == body.contact_grid_max_x
+    && new_max.y == body.contact_grid_max_y {
+        return;
+    }
+
+    body_index: u16 = xx get_index(body);
+
+    for y : new_min.y..new_max.y {
+        for x : new_min.x..new_max.x {
+            if is_point_in_box_2d(x, y, body.contact_grid_min_x, body.contact_grid_min_y, body.contact_grid_max_x, body.contact_grid_max_y) {
+                continue;
+            }
+            cell := get_contact_cell({_s16=.[xx x, xx y]}, true);
+            array_add(cell, body_index);
+        }
+    }
+
+    for y : body.contact_grid_min_y..body.contact_grid_max_y {
+        for x : body.contact_grid_min_x..body.contact_grid_max_x {
+            if is_point_in_box_2d(x, y, new_min.x, new_min.y, new_max.x, new_max.y) {
+                continue;
+            }
+            cell := get_contact_cell({_s16=.[xx x, xx y]}, true);
+            array_unordered_remove_by_value(cell, body_index);
+        }
+    }
+
+    body.contact_grid_min_x = xx new_min.x;
+    body.contact_grid_min_y = xx new_min.y;
+    body.contact_grid_max_x = xx new_max.x;
+    body.contact_grid_max_y = xx new_max.y;
+
+    add_flags(_body, .PLACED_INTO_CONTACT_GRID);
 }
 
 get_contact_cell :: inline (coords: Vector2i) -> *Contact_Cell {
@@ -161,60 +227,7 @@ get_contact_cell :: inline (key: num32, allocate_if_empty := false) -> *Contact_
     if cell == null && allocate_if_empty {
         table_set(*world.contact_grid, key._u32, {});
         cell = table_get_by_key_hash(*world.contact_grid, key._u32);
-        cell.internal.allocation = .INTERNAL;
+        cell.external.allocator = world.contact_grid_cell_allocator;
     }
     return cell;
-}
-
-add_to_cell :: (using cell: *Contact_Cell, body: u16) {
-    if internal.allocation == .INTERNAL {
-        if internal.count < internal.bodies.count {
-            internal.bodies[internal.count] = body;
-            internal.count += 1;
-            return;
-        }
-
-        assert(internal.count == internal.bodies.count);
-
-        internal.allocation = .EXTERNAL;
-
-        external_temp: [..]u16;
-        external_temp.allocator = world.contact_grid_cell_allocator;
-
-        array_resize(*external_temp, internal.bodies.count * 2);
-        external_temp.count = internal.bodies.count;
-        memcpy(external_temp.data, internal.bodies.data, internal.bodies.count * size_of(u16));
-
-        external = external_temp;
-    } 
-
-    assert(internal.allocation == .EXTERNAL);
-    assert(external.count > Contact_Cell.internal.bodies.count && external.count < 0xff_ffff);
-    array_add(*external, body);
-}
-
-remove_from_cell :: (using cell: *Contact_Cell, body: u16) {
-    if internal.allocation == .EXTERNAL {
-        assert(external.count > Contact_Cell.internal.bodies.count && external.count < 0xffff_ffff);
-        array_unordered_remove_by_value(*external, body);   
-        if external.count <= #run Contact_Cell.internal.bodies.count / 2 {
-            data  := external.data;
-            count := external.count;
-            memcpy(internal.bodies.data, data, count * size_of(u16));
-            internal.count      = xx count;
-            internal.allocation = .INTERNAL;
-        }
-        return;
-    }
-
-    assert(internal.allocation == .INTERNAL);
-    if internal.count > 0 then for 0..internal.count-1 {
-        if internal.bodies[it] == body {
-            if it != internal.count - 1 {
-                internal.bodies[it] = internal.bodies[internal.count-1];
-            }
-            internal.count -= 1;
-            return;
-        }
-    }
 }

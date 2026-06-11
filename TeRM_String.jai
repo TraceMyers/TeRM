@@ -203,17 +203,11 @@ c_strings_equal :: (a: *u8, b: *u8, max_read_count: s64) -> bool {
         return false;
     }
     for i : 0..max_read_count-1 {
-        if a[i] == 0 {
-            if b[i] == 0 {
-                return true;
-            } else {
-                return false;
-            }
-        } else if b[i] == 0 {
-            return false;
-        }
         if a[i] != b[i] {
             return false;
+        }
+        if a[i] == 0 {
+            return true;
         }
     }
     return true;
@@ -222,17 +216,26 @@ c_strings_equal :: (a: *u8, b: *u8, max_read_count: s64) -> bool {
 // String_Exchange + for_expansion = progressive string consumption with arbitrary break condition
 // usage example:
 //
-// my_string := "hello/there";
+// my_string := "hello/there..friend";
 // my_exchange := String_Exchange.{src=my_string}; // can also have src be a pointer
-// for my_exchange { 
-//      if it == #char "/" {
-//          // trims the end '/' from dst
-//          my_exchange.trim_bytes = 1;
-//          break;
-//      }
+// while my_exchange.src.count > 0 {
+//     for my_exchange { 
+//          if it == #char "/"
+//              // trims the end '/' from dst
+//              my_exchange.trim_bytes = 1;
+//              break;
+//          } else if it == #char "." {
+//              if it_index < src.count - 1 && src[it_index+1] == #char "." {
+//                  // trims the end '..' from dst
+//                  my_exchange.trim_bytes = 2;
+//                  break;
+//              } else {
+//                  assert(false, "improperly formatted blah blah");
+//              }
+//          }
+//     }
+//     <- here, do something with my_exchange.dst (1."hello", 2."there", 3."friend")
 // }
-//  
-// after this, my_exchange will be {src="there", dst="hello"};
 String_Exchange :: struct($type := enum { NORMAL; PTR; }.NORMAL) {
     source_type :: #insert #run tprint("%string;", ifx type == .NORMAL then "" else "*");
     src: source_type;

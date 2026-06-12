@@ -793,9 +793,9 @@ table_remove_container :: (table: *CT_Table, container: *CT_Table_KV_Container) 
 
 // -----------------------------------------------------------------------------------
 // --------------------------------------------------------------------- :Hybrid_Array
-// an inline & heap hybrid array wherein data is stored on-struct until
+// an internal/external storage hybrid array wherein data is stored on-struct until
 // it's too big. you can preset the allocator since that is not overwritten by 
-// internal data.
+// internal data (unless internal buffer overflow).
 
 Hybrid_Array :: struct($T: Type) {
     allocation: Hybrid_Array_Allocation = .INTERNAL;
@@ -814,15 +814,28 @@ count :: inline (using array: *Hybrid_Array) -> int {
     return ifx allocation == .INTERNAL then internal_count else external.count;
 }
 
-view :: inline (using array: *Hybrid_Array) -> []T {
+view :: inline (using array: *Hybrid_Array($T)) -> []T {
     slice: []T = ---;
     if allocation == .INTERNAL {
         slice.data  = internal_items.data;
         slice.count = internal_count;
     } else {
-        slice = externa;
+        slice = external;
     }
     return slice;
+}
+
+operator *[] :: (using array: *Hybrid_Array($T), i: int) -> *T {
+    return ifx allocation == .INTERNAL then internal_items[i] else external[i];
+}
+
+operator []= :: (using array: *Hybrid_Array($T), i: int, x: T) -> *T {
+    if allocation == .INTERNAL {
+        assert(i < internal_count);
+        internal_items[i] = x;
+    } else {
+        external[i] = x;
+    }
 }
 
 // make sure the context has the right allocator set when calling
@@ -903,7 +916,7 @@ Resize_Array_Partial :: struct {
     allocated: s64;
 }
 
-move_to_internal_allocation :: (using array: *Hybrid_Array) {
+move_to_internal_allocation :: inline (using array: *Hybrid_Array) {
     assert(external.count <= internal_items.count);
 
     allocation = .INTERNAL;
@@ -917,7 +930,7 @@ move_to_internal_allocation :: (using array: *Hybrid_Array) {
     free(data,, external.allocator);
 }
 
-move_to_external_allocation :: (using array: *Hybrid_Array, reserve_count: int) {
+move_to_external_allocation :: inline (using array: *Hybrid_Array, reserve_count: int) {
     allocation = .EXTERNAL;
 
     external_temp: [..]T;

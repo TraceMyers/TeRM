@@ -1106,9 +1106,7 @@ Box_Edges :: Box_Edge.[
 
 is_overlap_aabb_aabb :: inline (aabb_a: AABB, aabb_b: AABB) -> bool {
     abs_pos_diff := abs(aabb_a.center - aabb_b.center);
-    return abs_pos_diff.x < aabb_a.extent.x + aabb_b.extent.x
-        && abs_pos_diff.y < aabb_a.extent.y + aabb_b.extent.y
-        && abs_pos_diff.z < aabb_a.extent.z + aabb_b.extent.z;
+    return abs_pos_diff.x < aabb_a.extent.x + aabb_b.extent.x && abs_pos_diff.y < aabb_a.extent.y + aabb_b.extent.y && abs_pos_diff.z < aabb_a.extent.z + aabb_b.extent.z;
 }
 
 get_aabb_points :: (aabb: AABB, out_points: *[8]Vector3) {

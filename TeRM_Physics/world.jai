@@ -27,9 +27,9 @@ Physical_World :: struct {
 
     contact_grid: CT_Table(u32, Contact_Cell, true, 1024);
     contact_grid_cell_allocator: Super_Allocator;
-    // stored
+    // stored per-frame and kept for warm starting
     contact_pairs: [..]Contact_Pair;
-    contact_pair_islands: [..]Contact_Island;
+    contact_islands: [..]Contact_Island;
 
     // grid settings for size, origin, broad phase resolution (scale)
     grid_origin := Vector2.{-512.0, -512.0};

@@ -44,7 +44,7 @@ linear_decompress_float_16bit :: inline (u: $in_type, $min_value: float, $max_va
     return linear_decompress_float(u, min_value, max_value);
 }
 
-linear_compress_float_21bit :: (x: float, $min_value: float, $max_value: float, $do_clamp := true) -> u64 {
+linear_compress_float_21bit :: inline (x: float, $min_value: float, $max_value: float, $do_clamp := true) -> u64 {
     INV_RANGE :: 1.0 / (max_value - min_value);
     #if do_clamp {
         xc := clamp(x, min_value, max_value);
@@ -57,20 +57,20 @@ linear_compress_float_21bit :: (x: float, $min_value: float, $max_value: float, 
     return out_val;
 }
 
-linear_decompress_float_21bit :: (u: u64, $min_value: float, $max_value: float) -> float {
+linear_decompress_float_21bit :: inline (u: u64, $min_value: float, $max_value: float) -> float {
     FLOAT_RANGE :: #run (max_value - min_value);
     norm := u.(float) * INV_21_BITS_MAX;
     return min_value + norm * FLOAT_RANGE;
 }
 
-linear_compress_vector3 :: (v: Vector3, $min_value: float, $max_value: float) -> u64 {
+linear_compress_vector3 :: inline (v: Vector3, $min_value: float, $max_value: float) -> u64 {
     x := linear_compress_float_21bit(v.x, min_value, max_value);
     y := linear_compress_float_21bit(v.y, min_value, max_value);
     z := linear_compress_float_21bit(v.z, min_value, max_value);
     return (z << 42) | (y << 21) | (x << 0);
 }
 
-linear_decompress_vector3 :: (v: u64, $min_value: float, $max_value: float) -> Vector3 {
+linear_decompress_vector3 :: inline (v: u64, $min_value: float, $max_value: float) -> Vector3 {
     x := (v >>  0) & 0x1fffff;
     y := (v >> 21) & 0x1fffff;
     z := (v >> 42) & 0x1fffff;

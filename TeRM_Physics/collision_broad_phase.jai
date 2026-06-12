@@ -13,10 +13,10 @@ run_contacts_broad_phase :: () {
     using world;
 
     array_reset_keeping_memory(*contact_pairs);
-    for *contact_pair_islands {
+    for *contact_islands {
         array_reset(it);
     }
-    array_reset_keeping_memory(*contact_pair_islands);
+    array_reset_keeping_memory(*contact_islands);
 
     seen_body       := make_bit_array(body_data.bodies.count,, temp);
     body_island_ids := make_static_array(u16, body_data.bodies.count,, temp);
@@ -37,6 +37,7 @@ run_contacts_broad_phase :: () {
 
         // seen self = easy way to never pair with self
         seen_body[bi] = true;
+        body_aabb := calculate_aabb(body);
 
         for_all_cells_in_overlap(body, false, true, #code {
             for obi : cell {
@@ -54,8 +55,12 @@ run_contacts_broad_phase :: () {
                 }
                 seen_body[obi] = true;
 
-                array_add(*contact_pairs, {xx bi, xx obi});
-                place_pair_on_island(body_island_ids, xx bi, xx obi);
+                other_body_aabb := calculate_aabb(*body_data.bodies[obi]);
+
+                if is_overlap_aabb_aabb(body_aabb, other_body_aabb) {
+                    array_add(*contact_pairs, {xx bi, xx obi});
+                    place_pair_on_island(body_island_ids, xx bi, xx obi);
+                }
             }
         });
 
@@ -66,41 +71,57 @@ run_contacts_broad_phase :: () {
 place_pair_on_island :: (body_island_ids: []u16, body_a: u16, body_b: u16) {
     using world;
 
-    pair_island_id := min(body_island_ids[body_a], body_island_ids[body_b]);
-    if pair_island_id == 0xffff {
-        array_add(*contact_pair_islands, {});
-        pair_island_id = xx (contact_pair_islands.count - 1);
-        island := *contact_pair_islands[pair_island_id];
-        array_add(island, body_a);
-        array_add(island, body_b);
-        body_island_ids[body_a] = pair_island_id;
-        body_island_ids[body_b] = pair_island_id;
-    } else if body_island_ids[body_a] != body_island_ids[body_b] {
-        island := *contact_pair_islands[pair_island_id];
+    island_id_a := *body_island_ids[body_a];
+    island_id_b := *body_island_ids[body_b];
 
-        merge_island_id: u16;
-        if body_island_ids[body_a] != pair_island_id {
-            merge_island_id = body_island_ids[body_a];
+    if island_id_a.* == island_id_b.* {
+        if island_id_a.* == 0xffff && island_id_b.* == 0xffff {
+            array_add(*contact_islands, {});
+            island_id := cast(u16) (contact_islands.count - 1);
+            assert(island_id < 0xffff);
+            island := *contact_islands[island_id];
+            array_add(island, body_a);
+            array_add(island, body_b);
+            island_id_a.* = island_id;
+            island_id_b.* = island_id;
+        }
+    } else if island_id_a.* == 0xffff {
+        island := *contact_islands[island_id_b.*];
+        array_add(island, body_a);
+        island_id_a.* = island_id_b.*;
+    } else if island_id_b.* == 0xffff {
+        island := *contact_islands[island_id_a.*];
+        array_add(island, body_b);
+        island_id_b.* = island_id_a.*;
+    } else {
+        island_id: u16 = ---;
+        merge_island_id: u16 = ---;
+
+        if island_id_a.* < island_id_b.* {
+            island_id       = island_id_a.*;
+            merge_island_id = island_id_b.*;
         } else {
-            assert(body_island_ids[body_b] != pair_island_id);
-            merge_island_id = body_island_ids[body_b];
+            island_id       = island_id_b.*;
+            merge_island_id = island_id_a.*;
         }
 
-        merge_island := *contact_pair_islands[merge_island_id];
+        island := *contact_islands[island_id];
+
+        merge_island := *contact_islands[merge_island_id];
         for body_id : merge_island {
             array_add(island, body_id);
-            body_island_ids[body_id] = pair_island_id;
+            body_island_ids[body_id] = island_id;
         }
 
-        last_island_id := contact_pair_islands.count - 1;
+        last_island_id := contact_islands.count - 1;
         if merge_island_id != last_island_id {
-            copy_back_island := *contact_pair_islands[last_island_id];
+            copy_back_island := *contact_islands[last_island_id];
             for body_id : copy_back_island {
                 body_island_ids[body_id] = merge_island_id;
             }
         }
 
-        array_unordered_remove_by_index(*contact_pair_islands, last_island_id);
+        array_unordered_remove_by_index(*contact_islands, last_island_id);
     }
 }
 

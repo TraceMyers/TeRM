@@ -7,6 +7,14 @@
 // GP_Allocator
 // No_Allocator
 
+ALLOCATION_HEADER_SPACE :: #run ceil_to_power_of_two_multiple(size_of(Allocation_Header), 8);
+
+Allocator_Heap_Snapshot :: struct {
+    begin_address: s64;
+    end_address:   s64;
+    allocated_blocks: [..][2]s32;
+}
+
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------- :Bump_Allocator
 // bump/arena, no auto resize
@@ -101,6 +109,51 @@ scope_mark_and_recede_allocations :: (using bump: *Bump_Allocator) #expand {
     `defer reset_to_high_water_mark(bump, mark);
 }
 
+snapshot :: (using allocator: *Bump_Allocator, allocate_with: *Allocator = null) -> []Allocator_Heap_Snapshot {
+
+    use_allocator := ifx allocate_with == null then context.default_allocator else allocate_with.*;
+
+    snapshots: []Allocator_Heap_Snapshot;
+    snapshots.data = alloc(size_of(Allocator_Heap_Snapshot),, use_allocator);
+    snapshots.count = 1;
+
+    snapshot := *snapshots[0];
+    snapshot.* = {};
+    snapshot.allocated_blocks.allocator = use_allocator;
+
+    if heap.end > 0 {
+        snapshot.begin_address = xx heap.bytes.data;    
+        snapshot.end_address = snapshot.begin_address + heap.bytes.count;
+        array_add(*snapshot.allocated_blocks, .[0, xx heap.end]);
+    }
+
+    return snapshots;
+}
+
+snapshot :: (using pool: *Flat_Pool, allocate_with: *Allocator = null) -> []Allocator_Heap_Snapshot {
+
+    use_allocator := ifx allocate_with == null then context.default_allocator else allocate_with.*;
+
+    snapshots: []Allocator_Heap_Snapshot;
+    snapshots.data = alloc(size_of(Allocator_Heap_Snapshot),, use_allocator);
+    snapshots.count = 1;
+
+    snapshot := *snapshots[0];
+    snapshot.* = {};
+    snapshot.allocated_blocks.allocator = use_allocator;
+
+    // note that allocator snapshots don't care about what parts of the pool
+    // aren't committed.
+    allocated_size := cast(s64) current_point - cast(s64) memory_base;
+    if allocated_size > 0 {
+        snapshot.begin_address = xx memory_base;    
+        snapshot.end_address   = xx address_limit;
+        array_add(*snapshot.allocated_blocks, .[0, xx allocated_size]);
+    }
+
+    return snapshots;
+}
+
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------ :Super_Allocator
 // it's super.
@@ -112,21 +165,26 @@ scope_mark_and_recede_allocations :: (using bump: *Bump_Allocator) #expand {
 SUPER_ALLOCATOR_MIN_ALLOCATION_SIZE :: 16;
 
 Allocation_Header :: struct {
-    id: Allocator_Identifier;
+    // this was moved to overlay with id_sentinel in order to shrink the header overall.
+    // id: Allocator_Identifier;
+
     // when an allocation is valid, the upper 4 bits are stamped with a specific bit pattern.
-    // this is intentionally placed at byte 0 of the struct because the lowest byte of data is the one most likely to change, and so (naively speaking) most likely to change when trashed.
+    // this is intentionally placed at byte 0 of the struct because the lowest byte of data is the one most likely to change, and so (naively speaking) most likely to change when trashed. id trashed = probably crash rather than garbagify the allocator books.
     using specific: union {
         super: struct {
-            inner_chunk: u8;
+            id_sentinel:       u8;
+            inner_chunk:       u8;
             inner_chunk_count: u16;
-            outer_chunk: u16;
-            list: s16;
+            outer_chunk:       u16;
+            list:              s16;
         };
         gp: struct {
-            list: s32 = ---;
+            unused: u32 = ---;
+            list:   s32 = ---;
         };
     };
-    #overlay(id) bit_pattern: u8 = ---;
+    #overlay(specific.super.id_sentinel) id: Allocator_Identifier;
+    #overlay(specific.super.id_sentinel) bit_pattern: u8 = ---;
 }
 
 Super_Allocator :: struct ($MIN_ALLOCATION_SIZE := SUPER_ALLOCATOR_MIN_ALLOCATION_SIZE) {
@@ -628,6 +686,74 @@ repr :: (using allocator: *Super_Allocator) -> string {
     return builder_to_string(*builder);
 }
 
+// asking for an explicit allocator here rather than expecting .. ,, allocator) syntax
+// because it's very important to not use the allocator that's being snapshotted.
+// the fact that it's an explicit parameter means the body of this proc can
+// know if an allocator was passed. works even if the super allocator is composed into
+// another allocator.
+snapshot :: (using allocator: *Super_Allocator, allocate_with: *Allocator = null) -> []Allocator_Heap_Snapshot {
+
+    snapshots: [..]Allocator_Heap_Snapshot;
+    if allocate_with == null {
+        snapshots.allocator = context.default_allocator;
+    } else {
+        snapshots.allocator = allocate_with.*;
+    }
+    array_resize(*snapshots, chunk_lists.count);
+
+    for *snapshots {
+        it.allocated_blocks.allocator = snapshots.allocator;
+    }
+
+    add_chunk :: (begin: s32, end: s32) #expand {
+        offset_begin := cast(s32) (`chunk_begin + begin * MIN_ALLOCATION_SIZE);
+        offset_end   := cast(s32) (offset_begin + end * MIN_ALLOCATION_SIZE);
+        array_add(*`snapshot.allocated_blocks, .[offset_begin, offset_end]);
+    }
+
+    if chunk_lists.count > 0 then for list : 0..chunk_lists.count-1 {
+        snapshot := *snapshots[list];
+        array_reserve(*snapshot.allocated_blocks, chunk_lists[list].count * 16);
+
+        snapshot.begin_address = xx chunk_lists[list].data;
+        snapshot.end_address   = snapshot.begin_address + chunk_lists[list].count * CHUNK_SIZE;
+
+        for chunk : 0..chunk_lists[list].count-1 {
+            allocated_block_flags := (cast(*s64) *books.flag_list_of_lists[list][chunk]).*;
+            chunk_begin := chunk * CHUNK_SIZE;
+            block_begin : s32 = -1;
+
+            if allocated_block_flags == 0xffff_ffff_ffff_ffff {
+                add_chunk(0, 64);
+            } else if allocated_block_flags != 0 {
+                // gap_size := books.gap_list_of_lists[list][chunk];
+                // assert(gap_size != 0, "flags: 0x%, gap size: %", FormatInt.{value=allocated_block_flags, base=16, minimum_digits=16}, gap_size);
+                // largest_gap := books.largest_gap_per_list[list];
+                // assert(largest_gap != 0, "flags: 0x%, largest gap: %", FormatInt.{value=allocated_block_flags, base=16, minimum_digits=16}, largest_gap);
+
+                for 0..63 {
+                    if (allocated_block_flags & (1 << it)) != 0 {
+                        if block_begin == -1 {
+                            block_begin  = xx it;
+                        }
+                    } else {
+                        if block_begin != -1 {
+                            add_chunk(block_begin, xx it);
+                            block_begin = -1;
+                        }
+                    }
+                }
+                
+                if block_begin != -1 {
+                    add_chunk(block_begin, 64);
+                }
+            }
+        }
+    }
+
+    return snapshots;
+}
+
 // 0: one byte gap per chunk list
 // 1: array of gap bytes per chunk list, laid out one after another
 // 2: align to 8 bytes
@@ -729,7 +855,7 @@ gp_allocator_add_list :: (using allocator: *GP_Allocator, bin_index: s64) {
     bin := *bins[bin_index];
     list := array_add(*bin.lists);
     list.data = alloc(item_size * ITEMS_PER_LIST,,parent_allocator);
-    list.count = ITEMS_PER_LIST;
+    list.count = item_size * ITEMS_PER_LIST;
 
     item_index_begin : s32 = xx ((bin.lists.count - 1) * ITEMS_PER_LIST);
     for < 0..ITEMS_PER_LIST-2 {
@@ -817,6 +943,75 @@ gp_free :: (using allocator: *GP_Allocator, addr: *u8) {
     }
 }
 
+snapshot :: (using allocator: *GP_Allocator, small_bin_index: int, allocate_with: *Allocator = null) -> []Allocator_Heap_Snapshot {
+    use_allocator := ifx allocate_with == null then context.default_allocator else allocate_with.*;
+
+    snapshots: []Allocator_Heap_Snapshot;
+
+    bin := *bins[small_bin_index];
+    unallocated_bin := bin.first_available;
+    item_size := MIN_BIN_ITEM_SIZE << small_bin_index;
+
+    array_resize(*snapshots, bin.lists.count,, use_allocator);
+    for *snapshots {
+        it.allocated_blocks.allocator = use_allocator;
+        array_reserve(*it.allocated_blocks, ITEMS_PER_LIST / 16);
+        list := *bins[small_bin_index].lists[it_index];
+        it.begin_address = xx list.data;
+        it.end_address   = xx (it.begin_address + list.count);
+    }
+
+    item_is_allocated := make_bit_array(bin.lists.count * ITEMS_PER_LIST,, temp); 
+    set_all_bits(*item_is_allocated);
+
+    while unallocated_bin != -1 {
+        clear_bit(*item_is_allocated, unallocated_bin);
+        list  := unallocated_bin / ITEMS_PER_LIST;
+        index := unallocated_bin % ITEMS_PER_LIST;
+        item_loc := bin.lists[list].data + (index * item_size);
+        item_s32 := (cast(*s32) item_loc).*;
+        unallocated_bin = item_s32;
+    }
+
+    add_blocks :: (snapshots: []Allocator_Heap_Snapshot, first: int, end: int, item_size: int) {
+        begin_list  := first     / ITEMS_PER_LIST;
+        begin_index := first     % ITEMS_PER_LIST;
+        end_list    := (end - 1) / ITEMS_PER_LIST;
+        end_index   := end       % ITEMS_PER_LIST;
+        if end_index == 0 then end_index = ITEMS_PER_LIST;
+
+        for list : begin_list..end_list {
+            begin_i := 0;
+            end_i   := ITEMS_PER_LIST;
+            if list == begin_list {
+                begin_i = begin_index;
+            }
+            if list == end_list {
+                end_i = end_index;
+            }
+            array_add(*snapshots[list].allocated_blocks, .[cast(s32) (begin_i * item_size), cast(s32) (end_i * item_size)]);
+        }
+    }
+
+    last_empty := -1;
+
+    for :only_cleared_bits item_is_allocated {
+        first         := last_empty + 1;
+        end           := it_index;
+        set_bit_count := end - first;
+        if set_bit_count > 0 {
+            add_blocks(snapshots, first, end, item_size);
+        }
+        last_empty = it_index;
+    }
+
+    if last_empty < item_is_allocated.count - 1 {
+        add_blocks(snapshots, last_empty + 1, item_is_allocated.count, item_size);
+    }
+
+    return snapshots;
+}
+
 // -----------------------------------------------------------------------------------
 // --------------------------------------------------------------------- :No_Allocator
 
@@ -849,7 +1044,6 @@ no_allocator := Allocator.{proc=no_allocator_proc};
 #scope_file
 
 ALLOCATOR_VALIDATION_PATTERN : u8 : 0x70;
-ALLOCATION_HEADER_SPACE :: #run ceil_to_power_of_two_multiple(size_of(Allocation_Header), 8);
 
 Allocator_Identifier :: enum u8 {
     SUPER_ALLOCATOR :: 1;
@@ -982,6 +1176,7 @@ serial_align_head_up :: (record_head: *s64, align: s8, memory_size: s64) {
 
 // -----------------------------------------------------------------------------------
 
+
 did_small_chunk_count_warning := false;
 
 #import "Basic";
@@ -989,6 +1184,9 @@ did_small_chunk_count_warning := false;
 #import "Bit_Operations";
 #import "md5";
 #import "File";
+#import "Flat_Pool";
+#import "Bit_Array";
+#import "TeRM/TeRM_Storage";
 
 #scope_file
 

@@ -2,7 +2,7 @@
 // todo: optimization, instead of doing a full remove, re-place, do a diff placement.
 
 Contact_Cell   :: Hybrid_Array(u16);
-Contact_Island :: Hybrid_Array(s32);
+Contact_Island :: Contact_Cell;
 
 Contact_Pair :: struct {
     a: u16;
@@ -12,10 +12,17 @@ Contact_Pair :: struct {
 run_contacts_broad_phase :: () {
     using world;
 
+    array_reset_keeping_memory(*contact_pairs);
+    for *contact_pair_islands {
+        array_reset(it);
+    }
     array_reset_keeping_memory(*contact_pair_islands);
 
     seen_body       := make_bit_array(body_data.bodies.count,, temp);
     body_island_ids := make_static_array(u16, body_data.bodies.count,, temp);
+    for *body_island_ids {
+        it.* = 0xffff;
+    }
 
     // todo: rotation being ignored because it's annoying. don't do that.
     SHOULD_VISIT_QUESTION : Physics_Body_Flags : .PLACED_INTO_CONTACT_GRID | .AWAKE | .LOCK_TRANSLATION; 
@@ -48,6 +55,7 @@ run_contacts_broad_phase :: () {
                 seen_body[obi] = true;
 
                 array_add(*contact_pairs, {xx bi, xx obi});
+                place_pair_on_island(body_island_ids, xx bi, xx obi);
             }
         });
 
@@ -55,10 +63,45 @@ run_contacts_broad_phase :: () {
     }
 }
 
-body_count :: (cell :*Contact_Cell) -> int {
-    if cell.internal.allocation == .INTERNAL {
-        return cell.internal.count;
-    } else return cell.external.count;
+place_pair_on_island :: (body_island_ids: []u16, body_a: u16, body_b: u16) {
+    using world;
+
+    pair_island_id := min(body_island_ids[body_a], body_island_ids[body_b]);
+    if pair_island_id == 0xffff {
+        array_add(*contact_pair_islands, {});
+        pair_island_id = xx (contact_pair_islands.count - 1);
+        island := *contact_pair_islands[pair_island_id];
+        array_add(island, body_a);
+        array_add(island, body_b);
+        body_island_ids[body_a] = pair_island_id;
+        body_island_ids[body_b] = pair_island_id;
+    } else if body_island_ids[body_a] != body_island_ids[body_b] {
+        island := *contact_pair_islands[pair_island_id];
+
+        merge_island_id: u16;
+        if body_island_ids[body_a] != pair_island_id {
+            merge_island_id = body_island_ids[body_a];
+        } else {
+            assert(body_island_ids[body_b] != pair_island_id);
+            merge_island_id = body_island_ids[body_b];
+        }
+
+        merge_island := *contact_pair_islands[merge_island_id];
+        for body_id : merge_island {
+            array_add(island, body_id);
+            body_island_ids[body_id] = pair_island_id;
+        }
+
+        last_island_id := contact_pair_islands.count - 1;
+        if merge_island_id != last_island_id {
+            copy_back_island := *contact_pair_islands[last_island_id];
+            for body_id : copy_back_island {
+                body_island_ids[body_id] = merge_island_id;
+            }
+        }
+
+        array_unordered_remove_by_index(*contact_pair_islands, last_island_id);
+    }
 }
 
 calculate_grid_overlap :: (_body: *Physics_Body_Base) -> Vector2i, Vector2i {
@@ -221,13 +264,11 @@ get_contact_cell :: inline (coords: Vector2i) -> *Contact_Cell {
     return get_contact_cell({_u16=.[xx coords.x, xx coords.y]});
 }
 
-// NOTE: assumes cell needs to be created if it doesn't exist
 get_contact_cell :: inline (key: num32, allocate_if_empty := false) -> *Contact_Cell {
     cell := table_get_by_key_hash(*world.contact_grid, key._u32);
     if cell == null && allocate_if_empty {
-        table_set(*world.contact_grid, key._u32, {});
+        table_set(*world.contact_grid, key._u32, {external.allocator = world.contact_grid_cell_allocator});
         cell = table_get_by_key_hash(*world.contact_grid, key._u32);
-        cell.external.allocator = world.contact_grid_cell_allocator;
     }
     return cell;
 }

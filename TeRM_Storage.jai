@@ -794,77 +794,93 @@ table_remove_container :: (table: *CT_Table, container: *CT_Table_KV_Container) 
 // -----------------------------------------------------------------------------------
 // --------------------------------------------------------------------- :Hybrid_Array
 // an inline & heap hybrid array wherein data is stored on-struct until
-// it's too big. note that you can set the allocator, since there is
-// an allocator field stored on both 'internal' and 'external' in
-// the same place in memory. there is no setting the number of items
-// stored on the struct. it's just however many fit. if 0, compile error.
-// 32 bits -> 5 items. 16 bits -> 11 items.
+// it's too big. you can preset the allocator since that is not overwritten by 
+// internal data.
 
 Hybrid_Array :: struct($T: Type) {
-    internal: Hybrid_Array_Internal(T);
-    #overlay(internal) external: [..]T;
+    allocation: Hybrid_Array_Allocation = .INTERNAL;
+    internal_count: s32;
+    external: [..]T;
+    #overlay(external) internal_items: [INTERNAL_COUNT]T;
+
+    INTERNAL_COUNT :: #run size_of(Resize_Array_Partial) / size_of(T);
+}
+
+data :: inline (using array: *Hybrid_Array($T)) -> *T {
+    return ifx allocation == .INTERNAL then internal_items.data else external.data;
+}
+
+count :: inline (using array: *Hybrid_Array) -> int {
+    return ifx allocation == .INTERNAL then internal_count else external.count;
+}
+
+view :: inline (using array: *Hybrid_Array) -> []T {
+    slice: []T = ---;
+    if allocation == .INTERNAL {
+        slice.data  = internal_items.data;
+        slice.count = internal_count;
+    } else {
+        slice = externa;
+    }
+    return slice;
 }
 
 // make sure the context has the right allocator set when calling
 array_add :: (using array: *Hybrid_Array($T), item: T) {
-    if internal.allocation == .INTERNAL {
-        if internal.count < internal.items.count {
-            internal.items[internal.count] = item;
-            internal.count += 1;
+    if allocation == .INTERNAL {
+        if internal_count < internal_items.count {
+            internal_items[internal_count] = item;
+            internal_count += 1;
             return;
         }
 
-        assert(internal.count == internal.items.count);
-
-        internal.allocation = .EXTERNAL;
-
-        external_temp: [..]T;
-        external_temp.allocator = context.allocator;
-
-        array_resize(*external_temp, internal.items.count * 2);
-        external_temp.count = internal.items.count;
-        memcpy(external_temp.data, internal.items.data, internal.items.count * size_of(T));
-
-        external = external_temp;
+        assert(internal_count == internal_items.count);
+        move_to_external_allocation(array, internal_items.count * 2);
     } 
 
-    assert(internal.allocation == .EXTERNAL);
     array_add(*external, item);
 }
 
 array_unordered_remove_by_value :: (using array: *Hybrid_Array($T), item: T) {
-    if internal.allocation == .EXTERNAL {
+    if allocation == .EXTERNAL {
         array_unordered_remove_by_value(*external, item);   
-        if external.count <= #run Hybrid_Array(T).internal.items.count / 2 {
-            data  := external.data;
-            count := external.count;
-            memcpy(internal.items.data, data, count * size_of(T));
-            internal.count      = xx count;
-            internal.allocation = .INTERNAL;
+        if external.count <= #run Hybrid_Array(T).internal_items.count / 2 {
+            move_to_internal_allocation(array);
         }
-        return;
-    }
-
-    assert(internal.allocation == .INTERNAL);
-    if internal.count > 0 then for 0..internal.count-1 {
-        if internal.items[it] == item {
-            if it != internal.count - 1 {
-                internal.items[it] = internal.items[internal.count-1];
+    } else {
+        if internal_count > 0 then for 0..internal_count-1 {
+            if internal_items[it] == item {
+                if it != internal_count - 1 {
+                    internal_items[it] = internal_items[internal_count-1];
+                }
+                internal_count -= 1;
+                return;
             }
-            internal.count -= 1;
-            return;
         }
     }
 }
 
-for_expansion :: (array: *Hybrid_Array($T), body: Code, flags: For_Flags) #expand {
-    items: []T = ---;
-    if array.internal.allocation == .INTERNAL {
-        items.data  = array.internal.items.data;
-        items.count = array.internal.count;
+array_reserve :: (array: *Hybrid_Array($T), reserve_count: int) {
+    if allocation == .EXTERNAL {
+        if reserve_count > external.allocated {
+            array_reserve(*external, reserve_count);
+        }
     } else {
-        items = array.external;
+        if reserve_count > internal_items.count {
+            move_to_external_allocation(array, reserve_count);            
+        }
     }
+}
+
+array_reset :: (using array: *Hybrid_Array) {
+    if allocation == .EXTERNAL {
+        free(external.data,, external.allocator);
+    }
+    array.* = .{};
+}
+
+for_expansion :: (array: *Hybrid_Array($T), body: Code, flags: For_Flags) #expand {
+    items := view(array);
 
     for item, ind : items {
         `it := item;
@@ -874,33 +890,9 @@ for_expansion :: (array: *Hybrid_Array($T), body: Code, flags: For_Flags) #expan
     }
 }
 
-Hybrid_Array_Allocation :: enum u8 {
-    EXTERNAL :: 0x00;
-    INTERNAL :: 0x80;
-}
-
-Hybrid_Array_Internal :: struct($T: Type) {
-    // this block can be no larger than the size of the elements in Resizable_Array *before* the allocator.
-    allocation: Hybrid_Array_Allocation = .INTERNAL;
-    count: s8;
-    items: [INTERNAL_COUNT]T;
-
-    // forces external_allocator to be at 24 bytes from the top of the struct.
-    #if ALLOCATOR_OFFSET_BUFFER > 0 then #insert #code _allocator_align_buffer: [ALLOCATOR_OFFSET_BUFFER]u8;
-
-    // aligned with the external resize array's allocator so it can be set before being used.
-    external_allocator: Allocator;
-
-    // this is all of the comptime stuff that sizes things correctly and makes sure
-    // external_allocator aligns with external.allocator on Hybrid_Array.
-    INTERNAL_SIZE_BEFORE_ARRAY     :: #run size_of(Hybrid_Array_Allocation) + size_of(s8);
-    INTERNAL_SIZE_BEFORE_ALLOCATOR :: size_of(Resize_Array_Partial);
-    ITEMS_OFFSET                   :: #run max(align_of(T), INTERNAL_SIZE_BEFORE_ARRAY);
-    INTERNAL_COUNT                 :: #run (INTERNAL_SIZE_BEFORE_ALLOCATOR - ITEMS_OFFSET) / size_of(T);
-    ALLOCATOR_OFFSET_PADDING       :: #run INTERNAL_SIZE_BEFORE_ALLOCATOR - (ITEMS_OFFSET + INTERNAL_COUNT * size_of(T));
-    ALLOCATOR_OFFSET_BUFFER        :: #run ALLOCATOR_OFFSET_PADDING - (ALLOCATOR_OFFSET_PADDING % 8);
-    ALLOCATOR_LOCATION             :: #run ITEMS_OFFSET + INTERNAL_COUNT * size_of(T) + ALLOCATOR_OFFSET_PADDING;
-    #assert(INTERNAL_COUNT > 0 && ALLOCATOR_LOCATION == 24);
+Hybrid_Array_Allocation :: enum u32 {
+    EXTERNAL;
+    INTERNAL;
 }
 
 #scope_file
@@ -911,7 +903,40 @@ Resize_Array_Partial :: struct {
     allocated: s64;
 }
 
+move_to_internal_allocation :: (using array: *Hybrid_Array) {
+    assert(external.count <= internal_items.count);
+
+    allocation = .INTERNAL;
+
+    data := external.data;
+    internal_count = xx external.count;
+    if internal_count > 0 {
+        memcpy(internal_items.data, data, internal_count * size_of(T));
+    }
+
+    free(data,, external.allocator);
+}
+
+move_to_external_allocation :: (using array: *Hybrid_Array, reserve_count: int) {
+    allocation = .EXTERNAL;
+
+    external_temp: [..]T;
+    external_temp.allocator = context.allocator;
+
+    array_resize(*external_temp, reserve_count);
+    external_temp.count = internal_count;
+    if internal_count > 0 {
+        memcpy(external_temp.data, internal_items.data, internal_count * size_of(T));
+    }
+
+    external = external_temp;
+}
+
 #scope_export
+
+BIT_ARRAY_SLOT_SIZE :: size_of(s64);
+BIT_ARRAY_SLOT_MAX_VALUE : s64 : 0xffff_ffff_ffff_ffff;
+BIT_ARRAY_SLOT_BIT_COUNT :: BIT_ARRAY_SLOT_SIZE * 8;
 
 // ------
 
@@ -920,15 +945,6 @@ Resize_Array_Partial :: struct {
 _fib16 :: (int_val: $T, min_digits := 0) -> FormatInt #expand {
     return FormatInt.{value=int_val, base=16, minimum_digits=min_digits};
 }
-
-get_bit_array_slot_size_and_max_value :: () -> s64, u64 {
-    bit_array: Bit_Array;
-    bit_array_slot_type :: #run type_of(bit_array.slots[0]);
-    return size_of(bit_array_slot_type), xx get_max_value(bit_array_slot_type);
-}
-
-BIT_ARRAY_SLOT_SIZE, BIT_ARRAY_SLOT_MAX_VALUE :: #run get_bit_array_slot_size_and_max_value();
-BIT_ARRAY_SLOT_BIT_COUNT :: BIT_ARRAY_SLOT_SIZE * 8;
 
 #import "Basic";
 #import "String";

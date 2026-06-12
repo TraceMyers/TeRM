@@ -28,6 +28,7 @@ Physical_World :: struct {
     contact_grid: CT_Table(u32, Contact_Cell, true, 1024);
     contact_grid_cell_allocator: Super_Allocator;
     // stored
+    contact_pairs: [..]Contact_Pair;
     contact_pair_islands: [..]Contact_Island;
 
     // grid settings for size, origin, broad phase resolution (scale)
@@ -66,7 +67,7 @@ set_physics_grid_width :: (width: s32) {
 create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique_properties_max := 4096, unique_colliders_max := 32768) -> Physical_World {
     out_world: Physical_World;
 
-    assert(bodies_max < 65536); // using u16's as body indexes internally
+    assert(bodies_max < U16_MAX); // using u16's as body indexes internally
 
     table_init(*out_world.body_templates, body_templates_max, true);
     pool_init(*out_world.unique_properties, unique_properties_max, true);

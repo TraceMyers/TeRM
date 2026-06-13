@@ -2,31 +2,28 @@
 // todo: optimization, instead of doing a full remove, re-place, do a diff placement.
 
 Contact_Cell   :: Hybrid_Array(u16);
-Contact_Island :: Contact_Cell;
-
-Contact_Pair :: struct {
-    a: u16;
-    b: u16;
-}
+Contact_Island :: Hybrid_Array([2]u16);
+Color_Group    :: Contact_Island;
+reset_contact_island :: #procedure_of_call hybrid_array_reset(*world.contact_islands[0]);
 
 run_contacts_broad_phase :: () {
     using world;
 
-    array_reset_keeping_memory(*contact_pairs);
-    for *contact_islands {
+    for *color_groups {
         array_reset(it);
     }
-    array_reset_keeping_memory(*contact_islands);
+    array_reset_keeping_memory(*color_groups);
 
     seen_body       := make_bit_array(body_data.bodies.count,, temp);
-    body_island_ids := make_static_array(u16, body_data.bodies.count,, temp);
-    for *body_island_ids {
-        it.* = 0xffff;
-    }
 
     // todo: rotation being ignored because it's annoying. don't do that.
     SHOULD_VISIT_QUESTION : Physics_Body_Flags : .PLACED_INTO_CONTACT_GRID | .AWAKE | .LOCK_TRANSLATION; 
     SHOULD_VISIT_ANSWER   : Physics_Body_Flags : .PLACED_INTO_CONTACT_GRID | .AWAKE;
+
+    start_index: int;
+    body_color_group_flags := make_static_array(u64, body_data.bodies.count,, temp);
+
+    array_resize(*color_groups, 8);
 
     for *body, bi : body_data.bodies {
         flags := body_data.flags[bi];
@@ -37,9 +34,9 @@ run_contacts_broad_phase :: () {
 
         // seen self = easy way to never pair with self
         seen_body[bi] = true;
-        body_aabb := calculate_aabb(body);
+        body_aabb := calculate_aabb(body, true);
 
-        for_all_cells_in_overlap(body, false, true, #code {
+        for_cells_in_overlap(body, false, true, #code {
             for obi : cell {
                 // only visit bodies with indexes higher than this one...
                 if obi < bi {
@@ -55,11 +52,10 @@ run_contacts_broad_phase :: () {
                 }
                 seen_body[obi] = true;
 
-                other_body_aabb := calculate_aabb(*body_data.bodies[obi]);
+                other_body_aabb := calculate_aabb(*body_data.bodies[obi], true);
 
                 if is_overlap_aabb_aabb(body_aabb, other_body_aabb) {
-                    array_add(*contact_pairs, {xx bi, xx obi});
-                    place_pair_on_island(body_island_ids, xx bi, xx obi);
+                    place_pair_in_group(body_color_group_flags, *start_index, .[xx bi, xx obi]);
                 }
             }
         });
@@ -68,66 +64,51 @@ run_contacts_broad_phase :: () {
     }
 }
 
-place_pair_on_island :: (body_island_ids: []u16, body_a: u16, body_b: u16) {
+place_pair_in_group :: inline (body_color_group_flags: []u64, start_index: *int, contact: [2]u16) {
     using world;
 
-    island_id_a := *body_island_ids[body_a];
-    island_id_b := *body_island_ids[body_b];
+    flags_a := *body_color_group_flags[contact[0]];
+    flags_b := *body_color_group_flags[contact[1]];
 
-    if island_id_a.* == island_id_b.* {
-        if island_id_a.* == 0xffff && island_id_b.* == 0xffff {
-            array_add(*contact_islands, {});
-            island_id := cast(u16) (contact_islands.count - 1);
-            assert(island_id < 0xffff);
-            island := *contact_islands[island_id];
-            array_add(island, body_a);
-            array_add(island, body_b);
-            island_id_a.* = island_id;
-            island_id_b.* = island_id;
-        }
-    } else if island_id_a.* == 0xffff {
-        island := *contact_islands[island_id_b.*];
-        array_add(island, body_a);
-        island_id_a.* = island_id_b.*;
-    } else if island_id_b.* == 0xffff {
-        island := *contact_islands[island_id_a.*];
-        array_add(island, body_b);
-        island_id_b.* = island_id_a.*;
+    group_index: int;
+
+    cannot_be_in_group: u64;
+    cannot_be_in_group |= flags_a.*;
+    cannot_be_in_group |= flags_b.*;
+    can_be_in_group := ~cannot_be_in_group;
+
+    can_be_in_group >>= start_index.*;
+    group_index = bit_scan_forward(can_be_in_group) - 1;
+
+    group_index_offset := start_index.*;
+    start_index.* = increment_wrap(start_index.*, 0, color_groups.count - 1);
+
+    if group_index < 0 {
+        // color group i=64 is for linearly-solved overflow
+        if color_groups.count < 65 {
+            array_resize(*color_groups, 65);
+        } else assert(color_groups.count == 65);
+        group_index = 64;
     } else {
-        island_id: u16 = ---;
-        merge_island_id: u16 = ---;
-
-        if island_id_a.* < island_id_b.* {
-            island_id       = island_id_a.*;
-            merge_island_id = island_id_b.*;
-        } else {
-            island_id       = island_id_b.*;
-            merge_island_id = island_id_a.*;
+        group_index += group_index_offset;
+        if group_index >= color_groups.count {
+            array_resize(*color_groups, group_index + 1);
         }
-
-        island := *contact_islands[island_id];
-
-        merge_island := *contact_islands[merge_island_id];
-        for body_id : merge_island {
-            array_add(island, body_id);
-            body_island_ids[body_id] = island_id;
-        }
-
-        last_island_id := contact_islands.count - 1;
-        if merge_island_id != last_island_id {
-            copy_back_island := *contact_islands[last_island_id];
-            for body_id : copy_back_island {
-                body_island_ids[body_id] = merge_island_id;
-            }
-        }
-
-        array_unordered_remove_by_index(*contact_islands, last_island_id);
     }
+
+    group := *color_groups[group_index];
+    array_add(group, contact);
+
+    mask := (cast(u64) 1) << group_index;
+
+    flags_a.* |= mask;
+    flags_b.* |= mask;
 }
+
 
 calculate_grid_overlap :: (_body: *Physics_Body_Base) -> Vector2i, Vector2i {
     body       := cast(*Physics_Body_Internal) _body;
-    aabb       := calculate_aabb(body);
+    aabb       := calculate_aabb(body, true);
     aabb_swept := sweep_aabb(aabb, body.linear_velocity * world.delta_time);
     aabb_swept.extent *= 1.25;
 
@@ -167,7 +148,7 @@ grid_to_world :: inline (v: Vector2i, $placement := Grid_To_World_Placement.UPPE
     return Vector3.{xy=transformed};
 }
 
-for_all_cells_in_overlap :: (_body: *Physics_Body_Base, $allocate_cell_if_empty: bool, $use_coords_on_body: bool, $code: Code) -> bool #expand {
+for_cells_in_overlap :: (_body: *Physics_Body_Base, $allocate_cell_if_empty: bool, $use_coords_on_body: bool, $code: Code) -> bool #expand {
     body := cast(*Physics_Body_Internal) _body;
     if !has_extent(body.collider.shape) {
         return false;
@@ -200,7 +181,7 @@ place_into_contact_grid :: (_body: *Physics_Body_Base) {
 
     body_index: u16 = xx get_index(_body);
 
-    if !for_all_cells_in_overlap(_body, true, false, #code array_add(cell, body_index)) {
+    if !for_cells_in_overlap(_body, true, false, #code array_add(cell, body_index)) {
         return;
     }
 
@@ -221,7 +202,7 @@ remove_from_contact_grid :: (_body: *Physics_Body_Base) {
 
     body_index: u16 = xx get_index(_body);
 
-    for_all_cells_in_overlap(_body, false, true, #code array_unordered_remove_by_value(cell, body_index));
+    for_cells_in_overlap(_body, false, true, #code array_unordered_remove_by_value(cell, body_index));
 
     // intentionally invalid (max < min)
     _body.contact_grid_min_x = 0;
@@ -292,4 +273,53 @@ get_contact_cell :: inline (key: num32, allocate_if_empty := false) -> *Contact_
         cell = table_get_by_key_hash(*world.contact_grid, key._u32);
     }
     return cell;
+}
+
+// unused in favor of color groups
+place_pair_on_island :: (body_island_ids: []u16, body_a: u16, body_b: u16) {
+    using world;
+
+    island_id_a := *body_island_ids[body_a];
+    island_id_b := *body_island_ids[body_b];
+
+    island: *Contact_Island;
+
+    if island_id_a.* == island_id_b.* {
+        if island_id_a.* == 0xffff {
+            island_id := cast(u16) pool_borrow(*contact_islands);
+            assert(island_id < 0xffff);
+            island_id_a.* = island_id;
+            island_id_b.* = island_id;
+        }
+    } else if island_id_a.* == 0xffff {
+        island_id_a.* = island_id_b.*;
+    } else if island_id_b.* == 0xffff {
+        island_id_b.* = island_id_a.*;
+    } else {
+        island_id: u16 = ---;
+        merge_island_id: u16 = ---;
+
+        if island_id_a.* < island_id_b.* {
+            island_id       = island_id_a.*;
+            merge_island_id = island_id_b.*;
+        } else {
+            island_id       = island_id_b.*;
+            merge_island_id = island_id_a.*;
+        }
+
+        island := *contact_islands[island_id];
+
+        merge_island := *contact_islands[merge_island_id];
+        for pair : merge_island {
+            array_add(island, pair);
+            body_island_ids[pair[0]] = island_id;
+            body_island_ids[pair[1]] = island_id;
+        }
+        
+        array_reset(merge_island);
+        pool_return(*contact_islands, merge_island_id);
+    }
+
+    island = *contact_islands[island_id_a.*];
+    array_add(island, .[body_a, body_b]);
 }

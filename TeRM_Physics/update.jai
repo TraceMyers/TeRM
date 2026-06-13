@@ -67,10 +67,6 @@ run_physics_step_pre_contact :: (consecutive_step_index: int) {
     using world;
     // todo: warm starting
 
-    contact_pairs.allocator = temp;
-    array_reserve(*contact_pairs, body_data.bodies.count * 2);
-    defer array_reset(*contact_pairs);
-
     for *body, bi : body_data.bodies {
         flags := body_data.flags[bi];
 
@@ -81,6 +77,13 @@ run_physics_step_pre_contact :: (consecutive_step_index: int) {
         if consecutive_step_index == 0 {
             body.prev_position = body.next_position;
             body.prev_orientation = body.next_orientation;
+        }
+
+        if body.collider.shape != .SPHERE {
+            x, y, z := axes(body);
+            body_data.axes[bi][0] = linear_compress_vector3(x, 0, 1);
+            body_data.axes[bi][1] = linear_compress_vector3(y, 0, 1);
+            body_data.axes[bi][2] = linear_compress_vector3(z, 0, 1);
         }
 
         moved_or_accelerated: bool;
@@ -107,7 +110,6 @@ run_physics_step_pre_contact :: (consecutive_step_index: int) {
                 moved_or_accelerated = true;
             }
         }
-
     }
 }
 

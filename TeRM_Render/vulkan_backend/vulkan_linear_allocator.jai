@@ -28,7 +28,7 @@ gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, width: s32, height: s32
 
     assert(is_image_type(heap_type));
 
-    image_index := pool_acquire(*image_pool);
+    image_index := pool_borrow(*image_pool);
     assert(image_index < max_texture_count);
     image := *image_pool[image_index];
     image.pool_index = xx image_index;

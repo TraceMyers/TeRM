@@ -919,16 +919,30 @@ gp_free :: (using allocator: *GP_Allocator, addr: *u8) {
     identifier := (header.bit_pattern & 0x0f).(Allocator_Identifier);
     if identifier >= .GP_ALLOCATOR_16 && identifier <= .GP_ALLOCATOR_2048 {
         assert((header.bit_pattern & 0xf0) == ALLOCATOR_VALIDATION_PATTERN, "bad validation bits %", (header.bit_pattern & 0xf0));
-        bin_index := (identifier - .GP_ALLOCATOR_16).(s64);
-        item_size := MIN_BIN_ITEM_SIZE << bin_index;
-        bin := *bins[bin_index];
-        list_index := header.gp.list;
-        list_data_begin := bin.lists[list_index].data;
-        list_data_end   := list_data_begin + item_size * ITEMS_PER_LIST;
+
+        bin_index        := (identifier - .GP_ALLOCATOR_16).(s64);
+        item_size        := MIN_BIN_ITEM_SIZE << bin_index;
+        bin              := *bins[bin_index];
+        list_index       := header.gp.list;
+        list_data_begin  := bin.lists[list_index].data;
+        list_data_end    := list_data_begin + item_size * ITEMS_PER_LIST;
+
         assert(header.(*u8) >= list_data_begin && header.(*u8) < list_data_end);
-        header.(*s32).* = bin.first_available;
-        item_index := (header.(*u8) - list_data_begin) / item_size;
-        bin.first_available = xx (list_index * ITEMS_PER_LIST + item_index);
+
+        item_index       := (header.(*u8) - list_data_begin) / item_size;
+        block_index : s32 = xx (list_index * ITEMS_PER_LIST + item_index);
+
+        // prefer allocating out lower-indexed blocks first
+        if block_index < bin.first_available {
+            header.(*s32).*     = bin.first_available;
+            bin.first_available = block_index;
+        } else {
+            first_available_list  := bin.first_available / ITEMS_PER_LIST;
+            first_available_index := bin.first_available % ITEMS_PER_LIST;
+            next_available_block  := cast(*s32) (bin.lists[first_available_list].data + first_available_index * item_size);
+            header.(*s32).*        = next_available_block.*;
+            next_available_block.* = block_index;
+        }
     } else if identifier == { 
     case .GP_ALLOCATOR_SUPER_MED;
         // this id was overwritten so it could be directed to the medium allocator. need to fix it so the super allocator can validate

@@ -90,7 +90,7 @@ is_unique :: inline (properties: *Physics_Properties) -> unique: bool, unique_in
 make_properties_unique :: inline (in_body: *Physics_Body_Base) {
     body := cast(*Physics_Body_Internal) in_body;
     if !is_unique(body.properties) {
-        new_properties_index := pool_acquire(*world.unique_properties);
+        new_properties_index := pool_borrow(*world.unique_properties);
         new_properties := *world.unique_properties[new_properties_index];
         new_properties.* = body.properties.*;
         body.properties = new_properties;

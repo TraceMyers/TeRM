@@ -703,7 +703,7 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
         vkBindBufferMemory(logical.obj, buffer, memory, 0);
     }
 
-    heap_index := cast(u16) pool_acquire(*gpu_heap_pool);
+    heap_index := cast(u16) pool_borrow(*gpu_heap_pool);
     heap := *gpu_heap_pool[heap_index];
 
     heap.* = GPU_Heap.{
@@ -725,7 +725,7 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
 
 allocate_material :: (mat: *Material) -> s32 {
     using context.renderer;
-    new_mat_index := pool_acquire(*materials);
+    new_mat_index := pool_borrow(*materials);
     assert(new_mat_index != -1);
     update_material(xx new_mat_index, mat);
     return xx new_mat_index;

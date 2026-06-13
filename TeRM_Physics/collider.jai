@@ -47,11 +47,11 @@ set_collider_data_for_fast_aabb_calculation :: (using collider: *Physics_Collide
     case .CIRCLE;
         array[0] = data.circle.radius;
         array[1] = data.circle.radius;
-        array[2] = 0;
+        array[2] = SMALL_NUMBER;
     case .RECTANGLE;
         array[0] = data.rectangle.half_height;
         array[1] = data.rectangle.half_width;
-        array[2] = 0;
+        array[2] = SMALL_NUMBER;
     case .CYLINDER;
         array[0] = data.cylinder.half_height;
         array[1] = data.cylinder.radius;

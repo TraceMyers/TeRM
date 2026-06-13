@@ -27,9 +27,10 @@ Physical_World :: struct {
 
     contact_grid: CT_Table(u32, Contact_Cell, true, 1024);
     contact_grid_cell_allocator: Super_Allocator;
-    // stored per-frame and kept for warm starting
-    contact_pairs: [..]Contact_Pair;
-    contact_islands: [..]Contact_Island;
+
+    // todo: probably don't need to keep these. delete or section off in a per-frame field if so.
+    contact_islands: Pool(Contact_Island);
+    color_groups: [..]Color_Group;
 
     // grid settings for size, origin, broad phase resolution (scale)
     grid_origin := Vector2.{-512.0, -512.0};
@@ -119,6 +120,7 @@ Physics_Body_Combined_Data :: struct($as_pointers := false) {
     flags:              Physics_Body_Flags;
     collision_channels: Collision_Channel;
     entity_id:          user_types.entity_id_type;
+    axes:               [3]u64;
     using body:         Physics_Body_Internal;
 }
 
@@ -131,10 +133,11 @@ Physics_Body_SOA :: struct {
     flags:              [..]Physics_Body_Flags;
     collision_channels: [..]Collision_Channel;
     entity_ids:         [..]user_types.entity_id_type;
+    axes:               [..][3]u64;
     bodies:             [..]Physics_Body_Internal;
     
     item_type   :: Physics_Body_Combined_Data;
-    item_fields :: string.["flags", "collision_channels", "entity_id", "body"];
+    item_fields :: string.["flags", "collision_channels", "entity_id", "axes", "body"];
 }
 
 for_expansion :: (physics_soa: *Physics_Body_SOA, body: Code, flags: For_Flags) #expand {

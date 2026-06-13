@@ -46,6 +46,7 @@ world: *Physical_World;
 #import "Math";
 #import "Basic";
 #import "Bit_Array";
+#import "Bit_Operations";
 
 #import "TeRM/TeRM_Storage";
 #import "TeRM/TeRM_Allocation";
@@ -53,6 +54,7 @@ world: *Physical_World;
 #import "TeRM/TeRM_Metaprogram";
 #import "TeRM/TeRM_NumberInterpretation";
 #import "TeRM/TeRM_Array";
+#import "TeRM/TeRM_Compression";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

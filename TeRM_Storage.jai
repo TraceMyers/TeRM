@@ -195,7 +195,7 @@ pool_reset_keeping_memory :: (using pool: *Pool($T), deinit_item_proc: (*T) = nu
     top = -1;
 }
 
-pool_acquire :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavior := Pool_Resize_Behavior.DEFAULT) -> s64 {
+pool_borrow :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavior := Pool_Resize_Behavior.DEFAULT) -> s64 {
     index: s64 = -1;
 
     if items.data != null then for :only_cleared_bits in_use {
@@ -240,11 +240,11 @@ pool_acquire :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavi
     return index;
 }
 
-pool_release :: inline (pool: *Pool($T), item: *T, deinit_item_proc: (*T) = null, shrink_behavior := Pool_Resize_Behavior.DEFAULT) {
-    pool_release(pool, pool_get_index(pool, item), deinit_item_proc, shrink_behavior);
+pool_return :: inline (pool: *Pool($T), item: *T, deinit_item_proc: (*T) = null, shrink_behavior := Pool_Resize_Behavior.DEFAULT) {
+    pool_return(pool, pool_get_index(pool, item), deinit_item_proc, shrink_behavior);
 }
 
-pool_release :: (using pool: *Pool($T), i: s64, deinit_item_proc: (*T) = null, shrink_behavior := Pool_Resize_Behavior.DEFAULT) {
+pool_return :: (using pool: *Pool($T), i: s64, deinit_item_proc: (*T) = null, shrink_behavior := Pool_Resize_Behavior.DEFAULT) {
     if deinit_item_proc then deinit_item_proc(*items[i]);
 
     clear_bit(*in_use, i);
@@ -661,7 +661,7 @@ table_set :: (table: *CT_Table, key: table.key_type, value: table.value_type, ed
         }
     } else {
         if edit_if == .ONLY_ADD || edit_if == .ADD_OR_CHANGE {
-            container_index : s32 = xx pool_acquire(*table.kv_containers);
+            container_index : s32 = xx pool_borrow(*table.kv_containers);
             if searched_up_to_index == -1 {
                 // container list is empty
                 lut_i := lut_index(table, key_hash);
@@ -786,7 +786,7 @@ table_remove_container :: (table: *CT_Table, container: *CT_Table_KV_Container) 
         }
     }
 
-    pool_release(*table.kv_containers, container_index); 
+    pool_return(*table.kv_containers, container_index); 
 }
 
 #scope_export
@@ -885,7 +885,9 @@ array_reserve :: (array: *Hybrid_Array($T), reserve_count: int) {
     }
 }
 
-array_reset :: (using array: *Hybrid_Array) {
+array_reset :: hybrid_array_reset;
+
+hybrid_array_reset :: (using array: *Hybrid_Array) {
     if allocation == .EXTERNAL {
         free(external.data,, external.allocator);
     }

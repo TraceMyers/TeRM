@@ -200,7 +200,7 @@ create_depth_buffer :: () -> bool {
         vkDestroyImageView(logical.obj, depth_buffer.view, null);
         vkDestroyImage(logical.obj, depth_buffer.obj, null);
 
-        pool_release(*image_pool, depth_buffer.pool_index);
+        pool_return(*image_pool, depth_buffer.pool_index);
         depth_buffer = null;
     }
 

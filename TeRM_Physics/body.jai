@@ -9,6 +9,8 @@ Physics_Body_Base :: struct($properties_type: Type, $collider_type: Type) {
     properties: *properties_type;
     collider: *collider_type;
 
+    compressed_axes: [3]u64;
+
     contact_grid_min_x: s16;
     contact_grid_min_y: s16;
     contact_grid_max_x: s16;
@@ -97,12 +99,12 @@ destroy_physics_body :: (in_body: *Physics_Body_Base) -> need_repoint: bool, id_
 
     props_are_unique, unique_index := is_unique(body.properties);
     if props_are_unique {
-        pool_release(*unique_properties, unique_index);
+        pool_return(*unique_properties, unique_index);
     }
 
     collider_is_unique:, unique_index = is_unique(body.collider);
     if collider_is_unique {
-        pool_release(*unique_colliders, unique_index);
+        pool_return(*unique_colliders, unique_index);
     }
 
     if body_index < body_count - 1 {
@@ -198,6 +200,13 @@ z_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
     return get_up_direction(body.next_orientation);
 }
 
+axes :: inline (body: *Physics_Body_Base) -> Vector3, Vector3, Vector3 {
+    x := x_axis(body);
+    y := y_axis(body);
+    z := cross(x, y);
+    return x, y, z;
+}
+
 // teleport a body to a location
 set_position :: (_body: *Physics_Body_Base, position: Vector3) {
     using body := cast(*Physics_Body_Internal) _body;
@@ -224,7 +233,7 @@ get_index :: inline (body: *Physics_Body_Base) -> int {
     return cast(*Physics_Body_Internal) body - world.body_data.bodies.data;
 }
 
-calculate_aabb :: inline (_body: *Physics_Body_Base) -> AABB {
+calculate_aabb :: inline (_body: *Physics_Body_Base, $use_compressed_axes := false) -> AABB {
     body := cast(*Physics_Body_Internal) _body;
     using body.collider;
 
@@ -233,10 +242,22 @@ calculate_aabb :: inline (_body: *Physics_Body_Base) -> AABB {
     if shape == .SPHERE {
         aabb.extent = splat(shape_data.array[0], 3);
     } else {
-        aabb.extent = 
-              abs(z_axis(body) * shape_data.array[0]) 
-            + abs(x_axis(body) * shape_data.array[1]) 
-            + abs(y_axis(body) * shape_data.array[2]);
+        #if use_compressed_axes {
+            bi := get_index(body);
+            x := linear_decompress_vector3(world.body_data.axes[bi][0], 0, 1);
+            y := linear_decompress_vector3(world.body_data.axes[bi][1], 0, 1);
+            z := linear_decompress_vector3(world.body_data.axes[bi][2], 0, 1);
+            aabb.extent = 
+                  abs(z * shape_data.array[0]) 
+                + abs(x * shape_data.array[1]) 
+                + abs(y * shape_data.array[2]);
+        } else {
+            x, y, z := axes(body);
+            aabb.extent = 
+                  abs(z * shape_data.array[0]) 
+                + abs(x * shape_data.array[1]) 
+                + abs(y * shape_data.array[2]);
+        }
     }
 
     return aabb;

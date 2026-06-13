@@ -98,6 +98,10 @@ solve_contact :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal
         
         time_in_contact := world.delta_time - contact.contact_time;
 
+        // NOTE: time in contact for friction is wrong
+        // the normal force is implicit in whatever force was required to make
+        // the relative velocity zero.
+
         if surface_speed > 0 {
             // might be other forces at work...
             normal_force := world.gravity * dot(surface_normal, {z=1}) * moving_body.properties.mass;

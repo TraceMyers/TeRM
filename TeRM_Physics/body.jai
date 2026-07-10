@@ -244,9 +244,9 @@ calculate_aabb :: inline (_body: *Physics_Body_Base, $use_compressed_axes := fal
     } else {
         #if use_compressed_axes {
             bi := get_index(body);
-            x := linear_decompress_vector3(world.body_data.axes[bi][0], 0, 1);
-            y := linear_decompress_vector3(world.body_data.axes[bi][1], 0, 1);
-            z := linear_decompress_vector3(world.body_data.axes[bi][2], 0, 1);
+            x := linear_decompress_vector3(world.body_data.axes[bi][0], -1, 1);
+            y := linear_decompress_vector3(world.body_data.axes[bi][1], -1, 1);
+            z := linear_decompress_vector3(world.body_data.axes[bi][2], -1, 1);
             aabb.extent = 
                   abs(z * shape_data.array[0]) 
                 + abs(x * shape_data.array[1]) 

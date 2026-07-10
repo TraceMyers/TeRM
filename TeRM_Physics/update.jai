@@ -81,9 +81,9 @@ run_physics_step_pre_contact :: (consecutive_step_index: int) {
 
         if body.collider.shape != .SPHERE {
             x, y, z := axes(body);
-            body_data.axes[bi][0] = linear_compress_vector3(x, 0, 1);
-            body_data.axes[bi][1] = linear_compress_vector3(y, 0, 1);
-            body_data.axes[bi][2] = linear_compress_vector3(z, 0, 1);
+            body_data.axes[bi][0] = linear_compress_vector3(x, -1, 1);
+            body_data.axes[bi][1] = linear_compress_vector3(y, -1, 1);
+            body_data.axes[bi][2] = linear_compress_vector3(z, -1, 1);
         }
 
         moved_or_accelerated: bool;

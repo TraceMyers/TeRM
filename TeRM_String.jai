@@ -20,16 +20,6 @@ as_array :: inline (str: string, $T: Type) -> []T {
     return t_array;
 }
 
-print :: inline (str: *string, upper_bound: int, fmt: string, args: ..Any) -> bool {
-    if str.count >= upper_bound {
-        return false;
-    } else {
-        str.count += 1;
-        str.data[str.count-1] = char;
-        return true;
-    }
-}
-
 to_string_safe :: inline (str: *u8, max_read_count: s64) -> string {
     for 0..max_read_count-1 {
         if str[it] == 0 {

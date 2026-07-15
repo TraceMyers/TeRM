@@ -163,7 +163,7 @@ UTF32_TO_ANSI  :: Text_Encoder(utf32_to_ansi) .{.UTF32, .ANSI,  1};
 // -------------------------------------------------------------------- :Encode String
 
 // translate a string from one encoding to another
-// encoder must be known at compile time, because the encoder proc must be inlined.
+// encoder must be known at compile time, because the encoder proc call is inlined.
 encode_text_string :: (src: string, $encoder: Text_Encoder, caller_loc := #caller_location) -> string, bool {
     temp_storage_mark := get_temporary_storage_mark();
     defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(temp_storage_mark);

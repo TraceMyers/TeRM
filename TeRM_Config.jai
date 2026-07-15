@@ -328,7 +328,7 @@ string_buffer: [..]u8;
 // 10.001 means the number of significant digits was N was 5
 // 10^(N-2) = 10^3 = 1,000
 // 10.000997 / 1,000 = 0.00100009997
-// is 0.000003 > 0.0010000997? no, so it's an insignificant change. trust the true value x, assuming the text was not changed.
+// 0.000003 is less than 0.0010000997, so it's an insignificant change. trust the true value x, assuming the text was not changed.
 PRINT_FLOAT_SIGNIFICANT_DIGITS :: 6;
 LOAD_FLOAT_ERROR_FACTOR :: #run -> float {
     assert(PRINT_FLOAT_SIGNIFICANT_DIGITS >= 2);

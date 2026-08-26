@@ -682,9 +682,10 @@ ceil_to_power_of_two_multiple :: inline (n: $T, power_of_two_size: T) -> T {
 
 S64_MAX :: 0x7fff_ffff_ffff_ffff;
 
+#import "Basic";
 #import "Compiler";
 Program_Print :: #import "Program_Print";
-#import "Basic";
+
 #import "TeRM/TeRM_String";
 
 // Copyright (c) 2026 Trace Myers

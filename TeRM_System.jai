@@ -91,6 +91,54 @@ clear_console :: () {
     }
 }
 
+MIN_CPU_PAUSE_CYCLES : u64 : 400;
+
+// try to pause the cpu at least some number of tsc cycles.
+// if < min, just calls pause() once, because that resolution
+// is too small for the procedure to handle.
+cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
+    if wait_cycles <= MIN_CPU_PAUSE_CYCLES-1 {
+        pause();
+        return;
+    }
+
+    core_ids: [2]u32 = ---;
+    cycles:   [2]u64 = ---;
+
+    cycles[0], core_ids[0] = rdtscp();
+    cycles[1], core_ids[1] = cycles[0], core_ids[0];
+    cycle_sum: u64 = 60; // how many cycles have passed up to this point, estimate.
+
+    while cycle_sum < wait_cycles {
+        remain          := max(wait_cycles - cycle_sum, 0);
+        pauses_per_loop := max(remain >> 8, 1);
+
+        if pauses_per_loop >= 4 {
+            pause();
+            pause();
+            pause();
+            pause();
+        } else if pauses_per_loop >= 2 {
+            pause();
+            pause();
+        } else {
+            pause();
+        }
+        
+        cycles[1], core_ids[1] = rdtscp();
+
+        if core_ids[1] != core_ids[0] {
+            // if the core running the procedure changes mid-pause, it assumes 200
+            // cycles were waited to avoid overshooting the target excessively.
+            cycle_sum  += 200;
+            cycles[0]   = cycles[1] - cycle_sum;
+            core_ids[0] = core_ids[1];
+        } else {
+            cycle_sum = cycles[1] - cycles[0];
+        }
+    }
+}
+
 // progressive backoff starting with OS-level timer then cpu pauses.
 // wait_error is an attempt to account for a measured single digit microsecond-level 
 // error in getting system time, exiting loop, and getting out of the procedure.
@@ -113,22 +161,15 @@ wait :: (wait_ms: float64, wait_error: float64 = 0.001) -> time_spent_ms: float6
     }
 
     time_remain_ms := wait_ms - spent_ms;
-    while time_remain_ms > 0.002 {
-        count := clamp(cast(s64) (time_remain_ms * 1000.0), 4, 32) >> 2;
-        while count > 0 {
-            pause();
-            pause();
-            pause();
-            pause();
-            count -= 1;
-        }
+    while time_remain_ms > 0.004 {
+        cpu_pause(2048);
         end_time = seconds_since_init();
         spent_ms = (end_time - start_time) * 1000.0;
         time_remain_ms = wait_ms - spent_ms;
     }
 
     while spent_ms < wait_ms {
-        pause();
+        cpu_pause();
         end_time = seconds_since_init();
         spent_ms = (end_time - start_time) * 1000.0;
     }
@@ -246,3 +287,4 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Array";
+#import "TeRM/TeRM_Metaprogram";

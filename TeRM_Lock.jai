@@ -94,7 +94,7 @@ unlock :: inline (mutex: *RW_Mutex, acquired: RW_Mutex_Acquired) {
     wake_front(mutex);
 }
 
-scope_lock :: (mutex: *RW_Mutex, $type := RW_Lock_Type.WRITE) {
+scope_lock :: (mutex: *RW_Mutex, $type := RW_Lock_Type.WRITE) #expand {
     acquired := lock(mutex, type);
     `defer unlock(mutex, acquired);
 }
@@ -103,13 +103,14 @@ scope_lock :: (mutex: *RW_Mutex, $type := RW_Lock_Type.WRITE) {
 
 lock_loop :: (mutex: *RW_Mutex, key: s64, $lock_acquired: (s64) -> bool) {
     try_count: s64;
-    queued_at_least_once: bool;
+    wait_event: Thread_Wait_Event;
 
     while true {
         if inline lock_acquired(mutex.state) {
             pre_lock_value := atomic_add(*mutex.state, key);           
             if inline lock_acquired(pre_lock_value) {
-                if queued_at_least_once {
+                if wait_event.handle != null {
+                    remove_front(mutex);
                     wake_front(mutex);
                 }
                 return;
@@ -117,42 +118,47 @@ lock_loop :: (mutex: *RW_Mutex, key: s64, $lock_acquired: (s64) -> bool) {
             atomic_add(*mutex.state, -key);
         }
 
-        if try_count < 32 {
-            pause_cycles := try_count * 128;
+        try_count += 1;
+
+        if try_count <= 8 {
+            pause();
+        } else if try_count <= 16 {
+            pause_cycles := try_count * 256;
             cpu_pause(pause_cycles);
-            try_count += 1;
+        } else if wait_event.handle == null {
+            wait_event = add_wait_event(mutex);
         } else {
+            wait_for_event(wait_event.handle);
             try_count >>= 1;
-
-            event := borrow_thread_wait_event();
-            add_event_handle(mutex, event.handle);
-            wait_for_event(event.handle);
-            return_thread_wait_event(*event);
-
-            queued_at_least_once = true;
         }
     }
 }
 
-wake_front :: inline (mutex: *RW_Mutex) {
-    lock(*mutex.wait_events_mutex);
-    front_event: Event_Handle;
+wake_front :: inline (mutex: *RW_Mutex, do_lock := true) {
+    if do_lock then lock(*mutex.wait_events_mutex);
     if mutex.wait_events.count > 0 {
-        front_event := mutex.wait_events[0];
-        array_ordered_remove_by_index(*mutex.wait_events, 0);
-        unlock(*mutex.wait_events_mutex);
-        signal_event(front_event);
-        return;
+        signal_event(mutex.wait_events[0]);
     }
-    unlock(*mutex.wait_events_mutex);
+    if do_lock then unlock(*mutex.wait_events_mutex);
 }
 
-add_event_handle :: inline (mutex: *RW_Mutex, handle: Event_Handle) {
+remove_front :: (mutex: *RW_Mutex) {
     scope_lock(*mutex.wait_events_mutex);
-    array_add(*mutex.wait_events, handle);
+    assert(mutex.wait_events.count > 0);
+    front_event := mutex.wait_events[0];
+    array_ordered_remove_by_index(*mutex.wait_events, 0);
+    return_thread_wait_event(front_event);
+    wake_front(mutex, false);
 }
 
-#scope_export
+add_wait_event :: inline (mutex: *RW_Mutex) -> Thread_Wait_Event {
+    scope_lock(*mutex.wait_events_mutex);
+    event := borrow_thread_wait_event();
+    array_add(*mutex.wait_events, event.handle);
+    return event;
+}
+
+#scope_file
 
 // -----------------------------------------------------------------------------------
 
@@ -190,16 +196,13 @@ borrow_thread_wait_event :: () -> Thread_Wait_Event {
     return event;
 }
 
-return_thread_wait_event :: (event: *Thread_Wait_Event) {
+return_thread_wait_event :: (event: Thread_Wait_Event) {
     handle := context.thread_wait_events.items[event.pool_id];
     reset_event(event.handle);
     array_add(*context.thread_wait_events.queue, event.pool_id);
-    event.* = {};
 }
 
 // -----------------------------------------------------------------------------------
-
-#scope_file
 
 #if OS == .WINDOWS {
     Win32 :: #import "Windows";

@@ -48,7 +48,7 @@ CP850_TO_UTF8 :: Text_Encoder(cp850_to_utf8).{.CP850, .UTF8, 0};
 
 // and use it:
 
-utf8_str, success := encode_text_string(cp850_str, CP850_to_UTF8);
+utf8_str, success := encode_text(cp850_str, CP850_to_UTF8);
 
 // you can also then of course name your own encode proc if you use it a lot:
 
@@ -164,7 +164,7 @@ UTF32_TO_ANSI  :: Text_Encoder(utf32_to_ansi) .{.UTF32, .ANSI,  1};
 
 // translate a string from one encoding to another
 // encoder must be known at compile time, because the encoder proc call is inlined.
-encode_text_string :: (src: string, $encoder: Text_Encoder, caller_loc := #caller_location) -> string, bool {
+encode_text :: (src: string, $encoder: Text_Encoder, caller_loc := #caller_location) -> string, bool {
     temp_storage_mark := get_temporary_storage_mark();
     defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(temp_storage_mark);
 

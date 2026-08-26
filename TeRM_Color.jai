@@ -382,13 +382,11 @@ hsy_to_rgb :: (hsy: Color_HSY, $T := Color4f) -> T {
     grey_alpha := clamp(1 - hsy.saturation, 0.0, 1.0);
     rgb = lerp_to_grey(rgb, max_saturated_luminance, grey_alpha);
     
-    luma_alpha: float = ---;
-    luma_target: float = ---;
     if max_saturated_luminance <= hsy.luminance {
-        luma_alpha = respace(hsy.luminance, {max_saturated_luminance, 1}, {0, 1});
+        luma_alpha := respace(hsy.luminance, {max_saturated_luminance, 1}, {0, 1});
         rgb = lighten(rgb, luma_alpha);
     } else {
-        luma_alpha = respace(hsy.luminance, {0, max_saturated_luminance}, {1, 0});
+        luma_alpha := respace(hsy.luminance, {0, max_saturated_luminance}, {1, 0});
         rgb = darken(rgb, luma_alpha);
     }
 

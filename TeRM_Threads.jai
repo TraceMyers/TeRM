@@ -43,11 +43,13 @@ read_write_lock :: (lock: *RW_Lock, $mode: RW_Lock_Mode) {
     // using +1 and -100,000 to make it impossible for +1's to push the lock above 0 if writing.
     #if mode == .READ {
         lock_value_before_add: s32;
+
         // make sure readers aren't hogging the resource
         while lock.consecutive_reads_while_writers_waiting > lock.suppress_reads_threshold 
         && lock.writers_waiting > 0 {
-            ;
+            sleep_milliseconds(1);
         }
+
         while true {
             lock_value_before_add = atomic_add(*lock.counter, 1);
             if lock_value_before_add >= 0 {
@@ -59,6 +61,7 @@ read_write_lock :: (lock: *RW_Lock, $mode: RW_Lock_Mode) {
                 break;
             }
             atomic_decrement(*lock.counter);
+            pause();
         }
     } else { // WRITE
         lock_value_before_subtract: s32;
@@ -72,6 +75,7 @@ read_write_lock :: (lock: *RW_Lock, $mode: RW_Lock_Mode) {
                 break;
             }
             atomic_add(*lock.counter, LARGE_NUMBER);
+            pause();
         }
     }
 }
@@ -95,6 +99,7 @@ LARGE_NUMBER : s32 : 100_000;
 
 #import "Basic";
 #import "Atomics";
+#import "Machine_X64";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

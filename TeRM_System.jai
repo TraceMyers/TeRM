@@ -2,29 +2,32 @@
 // todo: code for other systems
 // todo: more system info
 
-// set this to whatever you want or do sample_rdtscp_cycle_count()
-// increases the accuracy of cpu_pause. if you call recommended_system_init(), this is already done.
-RDTSCP_CYCLE_COUNT_DEFAULT : u64 : 40;
-rdtscp_cycle_count: u64 = RDTSCP_CYCLE_COUNT_DEFAULT;
-
 System_Information :: struct {
-    cpu_frequency: s64;
+    cpu_frequency_per_second: s64;
 }
+
+// system_information: System_Information;
 
 recommended_system_init :: () -> bool {
     #if OS == .WINDOWS {
         Win32.SetProcessDPIAware();
+
         sample_rdtscp_cycle_count();
+        sample_cycle_count("seconds_since_init();", *seconds_since_init_cycle_count, SECONDS_SINCE_INIT_CYCLE_COUNT_DEFAULT);
+
+        // query_system_information(*system_information);
+
         return true;
     } else {
         return false;
     }
 }
 
+
 query_system_information :: (info: *System_Information) {
-    if OS == .WINDOWS {
-        Win32.QueryPerformanceFrequency(*info.cpu_frequency);
-    }
+//     if OS == .WINDOWS {
+//         Win32.QueryPerformanceFrequency(*info.cpu_frequency_per_second);
+//     }
 }
 
 is_window_open :: (window: Window_Type) -> bool {
@@ -115,21 +118,21 @@ cpu_pause :: no_inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
     cycles[0], core_ids[0] = rdtscp();
     
     // this was fun! (https://www.agner.org/optimize/instruction_tables.pdf)
-    // -----------------------------------------------------------------------------------------
-    // optimized disassembly of this procedure up to and including rdtscp()  | intel coffee lake 
-    // -----------------------------------------------------------------------------------------
-    // > if wait_cycles <= MIN_CPU_PAUSE_CYCLES-1                            | 
-    // 1. 0x00007ff722e92095  cmp rdx, 0x18F                                 | CMP   r,i  (1, 1/4)
-    // 2. 0x00007ff722e9209c  jbe 0x00007FF722E92179 (cpu_pause)             | JBE   m    (0,   2)
-    // > rdtscp high:, result, msr;                                          |
-    // 3. 0x00007ff722e920a2  mov r9, rdx                                    | MOV   r,r  (1, 1/4)
-    // 4. 0x00007ff722e920a5  rdtscp                                         | rest is sampled
-    // 5. 0x00007ff722e920a8  mov r10d, ecx  (<< store core_ids[0])          |
-    // > shl.q  high, 32;                                                    |
-    // 6. 0x00007ff722e920ab  shl rdx, 0x20  (<< shift hi bits up)           |
-    // > or.q   result, high;                                                |
-    // 7. 0x00007ff722e920af  or rax, rdx    (<< combine hi and lo)          |
-    // 8. 0x00007ff722e920b2  mov r11, rax   (<< store cycles[0])            |
+    // ------------------------------------------------------------------------------------------
+    // optimized disassembly of this procedure up to and including rdtscp()  |  intel coffee lake 
+    // ------------------------------------------------------------------------------------------
+    // > if wait_cycles <= MIN_CPU_PAUSE_CYCLES-1                            |                    | 
+    // 1. cmp rdx, 0x18F                                                     | CMP   r,i  (1, 1/4)|
+    // 2. jbe                                                                | JBE   m    (0,   2)|
+    // > rdtscp high:, result, msr;                                          |                    |
+    // 3. mov r9, rdx                                                        | MOV   r,r  (1, 1/4)|
+    // 4. rdtscp                                                             | rest is sampled    |
+    // 5. mov r10d, ecx       (<< store core_ids[0])      
+    // > shl.q  high, 32;                                                     
+    // 6. shl rdx, 0x20       (<< shift hi bits up)       
+    // > or.q   result, high;                                                 
+    // 7. or rax, rdx         (<< combine hi and lo)      
+    // 8. mov r11, rax        (<< store cycles[0])        
     LEADING_INSTRUCTION_CYCLES : u64 : 2;
 
     // + 8 cycle penalty for a jbe branch miss. high end penalty = 16, halved to 8 for 50/50.
@@ -146,7 +149,7 @@ cpu_pause :: no_inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
     //      |
     //      this rdtscp time point   <-- time point 1
     //      this rdtscp cost
-    // if you subtract time point 0 from time point 1, it leaves out the
+    // if you subtract time point 0 from time point 1, the difference leaves out the
     // leading costs and the latest rdtscp cost, so those need to be 
     // added back transiently every iteration OR just subtracted once at the beginning.
     wait_cycles -= LEADING_COST + rdtscp_cycle_count;
@@ -188,15 +191,17 @@ cpu_pause :: no_inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
     }
 }
 
-// progressive backoff starting with OS-level timer then cpu pauses.
-// wait_error is an attempt to account for a measured single digit microsecond-level 
-// error in primarily getting system time, but also exiting loop and getting out of the procedure.
-// could be better.
-wait :: (wait_ms: float64, wait_error: float64 = 0.001) -> time_spent_ms: float64, end_time: float64 {
+wait_until :: (time: float64) -> time_spent_ms: float64, end_time: float64 {
     start_time := seconds_since_init();
-    end_time   := start_time;
+    time_spent_ms, end_time := wait(start_time, time - start_time);
+    return time_spent_ms, end_time;
+}
 
-    wait_ms = wait_ms - wait_error;
+// progressive backoff starting with OS-level timer then cpu pauses.
+wait :: (start_time: float64, wait_ms: float64) -> time_spent_ms: float64, end_time: float64 {
+    end_time := start_time;
+
+    wait_ms -= 0.00007; // est. overhead of single seconds_since_init() call
     if wait_ms <= 0 {
         return 0, start_time;
     }
@@ -268,30 +273,49 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
     }
 }
 
+sample_cycle_count :: ($code: string, cycle_count: *u64, default_value_if_failure: u64) -> bool {
+    ITER_COUNT :: 60;
+    cycles: [ITER_COUNT]u64;
+    collected: int;
+
+    for 0..ITER_COUNT-1 {
+        cycles_1, core_id_1 := rdtscp();
+        #insert code;
+        cycles_2, core_id_2 := rdtscp();
+        if core_id_1 == core_id_2 {
+            cycles[collected] = xx max(cast(s64) cycles_2 - cast(s64) cycles_1 - cast(s64) rdtscp_cycle_count, 1);
+            collected += 1;
+        }
+    }
+
+    cycle_count_est, success := estimate_cycle_count(array_view(cycles, 0, collected));
+    if success {
+        cycle_count.* = round(cycle_count_est, u64);
+        return true;
+    } else {
+        cycle_count.* = default_value_if_failure;
+        return false;
+    }
+}
+
 // call this for a more accurate cpu_pause
 sample_rdtscp_cycle_count :: () -> bool {
-    auto_release_temp();
-
-    ITER_COUNT :: 30;
+    ITER_COUNT :: 60;
     cycles: [ITER_COUNT]u64;
-
     collected: int;
 
     for 0..ITER_COUNT-1 {
         cycles_1, core_id_1 := rdtscp();
         cycles_2, core_id_2 := rdtscp();
         if core_id_1 == core_id_2 {
-            cycles[collected] = max(cycles_2 - cycles_1, 1);
+            cycles[collected] = xx max(cast(s64) cycles_2 - cast(s64) cycles_1, 1);
             collected += 1;
         }
     }
 
-    if collected >= 1 {
-        // assuming normal distribution
-        mean, sd := calculate_mean_and_standard_deviation(array_view(cycles, 0, collected));
-        critical_value_95p := 1.96;
-        // max value in 95% confidence interval
-        rdtscp_cycle_count = round(mean + critical_value_95p * (sd / sqrt(cast(float) collected)), u64);
+    cycle_count_est, success := estimate_cycle_count(array_view(cycles, 0, collected));
+    if success {
+        rdtscp_cycle_count = round(cycle_count_est, u64);
         return true;
     } else {
         log("% failed to collect any rdtscp cycle count samples. setting to default %", #procedure_name(), RDTSCP_CYCLE_COUNT_DEFAULT);
@@ -356,6 +380,27 @@ sample_rdtscp_cycle_count :: () -> bool {
     }
 
     #add_context system_timer: Win32.HANDLE;
+}
+
+RDTSCP_CYCLE_COUNT_DEFAULT : u64 : 40;
+rdtscp_cycle_count: u64 = RDTSCP_CYCLE_COUNT_DEFAULT;
+
+SECONDS_SINCE_INIT_CYCLE_COUNT_DEFAULT : u64 : 3600;
+seconds_since_init_cycle_count: u64 = SECONDS_SINCE_INIT_CYCLE_COUNT_DEFAULT;
+
+#scope_file
+
+estimate_cycle_count :: (samples: []u64) -> float64, bool {
+    if samples.count >= 1 {
+        // assuming normal distribution
+        mean, sd := calculate_mean_and_standard_deviation(samples);
+        critical_value_95p := 1.96;
+        // max value in 95% confidence interval
+        cycle_count_est := mean + critical_value_95p * (sd / sqrt(cast(float) samples.count));
+        return cycle_count_est, true;
+    } else {
+        return 0, false;
+    }
 }
 
 #import "Basic";

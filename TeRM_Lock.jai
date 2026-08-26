@@ -90,7 +90,6 @@ lock :: inline (mutex: *RW_Mutex, $type := RW_Lock_Type.WRITE) -> RW_Mutex_Acqui
 
 unlock :: inline (mutex: *RW_Mutex, acquired: RW_Mutex_Acquired) {
     atomic_add(*mutex.state, acquired.unlock_key);
-    // note: I think some threads might get stranded
     wake_front(mutex);
 }
 

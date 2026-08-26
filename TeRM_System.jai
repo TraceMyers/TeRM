@@ -106,7 +106,7 @@ MIN_CPU_PAUSE_CYCLES : u64 : 320;
 // if wait_cycles < min value, just calls pause() once, because that resolution is 
 // too small for the procedure to handle.
 // this was tuned for an optimized build, so it may be less accurate in a debug build.
-cpu_pause :: no_inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
+cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
     if wait_cycles <= MIN_CPU_PAUSE_CYCLES-1 {
         pause();
         return;

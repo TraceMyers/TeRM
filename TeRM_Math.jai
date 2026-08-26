@@ -984,7 +984,7 @@ get_min_value :: ($Number_Type: Type) -> Number_Type
     case float64;
         return FLOAT64_MIN;
     case;
-        return 0;
+        #run assert(false);
     }
 }
 
@@ -1015,7 +1015,7 @@ get_max_value :: ($Number_Type: Type) -> Number_Type
     case float64;
         return FLOAT64_MAX;
     case;
-        return 0;
+        #run assert(false);
     }
 }
 

@@ -2,6 +2,11 @@
 // todo: code for other systems
 // todo: more system info
 
+// set this to whatever you want or do sample_rdtscp_cycle_count()
+// increases the accuracy of cpu_pause. if you call recommended_system_init(), this is already done.
+RDTSCP_CYCLE_COUNT_DEFAULT : u64 : 40;
+rdtscp_cycle_count: u64 = RDTSCP_CYCLE_COUNT_DEFAULT;
+
 System_Information :: struct {
     cpu_frequency: s64;
 }
@@ -9,6 +14,7 @@ System_Information :: struct {
 recommended_system_init :: () -> bool {
     #if OS == .WINDOWS {
         Win32.SetProcessDPIAware();
+        sample_rdtscp_cycle_count();
         return true;
     } else {
         return false;
@@ -91,12 +97,13 @@ clear_console :: () {
     }
 }
 
-MIN_CPU_PAUSE_CYCLES : u64 : 400;
+MIN_CPU_PAUSE_CYCLES : u64 : 320;
 
 // try to pause the cpu at least some number of tsc cycles.
-// if < min, just calls pause() once, because that resolution
-// is too small for the procedure to handle.
-cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
+// if wait_cycles < min value, just calls pause() once, because that resolution is 
+// too small for the procedure to handle.
+// this was tuned for an optimized build, so it may be less accurate in a debug build.
+cpu_pause :: no_inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
     if wait_cycles <= MIN_CPU_PAUSE_CYCLES-1 {
         pause();
         return;
@@ -106,12 +113,49 @@ cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
     cycles:   [2]u64 = ---;
 
     cycles[0], core_ids[0] = rdtscp();
-    cycles[1], core_ids[1] = cycles[0], core_ids[0];
-    cycle_sum: u64 = 60; // how many cycles have passed up to this point, estimate.
+    
+    // this was fun! (https://www.agner.org/optimize/instruction_tables.pdf)
+    // -----------------------------------------------------------------------------------------
+    // optimized disassembly of this procedure up to and including rdtscp()  | intel coffee lake 
+    // -----------------------------------------------------------------------------------------
+    // > if wait_cycles <= MIN_CPU_PAUSE_CYCLES-1                            | 
+    // 1. 0x00007ff722e92095  cmp rdx, 0x18F                                 | CMP   r,i  (1, 1/4)
+    // 2. 0x00007ff722e9209c  jbe 0x00007FF722E92179 (cpu_pause)             | JBE   m    (0,   2)
+    // > rdtscp high:, result, msr;                                          |
+    // 3. 0x00007ff722e920a2  mov r9, rdx                                    | MOV   r,r  (1, 1/4)
+    // 4. 0x00007ff722e920a5  rdtscp                                         | rest is sampled
+    // 5. 0x00007ff722e920a8  mov r10d, ecx  (<< store core_ids[0])          |
+    // > shl.q  high, 32;                                                    |
+    // 6. 0x00007ff722e920ab  shl rdx, 0x20  (<< shift hi bits up)           |
+    // > or.q   result, high;                                                |
+    // 7. 0x00007ff722e920af  or rax, rdx    (<< combine hi and lo)          |
+    // 8. 0x00007ff722e920b2  mov r11, rax   (<< store cycles[0])            |
+    LEADING_INSTRUCTION_CYCLES : u64 : 2;
+
+    // + 8 cycle penalty for a jbe branch miss. high end penalty = 16, halved to 8 for 50/50.
+    // (https://www.agner.org/optimize/microarchitecture.pdf)
+    AVERAGE_BRANCH_MISS_PENALTY : u64 : 8;
+    LEADING_COST :: LEADING_INSTRUCTION_CYCLES + AVERAGE_BRANCH_MISS_PENALTY;
+
+    // this proc, simplified:
+    //      leading costs
+    //      first rdtscp time point   <-- time point 0
+    //      first rdtscp cost
+    //      |
+    //      0 or more iterations in-between
+    //      |
+    //      this rdtscp time point   <-- time point 1
+    //      this rdtscp cost
+    // if you subtract time point 0 from time point 1, it leaves out the
+    // leading costs and the latest rdtscp cost, so those need to be 
+    // added back transiently every iteration OR just subtracted once at the beginning.
+    wait_cycles -= LEADING_COST + rdtscp_cycle_count;
+    cycle_sum: u64;
 
     while cycle_sum < wait_cycles {
         remain          := max(wait_cycles - cycle_sum, 0);
-        pauses_per_loop := max(remain >> 8, 1);
+        // >> 8 is divide by 256. 256 is a conservative upper bound for pause() cycle cost.
+        pauses_per_loop := remain >> 8;
 
         if pauses_per_loop >= 4 {
             pause();
@@ -127,21 +171,26 @@ cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
         
         cycles[1], core_ids[1] = rdtscp();
 
-        if core_ids[1] != core_ids[0] {
-            // if the core running the procedure changes mid-pause, it assumes 200
-            // cycles were waited to avoid overshooting the target excessively.
-            cycle_sum  += 200;
+        // were the two time stamps recorded from the same core?
+        if core_ids[0] == core_ids[1] {
+            THIS_BLOCK_COST_WITH_BRANCH : u64 : 3;
+            cycle_sum = cycles[1] - cycles[0] + THIS_BLOCK_COST_WITH_BRANCH;
+        } else {
+            // if the core running the procedure changes between timestamps, 
+            // assume 160 * ppl cycles were consumed to avoid overshooting the target.
+            // not adding rdtscp_cycle_count because it is added transiently per iteration,
+            // so it already exists in the sum.
+            cycle_sum  += 160 * pauses_per_loop;
+            // reset the base so we can keep measuring.
             cycles[0]   = cycles[1] - cycle_sum;
             core_ids[0] = core_ids[1];
-        } else {
-            cycle_sum = cycles[1] - cycles[0];
         }
     }
 }
 
 // progressive backoff starting with OS-level timer then cpu pauses.
 // wait_error is an attempt to account for a measured single digit microsecond-level 
-// error in getting system time, exiting loop, and getting out of the procedure.
+// error in primarily getting system time, but also exiting loop and getting out of the procedure.
 // could be better.
 wait :: (wait_ms: float64, wait_error: float64 = 0.001) -> time_spent_ms: float64, end_time: float64 {
     start_time := seconds_since_init();
@@ -156,12 +205,12 @@ wait :: (wait_ms: float64, wait_error: float64 = 0.001) -> time_spent_ms: float6
 
     roomy_wait_time_ms := wait_ms - 1.5;
     while spent_ms < roomy_wait_time_ms {
-        _, end_time = wait_inaccurate(0.25);
+        _, end_time = wait_inaccurate(0.5);
         spent_ms = (end_time - start_time) * 1000.0;
     }
 
     time_remain_ms := wait_ms - spent_ms;
-    while time_remain_ms > 0.004 {
+    while time_remain_ms > 0.005 {
         cpu_pause(2048);
         end_time = seconds_since_init();
         spent_ms = (end_time - start_time) * 1000.0;
@@ -169,7 +218,7 @@ wait :: (wait_ms: float64, wait_error: float64 = 0.001) -> time_spent_ms: float6
     }
 
     while spent_ms < wait_ms {
-        cpu_pause();
+        pause();
         end_time = seconds_since_init();
         spent_ms = (end_time - start_time) * 1000.0;
     }
@@ -216,6 +265,38 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
         return spent_ms, end_time;
     } else {
         sleep_milliseconds(max(cast(s32) wait_ms, 1));
+    }
+}
+
+// call this for a more accurate cpu_pause
+sample_rdtscp_cycle_count :: () -> bool {
+    auto_release_temp();
+
+    ITER_COUNT :: 30;
+    cycles: [ITER_COUNT]u64;
+
+    collected: int;
+
+    for 0..ITER_COUNT-1 {
+        cycles_1, core_id_1 := rdtscp();
+        cycles_2, core_id_2 := rdtscp();
+        if core_id_1 == core_id_2 {
+            cycles[collected] = max(cycles_2 - cycles_1, 1);
+            collected += 1;
+        }
+    }
+
+    if collected >= 1 {
+        // assuming normal distribution
+        mean, sd := calculate_mean_and_standard_deviation(array_view(cycles, 0, collected));
+        critical_value_95p := 1.96;
+        // max value in 95% confidence interval
+        rdtscp_cycle_count = round(mean + critical_value_95p * (sd / sqrt(cast(float) collected)), u64);
+        return true;
+    } else {
+        log("% failed to collect any rdtscp cycle count samples. setting to default %", #procedure_name(), RDTSCP_CYCLE_COUNT_DEFAULT);
+        rdtscp_cycle_count = RDTSCP_CYCLE_COUNT_DEFAULT;
+        return false;
     }
 }
 
@@ -277,7 +358,6 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
     #add_context system_timer: Win32.HANDLE;
 }
 
-
 #import "Basic";
 #import "Window_Creation";
 #import "Math";
@@ -288,3 +368,4 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
 #import "TeRM/TeRM_String";
 #import "TeRM/TeRM_Array";
 #import "TeRM/TeRM_Metaprogram";
+#import "TeRM/TeRM_Statistics";

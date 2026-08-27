@@ -53,8 +53,8 @@ largest_gap_in_bit_sequence_lsb :: inline (bits: $T) -> size: s8 {
 // just a couple of for expansions for iterating over only cleared or only set bits. reverse
 // iteration was also added, where the base for expansion did not implement that.
 //
-// this is particularly useful for allocation algorithms that want to find the first or last bit
-// that is set or cleared, since they will exit the loop on the first valid slot.
+// this is particularly useful for allocation algorithms that want to find the front or back bit
+// that is set or cleared, since they will exit the loop on the front valid slot.
 //
 // in other words...
 //
@@ -62,8 +62,8 @@ largest_gap_in_bit_sequence_lsb :: inline (bits: $T) -> size: s8 {
 // 
 // [ 1 1 1 1 1 1 1 1 ] [ 1 1 1 1 1 1 1 1 ] [ 1 1 0 1 1 0 1 0 ]
 //
-// and given you want to find the first cleared bit, you clearly don't need to search
-// into the first two slots. only when you reach slot 3 should you search the bits to find a 0.
+// and given you want to find the front cleared bit, you clearly don't need to search
+// into the front two slots. only when you reach slot 3 should you search the bits to find a 0.
 //
 // when the bit array becomes hundreds or thousands of slots long, this two stage search
 // save a lot of time.
@@ -375,7 +375,7 @@ resize_in_use :: (using pool: *Pool($T), new_count: s64) {
 //
 // e.g. soa_add(*vectors, {1,1,1}); adds 1.0 to each of the arrays.
 
-soa_for_each_array :: (soa: *$T, operation: string, $declare_item_field_var := false, only_first_array := false) #expand {
+soa_for_each_array :: (soa: *$T, operation: string, $declare_item_field_var := false, only_front_array := false) #expand {
     #insert -> string {
         builder: String_Builder;
 
@@ -398,7 +398,7 @@ soa_for_each_array :: (soa: *$T, operation: string, $declare_item_field_var := f
             }
             print(*builder, "#insert operation;");
             print(*builder, "\t}\n");
-            if only_first_array {
+            if only_front_array {
                 break;
             }
         }
@@ -772,7 +772,7 @@ table_remove_container :: (table: *CT_Table, container: *CT_Table_KV_Container) 
         assert(table.kv_containers[container.prev].next == container_index);
         table.kv_containers[container.prev].next = container.next;
     } else {
-        // this container is first in list, so need to move the head
+        // this container is front in list, so need to move the head
         update_list_head();
     }
 
@@ -953,7 +953,73 @@ BIT_ARRAY_SLOT_SIZE :: size_of(s64);
 BIT_ARRAY_SLOT_MAX_VALUE : s64 : 0xffff_ffff_ffff_ffff;
 BIT_ARRAY_SLOT_BIT_COUNT :: BIT_ARRAY_SLOT_SIZE * 8;
 
-// ------
+// -----------------------------------------------------------------------------------
+// ---------------------------------------------------------------------- :Ring_Buffer
+
+Ring_Buffer :: struct($T: Type) {
+    items: []T;
+    front: u32 = EMPTY;
+    back:  u32;
+
+    on_erasure: (erasing: *$T, replacement: *T) = null;
+
+    EMPTY :: U32_MAX;
+}
+
+push_front :: (using buffer: *Ring_Buffer($T), item: T) {
+    assert(items.count > 0);
+    push_init(buffer, *T, back);
+    front = decrement_wrap(front, cast(u32), 0, cast(u32) (items.count-1));
+    items[front] = item;
+}
+
+push_back :: (using buffer: *Ring_Buffer($T), item: T) {
+    assert(items.count > 0);
+    push_init(buffer, *T, front);
+    back = increment_wrap(back, cast(u32) 0, cast(u32) (items.count-1));
+    items[back] = item;
+}
+
+pop_front :: (using buffer: *Ring_Buffer($T)) -> T {
+    assert(items.count > 0 && front != EMPTY);
+    item := items[front];
+    front = increment_wrap(front, cast(u32) 0, cast(u32) (items.count-1));
+    if front == back then front = EMPTY;
+    return item;
+}
+
+pop_back :: (using buffer: *Ring_Buffer($T)) -> T {
+    assert(items.count > 0 && front != EMPTY);
+    item := items[back];
+    back = decrement_wrap(back, cast(u32) 0, cast(u32) (items.count-1));
+    if front == back then front = EMPTY;
+    return item;
+}
+
+count :: (using buffer: *Ring_Buffer) -> int {
+    if front == EMPTY {
+        return 0;
+    } else if back > front {
+        return back - front + 1;
+    } else {
+        return (items.count - front) + (back + 1);
+    }
+}
+
+#scope_file
+
+push_init :: inline (using buffer: *Ring_Buffer($T), pushing_item: *T, erase_if_full: u32) {
+    if front == EMPTY {
+        front = 0;
+        back  = 0;
+    } else if count(buffer) == items.count {
+        if on_erasure != null {
+            on_erasure(*items[erase_if_full], pushing_item);
+        }
+    }
+}
+
+// --------------
 
 #scope_file
 

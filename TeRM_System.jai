@@ -112,10 +112,10 @@ cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
         return;
     }
 
-    core_ids: [2]u32 = ---;
-    cycles:   [2]u64 = ---;
+    core_ids:   [2]u32 = ---;
+    timestamps: [2]u64 = ---;
 
-    cycles[0], core_ids[0] = rdtscp();
+    timestamps[0], core_ids[0] = rdtscp();
     
     // this was fun! (https://www.agner.org/optimize/instruction_tables.pdf)
     // ------------------------------------------------------------------------------------------
@@ -147,11 +147,12 @@ cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
     //      |
     //      0 or more iterations in-between
     //      |
-    //      this rdtscp time point   <-- time point 1
-    //      this rdtscp cost
-    // if you subtract time point 0 from time point 1, the difference leaves out the
-    // leading costs and the latest rdtscp cost, so those need to be 
-    // added back transiently every iteration OR just subtracted once at the beginning.
+    //      newest rdtscp time point   <-- time point 1
+    //      newest rdtscp cost
+    // if you subtract time point 0 from time point 1, the difference leaves out the leading costs and the 
+    // latest rdtscp cost, so those need to be added back transiently every iteration OR just subtracted 
+    // once at the beginning. the cost of this line is not expliclity accounted for because it's in-between 
+    // the oldest and newest timestamps, so that would be double-dipping.
     wait_cycles -= LEADING_COST + rdtscp_cycle_count;
     cycle_sum: u64;
 
@@ -172,21 +173,20 @@ cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
             pause();
         }
         
-        cycles[1], core_ids[1] = rdtscp();
+        timestamps[1], core_ids[1] = rdtscp();
 
         // were the two time stamps recorded from the same core?
         if core_ids[0] == core_ids[1] {
-            THIS_BLOCK_COST_WITH_BRANCH : u64 : 3;
-            cycle_sum = cycles[1] - cycles[0] + THIS_BLOCK_COST_WITH_BRANCH;
+            cycle_sum = timestamps[1] - timestamps[0];
         } else {
             // if the core running the procedure changes between timestamps, 
             // assume 160 * ppl cycles were consumed to avoid overshooting the target.
             // not adding rdtscp_cycle_count because it is added transiently per iteration,
             // so it already exists in the sum.
-            cycle_sum  += 160 * pauses_per_loop;
+            cycle_sum    += 160 * pauses_per_loop;
             // reset the base so we can keep measuring.
-            cycles[0]   = cycles[1] - cycle_sum;
-            core_ids[0] = core_ids[1];
+            timestamps[0] = timestamps[1] - cycle_sum;
+            core_ids[0]   = core_ids[1];
         }
     }
 }
@@ -199,13 +199,11 @@ wait_until :: (time: float64) -> time_spent_ms: float64, end_time: float64 {
 
 // progressive backoff starting with OS-level timer then cpu pauses.
 wait :: (start_time: float64, wait_ms: float64) -> time_spent_ms: float64, end_time: float64 {
-    end_time := start_time;
-
-    wait_ms -= 0.00007; // est. overhead of single seconds_since_init() call
     if wait_ms <= 0 {
         return 0, start_time;
     }
 
+    end_time := start_time;
     spent_ms: float64;
 
     roomy_wait_time_ms := wait_ms - 1.5;
@@ -228,11 +226,15 @@ wait :: (start_time: float64, wait_ms: float64) -> time_spent_ms: float64, end_t
         spent_ms = (end_time - start_time) * 1000.0;
     }
 
+    while spent_ms < wait_ms {
+        end_time = seconds_since_init();
+        spent_ms = (end_time - start_time) * 1000.0;
+    }
+
     return spent_ms, end_time;
 }
 
 wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time: float64 {
-    // #add_context system_timer: Win32.HANDLE;
     #if OS == .WINDOWS {
         start_time := seconds_since_init();
         end_time   := start_time;
@@ -255,7 +257,7 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
             remaining_time_in_hundreds_of_ns.QuadPart *= -1; 
 
             set_success := Win32.SetWaitableTimer(context.system_timer, *remaining_time_in_hundreds_of_ns, 0, null, null, Win32.BOOL.FALSE);
-            assert(set_success != .FALSE, "win32 SetWaitableTimer error: %", Win32.GetLastError());
+            assert(set_success == .TRUE, "win32 SetWaitableTimer error: %", Win32.GetLastError());
 
             wait_success := Win32.WaitForSingleObject(context.system_timer, 20);
             assert(wait_success == Win32.WAIT_OBJECT_0, "win32 WaitForSingleObject error: %", Win32.GetLastError());

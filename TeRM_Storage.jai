@@ -814,7 +814,7 @@ count :: inline (using array: *Hybrid_Array) -> int {
     return ifx allocation == .INTERNAL then internal_count else external.count;
 }
 
-view :: inline (using array: *Hybrid_Array($T)) -> []T {
+array_view :: inline (using array: *Hybrid_Array($T)) -> []T {
     slice: []T = ---;
     if allocation == .INTERNAL {
         slice.data  = internal_items.data;
@@ -829,7 +829,7 @@ operator *[] :: (using array: *Hybrid_Array($T), i: int) -> *T {
     return ifx allocation == .INTERNAL then internal_items[i] else external[i];
 }
 
-operator []= :: (using array: *Hybrid_Array($T), i: int, x: T) -> *T {
+operator []= :: (using array: *Hybrid_Array($T), i: int, x: T) {
     if allocation == .INTERNAL {
         assert(i < internal_count);
         internal_items[i] = x;
@@ -895,7 +895,7 @@ hybrid_array_reset :: (using array: *Hybrid_Array) {
 }
 
 for_expansion :: (array: *Hybrid_Array($T), body: Code, flags: For_Flags) #expand {
-    items := view(array);
+    items := array_view(array);
 
     for item, ind : items {
         `it := item;

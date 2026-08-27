@@ -6,6 +6,7 @@
 // Linear_Table
 // CT_Table
 // Hybrid_Array
+// Ring_Buffer
 
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :Misc
@@ -966,17 +967,20 @@ Ring_Buffer :: struct($T: Type) {
     EMPTY :: U32_MAX;
 }
 
+make_ring_buffer :: inline ($T: Type, size: int) -> Ring_Buffer(T) {
+    assert(size >= 0 );
+    return ifx size == 0 then Ring_Buffer.{} else Ring_Buffer.{items=NewArray(T, size)};
+}
+
 push_front :: (using buffer: *Ring_Buffer($T), item: T) {
     assert(items.count > 0);
-    push_init(buffer, *T, back);
-    front = decrement_wrap(front, cast(u32), 0, cast(u32) (items.count-1));
+    if push_init(buffer, *T, back) then front = decrement_wrap(front, cast(u32) 0, cast(u32) (items.count-1));
     items[front] = item;
 }
 
 push_back :: (using buffer: *Ring_Buffer($T), item: T) {
     assert(items.count > 0);
-    push_init(buffer, *T, front);
-    back = increment_wrap(back, cast(u32) 0, cast(u32) (items.count-1));
+    if push_init(buffer, *T, front) then back = increment_wrap(back,  cast(u32) 0, cast(u32) (items.count-1));
     items[back] = item;
 }
 
@@ -999,7 +1003,7 @@ pop_back :: (using buffer: *Ring_Buffer($T)) -> T {
 count :: (using buffer: *Ring_Buffer) -> int {
     if front == EMPTY {
         return 0;
-    } else if back > front {
+    } else if back >= front {
         return back - front + 1;
     } else {
         return (items.count - front) + (back + 1);
@@ -1008,15 +1012,16 @@ count :: (using buffer: *Ring_Buffer) -> int {
 
 #scope_file
 
-push_init :: inline (using buffer: *Ring_Buffer($T), pushing_item: *T, erase_if_full: u32) {
+// returns whether or not the index that is being pushed to should be incremented or decremented
+push_init :: inline (using buffer: *Ring_Buffer($T), pushing_item: *T, erase_if_full: u32) -> bool {
     if front == EMPTY {
         front = 0;
         back  = 0;
-    } else if count(buffer) == items.count {
-        if on_erasure != null {
-            on_erasure(*items[erase_if_full], pushing_item);
-        }
+        return false;
+    } else if on_erasure != null && count(buffer) == items.count {
+        on_erasure(*items[erase_if_full], pushing_item);
     }
+    return true;
 }
 
 // --------------

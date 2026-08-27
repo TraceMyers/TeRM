@@ -1,3 +1,6 @@
+ENABLE_RW_MUTEX_SPIN_TEST :: true;
+
+// -----------------------------------------------------------------------------------
 
 scope_lock :: (mutex: *$T) #expand #modify { return T != RW_Mutex; } {
     lock(mutex);
@@ -62,6 +65,11 @@ RW_Mutex :: struct {
     wait_events: [..]Event_Handle;
     wait_events_mutex: Spin_Mutex;
 
+    #if ENABLE_RW_MUTEX_SPIN_TEST {
+        spin_failure_count: u64;
+        contended_spin_acquisition_count: u64;
+    }
+
     READ_KEY  : s64 : 1;
     WRITE_KEY : s64 : -48_000;
 }
@@ -78,10 +86,10 @@ lock :: inline (mutex: *RW_Mutex, $type := RW_Lock_Type.WRITE) -> RW_Mutex_Acqui
     acquired: RW_Mutex_Acquired = ---;
 
     #if type == .READ {
-        lock_loop(mutex, RW_Mutex.READ_KEY,  state => state >= 0);
+        try_acquire_loop(mutex, RW_Mutex.READ_KEY,  state => state >= 0);
         acquired.key = -RW_Mutex.READ_KEY;
     } else {
-        lock_loop(mutex, RW_Mutex.WRITE_KEY, state => state == 0);
+        try_acquire_loop(mutex, RW_Mutex.WRITE_KEY, state => state == 0);
         acquired.key = -RW_Mutex.WRITE_KEY;
     }
     
@@ -100,7 +108,7 @@ scope_lock :: (mutex: *RW_Mutex, $type := RW_Lock_Type.WRITE) #expand {
 
 #scope_file
 
-lock_loop :: (mutex: *RW_Mutex, key: s64, $lock_acquired: (s64) -> bool) {
+try_acquire_loop :: (mutex: *RW_Mutex, key: s64, $lock_acquired: (s64) -> bool) {
     try_count: s64;
     wait_event: Thread_Wait_Event;
 
@@ -108,6 +116,13 @@ lock_loop :: (mutex: *RW_Mutex, key: s64, $lock_acquired: (s64) -> bool) {
         if inline lock_acquired(mutex.state) {
             pre_lock_value := atomic_add(*mutex.state, key);           
             if inline lock_acquired(pre_lock_value) {
+
+                #if ENABLE_RW_MUTEX_SPIN_TEST {
+                    if try_count > 0 {
+                        atomic_add(*mutex.contended_spin_acquistion_count, 1);
+                    }
+                }
+
                 if wait_event.handle != null {
                     remove_front(mutex);
                     wake_front(mutex);
@@ -115,6 +130,10 @@ lock_loop :: (mutex: *RW_Mutex, key: s64, $lock_acquired: (s64) -> bool) {
                 return;
             }
             atomic_add(*mutex.state, -key);
+        }
+
+        #if ENABLE_RW_MUTEX_SPIN_TEST {
+            atomic_add(*mutex.spin_failure_count, 1);
         }
 
         try_count += 1;

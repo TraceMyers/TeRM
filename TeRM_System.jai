@@ -255,13 +255,10 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
             remaining_time_in_hundreds_of_ns.QuadPart *= -1; 
 
             set_success := Win32.SetWaitableTimer(context.system_timer, *remaining_time_in_hundreds_of_ns, 0, null, null, Win32.BOOL.FALSE);
-            if set_success == .FALSE {
-                assert(false, "win32 SetWaitableTimer error: %", Win32.GetLastError());
-            }
+            assert(set_success != .FALSE, "win32 SetWaitableTimer error: %", Win32.GetLastError());
+
             wait_success := Win32.WaitForSingleObject(context.system_timer, 20);
-            if wait_success != Win32.WAIT_OBJECT_0 {
-                assert(false, "win32 WaitForSingleObject error: %", Win32.GetLastError());
-            }
+            assert(wait_success == Win32.WAIT_OBJECT_0, "win32 WaitForSingleObject error: %", Win32.GetLastError());
 
             end_time = seconds_since_init();
             spent_ms = (end_time - start_time) * 1000.0;

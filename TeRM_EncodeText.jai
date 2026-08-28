@@ -4,6 +4,7 @@
     // 0, 1, 2 (0=basic, 1=log, 2=assert). validation requires TeRM_Log module.
     // term logs can be customized program-wide to go to stdout, stdout + callback, or just callback.
     VALIDATION_LEVEL := 0,
+    MAX_WRITE_SIZE := 8,
     ADD_TEXT_ENCODINGS: []string = string.[], // see 'how to add text encodings' section
     ADD_ENCODE_FAILURES: []string = string.[] // see 'how to add text encodings' section
 );
@@ -15,6 +16,8 @@ term_encode_text_allow_assert := () -> bool { return true; };
 // optionally replace this proc pointer with a procedure that tells this module whether 
 // logs should be printed or not. only used when on validation level >= 1.
 term_encode_text_allow_log := () -> bool { return true; };
+
+#run assert(MAX_WRITE_SIZE <= 127); // encode procs return s8's for how many bytes were written.
 
 // -----------------------------------------------------------------------------------
 
@@ -40,7 +43,7 @@ term_encode_text_allow_log := () -> bool { return true; };
 
 // then, I would need to define conversion procedures for any conversions I want to make, like this:
 
-cp850_to_utf8 :: (in: *u8, out: *u8, in_size: int, out_size: int) -> s8, s8, Text_Encode_Failure { ... }
+cp850_to_utf8 :: (in: *u8, out: *u8, in_size: int, out_size: int) -> s8, s8, Text_Encode_Status { ... }
 
 // then, I can make an encoder:
 
@@ -60,7 +63,7 @@ utf8_str, success := my_encode_text(cp850_str);
 
 // to make a new encoder procedure, consider this example:
 
-ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     if is_ascii(in.*) {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 1);
         out.* = in.*;
@@ -76,16 +79,8 @@ ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, 
 // your procedure is responsible for reading bytes, translating, writing bytes, validating that
 // a read and write are safe (some convenience macros are provided for default encodings),
 // validating that the input is not malformed, and returning values as such: bytes read or 
-// intended to read if no error, bytes written or intended to write if no error, and 0 
+// intended to read if no error, bytes written or intended to write if no error, and 0=SUCCESS
 // or error code. 
-
-// null bytes are appended to the end of all strings as per the 'terminating_null_byte_count' 
-// field on the encoder. a 0 can be passed in if you don't want a terminating null.
-
-// if you want to use one of the default encodings, and don't want the terminating null, you
-// could declare an alternative version of that encoder in your program:
-
-MY_UTF8_TO_UTF16 :: Text_Encoder(utf8_to_utf16).{.UTF8,  .UTF16, 0};
 
 // user-defined error codes can also be added at import, and returned by your function so that 
 // they will be logged when something goes wrong.
@@ -95,12 +90,19 @@ MY_UTF8_TO_UTF16 :: Text_Encoder(utf8_to_utf16).{.UTF8,  .UTF16, 0};
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------- :Types and Helpers
 
-text_encoder_procedure :: #type (src: *u8, dst: *u8, src_size: int, dst_size: int) -> read_byte_count: s8, wrote_byte_count: s8, error_code: Text_Encode_Failure;
+text_encoder_procedure :: #type (src: *u8, dst: *u8, src_size: int, dst_size: int, user_data: *void=null) -> read_byte_count: s8, wrote_byte_count: s8, error_code: Text_Encode_Status;
 
 Text_Encoder :: struct($proc: text_encoder_procedure) {
     encode_from: Text_Encoding;
-    encode_to: Text_Encoding;
-    terminating_null_byte_count: int; // how many null bytes to put at the end of the string
+    encode_to:   Text_Encoding;
+    // user_data = same user data that was passed into encode_text and the encoder proc
+    // encoded   = the string that was encoded
+    // dst       = bytes where terminator bytes (e.g. nulls) can be written.
+    // this procedure is called once or twice. first time, dst is null, and it should
+    // return how many terminating bytes it wants at the end. the second time, dst points
+    // to the end, so that the terminating bytes can be written. return written byte count.
+    // if the proc is null, no terminating bytes will be added.
+    terminator: (encoded: string, dst: *u8, user_data: *void) -> terminating_byte_count: int;
 }
 
 Text_Encoding :: enum u8 {
@@ -117,9 +119,9 @@ Text_Encoding :: enum u8 {
     };
 }
 
-Text_Encode_Failure :: enum s32 {
-    // 0 = success
-    INVALID_ENCODER_PROCEDURE :: 1;
+Text_Encode_Status :: enum u32 {
+    SUCCESS :: 0;
+    INVALID_ENCODER_PROCEDURE;
     TRUNCATED_BYTES_IN_INPUT;
     OUTPUT_BUFFER_IMPROPERLY_SIZED_BY_SYSTEM;
     IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT;
@@ -143,32 +145,44 @@ is_ascii :: inline (in: u32) -> bool {
     return (in & 0x7f) == in;
 }
 
-ANSI_TO_UTF8   :: Text_Encoder(ansi_to_utf8)  .{.ANSI,  .UTF8,  1};
-ANSI_TO_UTF16  :: Text_Encoder(ansi_to_utf16) .{.ANSI,  .UTF16, 2};
-ANSI_TO_UTF32  :: Text_Encoder(ansi_to_utf32) .{.ANSI,  .UTF32, 4};
+write_null_bytes :: (encoded: string, dst: *u8, user_data: *void, count: s8) -> int {
+    if dst == null {
+        return count;
+    } else {
+        for 0..count-1 {
+            (dst + it).* = 0;
+        }
+        return count;
+    }
+}
 
-UTF8_TO_UTF16  :: Text_Encoder(utf8_to_utf16) .{.UTF8,  .UTF16, 2};
-UTF8_TO_UTF32  :: Text_Encoder(utf8_to_utf32) .{.UTF8,  .UTF32, 4};
-UTF8_TO_ANSI   :: Text_Encoder(utf8_to_ansi)  .{.UTF8,  .ANSI,  1};
+write_1_null_byte  :: #bake_arguments write_null_bytes(count=1);
+write_2_null_bytes :: #bake_arguments write_null_bytes(count=2);
+write_4_null_bytes :: #bake_arguments write_null_bytes(count=4);
 
-UTF16_TO_UTF8  :: Text_Encoder(utf16_to_utf8) .{.UTF16, .UTF8,  1};
-UTF16_TO_UTF32 :: Text_Encoder(utf16_to_utf32).{.UTF16, .UTF32, 4};
-UTF16_TO_ANSI  :: Text_Encoder(utf16_to_ansi) .{.UTF16, .ANSI,  1};
+ANSI_TO_UTF8   :: Text_Encoder(ansi_to_utf8)  .{.ANSI,  .UTF8,  write_1_null_byte};
+ANSI_TO_UTF16  :: Text_Encoder(ansi_to_utf16) .{.ANSI,  .UTF16, write_2_null_bytes};
+ANSI_TO_UTF32  :: Text_Encoder(ansi_to_utf32) .{.ANSI,  .UTF32, write_4_null_bytes};
 
-UTF32_TO_UTF8  :: Text_Encoder(utf32_to_utf8) .{.UTF32, .UTF8,  1};
-UTF32_TO_UTF16 :: Text_Encoder(utf32_to_utf16).{.UTF32, .UTF16, 2};
-UTF32_TO_ANSI  :: Text_Encoder(utf32_to_ansi) .{.UTF32, .ANSI,  1};
+UTF8_TO_UTF16  :: Text_Encoder(utf8_to_utf16) .{.UTF8,  .UTF16, write_2_null_bytes};
+UTF8_TO_UTF32  :: Text_Encoder(utf8_to_utf32) .{.UTF8,  .UTF32, write_4_null_bytes};
+UTF8_TO_ANSI   :: Text_Encoder(utf8_to_ansi)  .{.UTF8,  .ANSI,  write_1_null_byte};
+
+UTF16_TO_UTF8  :: Text_Encoder(utf16_to_utf8) .{.UTF16, .UTF8,  write_1_null_byte};
+UTF16_TO_UTF32 :: Text_Encoder(utf16_to_utf32).{.UTF16, .UTF32, write_4_null_bytes};
+UTF16_TO_ANSI  :: Text_Encoder(utf16_to_ansi) .{.UTF16, .ANSI,  write_1_null_byte};
+
+UTF32_TO_UTF8  :: Text_Encoder(utf32_to_utf8) .{.UTF32, .UTF8,  write_1_null_byte};
+UTF32_TO_UTF16 :: Text_Encoder(utf32_to_utf16).{.UTF32, .UTF16, write_2_null_bytes};
+UTF32_TO_ANSI  :: Text_Encoder(utf32_to_ansi) .{.UTF32, .ANSI,  write_1_null_byte};
 
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------------- :Encode String
 
 // translate a string from one encoding to another
-// encoder must be known at compile time, because the encoder proc call is inlined.
-encode_text :: (src: string, $encoder: Text_Encoder, caller_loc := #caller_location) -> string, bool {
+encode_text :: (src: string, encoder: Text_Encoder, user_data: *void = null, caller_loc := #caller_location) -> string, bool {
     temp_storage_mark := get_temporary_storage_mark();
     defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(temp_storage_mark);
-
-    assert(encoder.terminating_null_byte_count >= 0);
 
     if src.count == 0 then return "", true;
 
@@ -180,7 +194,6 @@ encode_text :: (src: string, $encoder: Text_Encoder, caller_loc := #caller_locat
     out_index: int;
 
     if encoder.encode_from != encoder.encode_to {
-        MAX_WRITE_SIZE :: 4;
         while src_index < src.count {
             out_remain := out_buffer_size - out_index;
             if out_remain - MAX_WRITE_SIZE <= 0 {
@@ -195,11 +208,12 @@ encode_text :: (src: string, $encoder: Text_Encoder, caller_loc := #caller_locat
             src_remain := src.count - src_index;
 
             #if #run encoder.proc != null {
-                read_count, write_count, encode_failure := inline encoder.proc(src.data + src_index, out_buffer + out_index, src_remain, out_remain);
+                read_count, write_count, encode_failure := inline encoder.proc(src.data + src_index, out_buffer + out_index, src_remain, out_remain, user_data);
+                assert(write_count <= MAX_WRITE_SIZE);
             } else {
                 // cannot use an encoder with no procedure
                 read_count, write_count: s8;
-                encode_failure := Text_Encode_Failure.INVALID_ENCODER_PROCEDURE;
+                encode_failure := Text_Encode_Status.INVALID_ENCODER_PROCEDURE;
             }
 
             if encode_failure != 0 {
@@ -221,35 +235,39 @@ encode_text :: (src: string, $encoder: Text_Encoder, caller_loc := #caller_locat
         out_buffer_size = src.count;
     }
 
+    want_terminating_bytes := ifx encoder.terminator != null then encoder.terminator({out_index, out_buffer}, null, user_data) else 0;
+
     // check whether a new allocation needs to be made or if the current one can just be returned as-is
     // null bytes always written to the end for compatibility with other stuff. it's just easier this way.
     if out_buffer == src.data 
     || out_buffer == out_buffer_inline.data 
     || context.allocator.proc != temp.proc 
-    || out_index + encoder.terminating_null_byte_count > out_buffer_size {
+    || out_index + want_terminating_bytes > out_buffer_size {
         // again, no need to free here, just as above
-        new_buffer_size := out_index + encoder.terminating_null_byte_count;
+        new_buffer_size := out_index + want_terminating_bytes;
         new_buffer := alloc(new_buffer_size);
         memcpy(new_buffer, out_buffer, out_index);
         out_buffer = new_buffer;
         out_buffer_size = new_buffer_size;
     }
     
-    if encoder.terminating_null_byte_count > 0 {
-        memset(out_buffer + out_index, 0, encoder.terminating_null_byte_count);
+    if want_terminating_bytes > 0 {
+        wrote_count := encoder.terminator({out_index, out_buffer}, out_buffer + out_index, user_data);
+        assert(wrote_count <= want_terminating_bytes);
     }
+
     return string.{out_index, out_buffer}, true;
 }
 
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------- :Conversion
 // for all encode procs: 
-// - if the Text_Encode_Failure value is 0, the first two values are how many bytes were read, and how many were written.
-// - if the Text_Encode_Failure value is nonzero, the first two values are how many bytes the encode proc wanted to read and write, but  failed to.
+// - if the Text_Encode_Status value is 0, the first two values are how many bytes were read, and how many were written.
+// - if the Text_Encode_Status value is nonzero, the first two values are how many bytes the encode proc wanted to read and write, but  failed to.
 
 // ansi -> ...
 
-ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     if is_ascii(in.*) {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 1);
         out.* = in.*;
@@ -262,14 +280,14 @@ ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, 
     }
 }
 
-ansi_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+ansi_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 2);
     out_utf16 := out.(*u16,force);
     out_utf16.* = in.*;
     return 1, 2, 0;
 }
 
-ansi_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+ansi_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 4);
     out_utf32 := out.(*u32,force);
     out_utf32.* = in.*;
@@ -278,7 +296,7 @@ ansi_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8,
 
 // utf8 -> ...
 
-utf8_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+utf8_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     if (in[0] & 0x80) == 0 {
         // 1 byte utf8 code point
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 1);
@@ -298,20 +316,20 @@ utf8_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, 
     }
 }
 
-utf8_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+utf8_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     // utf8 and utf16 are both types that require actual decoding. so, encoding while decoding
     // is sort of possible but practically you always need to decode first. so, we decode
     // to utf32 the encode to utf16.
     dummy_utf32: u32 = ---;
-    read_utf8_bytes, _, fail_code_1 := utf8_to_utf32(in, xx *dummy_utf32, in_buf_size, 4);
+    read_utf8_bytes, _, fail_code_1 := inline utf8_to_utf32(in, xx *dummy_utf32, in_buf_size, 4, null);
     if fail_code_1 != 0 {
         return read_utf8_bytes, 0, fail_code_1;
     }
-    _, write_utf16_bytes, fail_code_2 := utf32_to_utf16(xx *dummy_utf32, out, 4, out_buf_size);
+    _, write_utf16_bytes, fail_code_2 := inline utf32_to_utf16(xx *dummy_utf32, out, 4, out_buf_size, null);
     return read_utf8_bytes, write_utf16_bytes, fail_code_2;
 }
 
-utf8_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+utf8_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     out_utf32 := out.(*u32,force);
     if (in[0] & 0x80) == 0 {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 4);
@@ -343,7 +361,7 @@ utf8_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8,
 
 // utf16 -> ...
 
-utf16_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+utf16_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 2, 1);
     in_utf16 := in.(*u16,force);
     if in_utf16.* > 255 {
@@ -353,20 +371,20 @@ utf16_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8,
     return 2, 1, 0;
 }
 
-utf16_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+utf16_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     // utf8 and utf16 are both types that require actual decoding. so, encoding while decoding
     // is sort of possible but practically you always need to decode first. so, we decode
     // to utf32 the encode to utf8.
     dummy_utf32: u32 = ---;
-    read_utf16_bytes, _, fail_code_1 := utf16_to_utf32(in, xx *dummy_utf32, in_buf_size, 4);
+    read_utf16_bytes, _, fail_code_1 := inline utf16_to_utf32(in, xx *dummy_utf32, in_buf_size, 4, null);
     if fail_code_1 != 0 {
         return read_utf16_bytes, 0, fail_code_1;
     }
-    _, write_utf8_bytes, fail_code_2 := utf32_to_utf8(xx *dummy_utf32, out, 4, out_buf_size);
+    _, write_utf8_bytes, fail_code_2 := inline utf32_to_utf8(xx *dummy_utf32, out, 4, out_buf_size, null);
     return read_utf16_bytes, write_utf8_bytes, fail_code_2;
 }
 
-utf16_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+utf16_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 2, 4);
     in_utf16 := in.(*u16,force);
     out_utf32 := out.(*u32,force);
@@ -389,7 +407,7 @@ utf16_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8
 
 // utf32 -> ...
 
-utf32_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+utf32_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 1);
     in_utf32 := in.(*u32,force);
     if in_utf32.* > 255 {
@@ -399,7 +417,7 @@ utf32_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8,
     return 4, 1, 0;
 }
 
-utf32_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+utf32_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 1);
     c := in.(*u32,force).*;
     if (c & 0x7f) == c {
@@ -430,7 +448,7 @@ utf32_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8,
     }
 }
 
-utf32_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8, s8, Text_Encode_Failure {
+utf32_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
     in_utf32 := in.(*u32,force);
     out_utf16 := out.(*u16,force);
     return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 2);
@@ -457,16 +475,16 @@ utf32_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int) -> s8
 
 return_if_not_valid_encode :: (in_buf_size: int, out_buf_size: int, read_size: int, write_size: int) #expand {
     if in_buf_size < read_size {
-        `return read_size, write_size, Text_Encode_Failure.TRUNCATED_BYTES_IN_INPUT;
+        `return read_size, write_size, Text_Encode_Status.TRUNCATED_BYTES_IN_INPUT;
     }
     if out_buf_size < write_size {
-        `return read_size, write_size, Text_Encode_Failure.OUTPUT_BUFFER_IMPROPERLY_SIZED_BY_SYSTEM;
+        `return read_size, write_size, Text_Encode_Status.OUTPUT_BUFFER_IMPROPERLY_SIZED_BY_SYSTEM;
     }
 }
 
 return_if_invalid_utf8_trailing_byte :: (b: u8, read_size: int, write_size: int) #expand {
     if (b & 0xc0) != 0x80 {
-        `return read_size, write_size, Text_Encode_Failure.INVALID_UTF8_TRAILING_BYTES;
+        `return read_size, write_size, Text_Encode_Status.INVALID_UTF8_TRAILING_BYTES;
     }
 }
 

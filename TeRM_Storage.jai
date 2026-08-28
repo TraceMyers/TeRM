@@ -374,6 +374,8 @@ soa_member_type :: ($item_type: Type, member_index: s64) -> Type {
     return (cast(*Type) *member.type).*;
 }
 
+// wrapping each member type of the SOA so that the types don't need to be known to this file,
+// I believe because it keeps the type generic until the SOA specialization is instantiated.
 SOA_Member_Type :: struct(item_type: Type, member_index: s64) {
     T :: #run soa_member_type(item_type, member_index);
 }
@@ -385,24 +387,16 @@ SOA :: struct($item_type: Type) {
 
         builder: String_Builder;
 
-        INVALID_MEMBER : Type_Info_Struct_Member.Flags =
-            .CONSTANT | .OVERLAY;
+        INVALID_MEMBER : Type_Info_Struct_Member.Flags = .CONSTANT | .OVERLAY;
 
         for member, member_index : tinfo.members {
             if member.flags & INVALID_MEMBER {
                 continue;
             }
-
             if member.type.runtime_size == 0 {
                 continue;
             }
-
-            print(
-                *builder,
-                "\t%: [..]SOA_Member_Type(item_type, %).T;\n",
-                member.name,
-                member_index
-            );
+            print(*builder, "\t%: [..]SOA_Member_Type(item_type, %).T;\n", member.name, member_index);
         }
 
         return builder_to_string(*builder);

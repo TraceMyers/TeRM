@@ -118,41 +118,27 @@ Physics_Step_State :: enum {
     PAUSE_ON_COLLISION;
 }
 
-Physics_Body_Combined_Data :: struct($as_pointers := false) {
-    flags:              Physics_Body_Flags;
-    collision_channels: Collision_Channel;
-    entity_id:          user_types.entity_id_type;
-    axes:               [3]u64;
-    using body:         Physics_Body_Internal;
-}
-
 Physics_Body_Iteration :: struct {
     body: *Physics_Body;
     entity_id: user_types.entity_id_type;
 }
 
-Physics_Body_SOA :: struct {
-    flags:              [..]Physics_Body_Flags;
-    collision_channels: [..]Collision_Channel;
-    entity_ids:         [..]user_types.entity_id_type;
-    axes:               [..][3]u64;
-    bodies:             [..]Physics_Body_Internal;
-    
-    item_type   :: Physics_Body_Combined_Data;
-    item_fields :: string.["flags", "collision_channels", "entity_id", "axes", "body"];
-}
+Physics_Body_SOA :: SOA(struct{
+    flags:              Physics_Body_Flags;
+    collision_channels: Collision_Channel;
+    entity_id:          user_types.entity_id_type;
+    axes:               [3]u64;
+    using body:         Physics_Body_Internal;
+});
 
 for_expansion :: (physics_soa: *Physics_Body_SOA, body: Code, flags: For_Flags) #expand {
-    for i : 0..physics_soa.bodies.count - 1 {
-        `it := Physics_Body_Iteration.{xx *physics_soa.bodies[i], physics_soa.entity_ids[i]};
+    for i : 0..physics_soa.body.count - 1 {
+        `it := Physics_Body_Iteration.{xx *physics_soa.body[i], physics_soa.entity_id[i]};
         `it_index := i;
 
         #insert body;
     }
 }
-
-#scope_module
-
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

@@ -73,14 +73,14 @@ create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.
     // todo: making everything awake all the time for now, but that needs to change.
     body_data.flags[i]              = template.flags | .AWAKE;
     body_data.collision_channels[i] = template.collision_channels;
-    body_data.bodies[i].properties  = *template.properties;
-    body_data.bodies[i].collider    = *template.collider;
-    body_data.entity_ids[i]         = entity_id;
+    body_data.body[i].properties    = *template.properties;
+    body_data.body[i].collider      = *template.collider;
+    body_data.entity_id[i]          = entity_id;
 
     // todo: only if the template calls for it
-    place_into_contact_grid(*body_data.bodies[i]);
+    place_into_contact_grid(*body_data.body[i]);
 
-    return xx *body_data.bodies[i];
+    return xx *body_data.body[i];
 }
 
 // if the body that was destroyed displaced another body, the entity pointers to
@@ -109,7 +109,7 @@ destroy_physics_body :: (in_body: *Physics_Body_Base) -> need_repoint: bool, id_
 
     if body_index < body_count - 1 {
         need_repoint  = true;
-        id_to_repoint = body_data.entity_ids[body_count-1];
+        id_to_repoint = body_data.entity_id[body_count-1];
     }
 
     soa_unordered_remove_by_index(*body_data, body_index);
@@ -232,7 +232,7 @@ get_position :: (_body: *Physics_Body_Base) -> Vector3 {
 }
 
 get_index :: inline (body: *Physics_Body_Base) -> int {
-    return cast(*Physics_Body_Internal) body - world.body_data.bodies.data;
+    return cast(*Physics_Body_Internal) body - world.body_data.body.data;
 }
 
 calculate_aabb :: inline (_body: *Physics_Body_Base, $use_compressed_axes := false) -> AABB {

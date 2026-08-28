@@ -14,18 +14,18 @@ run_contacts_broad_phase :: () {
     }
     array_reset_keeping_memory(*color_groups);
 
-    seen_body       := make_bit_array(body_data.bodies.count,, temp);
+    seen_body       := make_bit_array(body_data.body.count,, temp);
 
     // todo: rotation being ignored because it's annoying. don't do that.
     SHOULD_VISIT_QUESTION : Physics_Body_Flags : .PLACED_INTO_CONTACT_GRID | .AWAKE | .LOCK_TRANSLATION; 
     SHOULD_VISIT_ANSWER   : Physics_Body_Flags : .PLACED_INTO_CONTACT_GRID | .AWAKE;
 
     start_index: int;
-    body_color_group_flags := make_static_array(u64, body_data.bodies.count,, temp);
+    body_color_group_flags := make_static_array(u64, body_data.body.count,, temp);
 
     array_resize(*color_groups, 8);
 
-    for *body, bi : body_data.bodies {
+    for *body, bi : body_data.body {
         flags := body_data.flags[bi];
 
         if (flags & SHOULD_VISIT_QUESTION) != SHOULD_VISIT_ANSWER {
@@ -52,7 +52,7 @@ run_contacts_broad_phase :: () {
                 }
                 seen_body[obi] = true;
 
-                other_body_aabb := calculate_aabb(*body_data.bodies[obi], true);
+                other_body_aabb := calculate_aabb(*body_data.body[obi], true);
 
                 if is_overlap_aabb_aabb(body_aabb, other_body_aabb) {
                     place_pair_in_group(body_color_group_flags, *start_index, .[xx bi, xx obi]);

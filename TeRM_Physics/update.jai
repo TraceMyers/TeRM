@@ -67,7 +67,7 @@ run_physics_step_pre_contact :: (consecutive_step_index: int) {
     using world;
     // todo: warm starting
 
-    for *body, bi : body_data.bodies {
+    for *body, bi : body_data.body {
         flags := body_data.flags[bi];
 
         if (flags & .SKIP_UPDATE) != 0 {
@@ -122,7 +122,7 @@ physical_entity_transform_update :: (loop_body: Code) #expand {
 
     `physics_transform_alpha := get_physical_entity_transform_alpha();
 
-    for *b, bi : world.body_data.bodies {
+    for *b, bi : world.body_data.body {
         `flags := get_flags(cast(*Physics_Body) b);
         // if (`flags & .AWAKE) == 0 {
         //     continue;
@@ -132,7 +132,7 @@ physical_entity_transform_update :: (loop_body: Code) #expand {
         }
         `body      := cast(*Physics_Body) b;
         `it_index  := bi;
-        `entity_id := world.body_data.entity_ids[bi];
+        `entity_id := world.body_data.entity_id[bi];
 
         #insert loop_body;
     }

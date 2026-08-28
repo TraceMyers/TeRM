@@ -143,8 +143,8 @@ Renderer :: struct {
         {position={-0.5,  0.5, 0}, uv_0={0, 1}},
     ];
 
-    sampler_table: Linear_Table(u32, VkSampler);
-    shader_table: Linear_Table(string, VkShaderModule);
+    sampler_table: Table(u32, VkSampler);
+    shader_table: Table(string, VkShaderModule);
 }
 
 MAX_MATERIALS :: 1024;

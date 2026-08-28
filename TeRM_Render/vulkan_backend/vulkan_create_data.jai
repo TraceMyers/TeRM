@@ -804,9 +804,9 @@ get_or_add_sampler :: (min_filter: Texture_Filter, mag_filter: Texture_Filter, h
         | ((cast(u32) horizontal_wrap) << 8) 
         | ((cast(u32) vertical_wrap)   << 0);
 
-    existing_sampler := table_get(*sampler_table, key);
-    if existing_sampler != null {
-        return existing_sampler.*;
+    sampler, just_added := find_or_add(*sampler_table, key);
+    if !just_added {
+        return sampler.*;
     }
 
     create_info := VkSamplerCreateInfo.{
@@ -838,13 +838,9 @@ get_or_add_sampler :: (min_filter: Texture_Filter, mag_filter: Texture_Filter, h
     // not using because I don't have 3d uv maps
     create_info.addressModeW = create_info.addressModeW;
 
-    new_sampler: VkSampler;
-    validate(vkCreateSampler(logical.obj, *create_info, null, *new_sampler), "failed to create sampler with min filter %, mag filter %, hz wrap %, vt wrap %", min_filter, mag_filter, horizontal_wrap, vertical_wrap);
+    validate(vkCreateSampler(logical.obj, *create_info, null, sampler), "failed to create sampler with min filter %, mag filter %, hz wrap %, vt wrap %", min_filter, mag_filter, horizontal_wrap, vertical_wrap);
 
-    made_edit, added_item := table_set(*sampler_table, key, new_sampler, .ONLY_ADD);
-    assert(added_item);
-
-    return new_sampler;
+    return sampler.*;
 }
 
 allocate_gpu_image :: (image: *GPU_Image, create_info: VkImageCreateInfo, memory_flags: VkMemoryPropertyFlags) {

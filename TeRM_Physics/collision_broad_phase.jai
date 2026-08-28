@@ -267,10 +267,10 @@ get_contact_cell :: inline (coords: Vector2i) -> *Contact_Cell {
 }
 
 get_contact_cell :: inline (key: num32, allocate_if_empty := false) -> *Contact_Cell {
-    cell := table_get_by_key_hash(*world.contact_grid, key._u32);
+    cell := table_find_pointer(*world.contact_grid, key._u32);
     if cell == null && allocate_if_empty {
         table_set(*world.contact_grid, key._u32, {external.allocator = world.contact_grid_cell_allocator});
-        cell = table_get_by_key_hash(*world.contact_grid, key._u32);
+        cell = table_find_pointer(*world.contact_grid, key._u32);
     }
     return cell;
 }

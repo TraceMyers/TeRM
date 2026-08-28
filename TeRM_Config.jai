@@ -42,7 +42,7 @@ load_config :: (filename: string, data: *$T, shrink_strings_buffer := true, post
     }
     
     load_data: Load_Data;
-    table_init(*load_data.table, 512,, temp);
+    init(*load_data.table, 512,, temp);
     no_inline parse_file(file_data, *load_data.table);
 
     // not inlining to avoid code bloat
@@ -75,11 +75,11 @@ Save_Data :: struct {
 }
 
 Load_Data :: struct {
-    table: Linear_Table(string, Config_Item);
+    table: Table(string, Config_Item);
     strings: [..]*string;
 }
 
-parse_file :: (file_data: string, table: *Linear_Table(string, Config_Item)) {
+parse_file :: (file_data: string, table: *Table(string, Config_Item)) {
     chirp_warning :: (line: string) {
         log("WARNING: improperly formatted config file line %", line);
     }
@@ -141,7 +141,7 @@ parse_file :: (file_data: string, table: *Linear_Table(string, Config_Item)) {
 }
 
 load_config_visitor :: (visit: *Struct_Visit, load_data: *Load_Data) -> Struct_Visitor_Command {
-    item := table_get(*load_data.table, view_string(visit.path));
+    item := table_find_pointer(*load_data.table, view_string(visit.path));
 
     if item == null {
         if visit.info.type == {
@@ -348,6 +348,7 @@ need_digits_after_decimal :: (x: float) -> int {
 #import "File";
 #import "Math";
 #import "String";
+#import "Hash_Table";
 
 #import "TeRM/TeRM_Math";
 #import "TeRM/TeRM_Array";

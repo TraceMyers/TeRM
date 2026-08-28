@@ -2,13 +2,11 @@ get_shader :: (filename: string) -> VkShaderModule {
     using context.renderer;
     auto_release_temp();
 
-    existing_shader := table_get(*shader_table, filename);
-    if existing_shader != null then return existing_shader.*;
-
-    new_shader := create_shader_module_from_file(filename);
-    table_set(*shader_table, filename, new_shader);
-
-    return new_shader;
+    shader, just_added  := find_or_add(*shader_table, filename);
+    if just_added {
+        shader.* = create_shader_module_from_file(filename);
+    }
+    return shader.*;
 }
 
 create_shader_module_from_file :: (filename: string) -> VkShaderModule {

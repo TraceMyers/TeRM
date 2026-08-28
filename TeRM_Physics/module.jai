@@ -47,6 +47,7 @@ world: *Physical_World;
 #import "Basic";
 #import "Bit_Array";
 #import "Bit_Operations";
+#import "Hash_Table";
 
 #import "TeRM/TeRM_Storage";
 #import "TeRM/TeRM_Allocation";

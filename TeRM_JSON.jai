@@ -546,7 +546,7 @@ JSON_Parser :: struct {
     always_float: bool;
 
     string_parser: JSON_String_Parser;
-    string_lookup_table: Linear_Table(string, s32);
+    string_lookup_table: Table(string, s32);
 }
 
 Parse_Number_Stage :: enum {
@@ -711,7 +711,7 @@ reserve_allocations :: (using parser: *JSON_Parser) {
     array_reserve(*elements,         elements_reserve_count);
     array_reserve(*file_positions,   elements_reserve_count); 
     array_reserve(*strings,          string_bytes_reserve_count);
-    table_init(*string_lookup_table, strings_reserve_count,, temp);
+    init(*string_lookup_table, strings_reserve_count,, temp);
 }
 
 // -----------------------------------------------------------------------------------
@@ -985,7 +985,7 @@ parse_string :: (parser: *JSON_Parser) -> bool {
     if new_string_length > 0 {
         // see if the string is cached
         str := string.{new_string_length, parser.strings.data + output_string_begin};
-        existing_str_index_ptr := table_get(*parser.string_lookup_table, str);
+        existing_str_index_ptr := table_find_pointer(*parser.string_lookup_table, str);
         if existing_str_index_ptr != null {
             parser.strings.count = output_string_begin;
             output_string_begin = xx existing_str_index_ptr.*;
@@ -1620,6 +1620,7 @@ NaN_INT : s64 = 0x7fff_ffff_ffff_ffff;
 #import "String";
 #import "Bit_Operations";
 #import "Math";
+#import "Hash_Table";
 
 #import "TeRM/TeRM_EncodeText";
 #import "TeRM/TeRM_String";

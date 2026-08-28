@@ -61,7 +61,7 @@ Physics_Body_Flags :: enum_flags u32 {
 
 create_physics_body :: (template_name: string, entity_id: user_types.entity_id_type) -> *Physics_Body {
     assert(entity_id != get_null_entity_id());
-    template := table_get(*world.body_templates, template_name);
+    template := table_find_pointer(*world.body_templates, template_name);
     return create_physics_body(template, entity_id);
 }
 
@@ -126,16 +126,18 @@ create_physics_body_template :: (name: string, template: Physics_Body_Template) 
 
     set_collider_data_for_fast_aabb_calculation(*template_copy.collider);
 
-    _, success := table_set(*body_templates, name, template_copy, .ONLY_ADD);
+    assert(!table_contains(*body_templates, name), "table failed to add template % either because of a hash collision or because a template has already been added under that name", name);
+
+    table_add(*body_templates, name, template_copy);
+
     // todo: probably should make it so the tables have hash collision resolution...
-    assert(success, "table failed to add template % either because of a hash collision or because a template has already been added under that name", name);
     #if DEBUG_INVALIDATED_TEMPLATE_PROPERTIES {
         array_add(*debug_template_properties, template_copy.properties);
     }
 }
 
 get_physics_body_template :: (name: string) -> *Physics_Body_Template {
-    return table_get(*world.body_templates, name);
+    return table_find_pointer(*world.body_templates, name);
 }
 
 accelerate :: inline (body: *Physics_Body_Base, accel: Vector3) {
@@ -288,8 +290,8 @@ get_null_entity_id :: () -> user_types.entity_id_type {
 
 is_data_from_template :: (data: *u8) -> bool {
     using world;
-    shared_byte_diff := data - cast(*u8) body_templates.values.data;
-    shared_byte_end  := size_of(type_of(body_templates.values[0])) * body_templates.values.count;
+    shared_byte_diff := data - cast(*u8) body_templates.entries.data;
+    shared_byte_end  := size_of(type_of(body_templates.entries[0])) * body_templates.entries.count;
     return shared_byte_diff >= 0 && shared_byte_diff < shared_byte_end;
 }
 // Copyright (c) 2026 Trace Myers

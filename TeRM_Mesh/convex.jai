@@ -11,7 +11,7 @@ create_convex_mesh :: (in_mesh: *Mesh, make_indices := true) -> Mesh {
 #scope_file
 
 // trying a thing so I don't have to convexinate then triangulificate. just do both
-// at once. thought of a triangle-aware algorithm I think will work.
+// at once. 
 create_convex_mesh_impl :: (in_mesh: *Mesh, convex: *Mesh, $vertex_type: Type, make_indices: bool) {
     greatest_triangle_count: int;
     new_indices := make_dynamic_array([..]u32, in_mesh.sections.count,, temp);
@@ -28,8 +28,8 @@ create_convex_mesh_impl :: (in_mesh: *Mesh, convex: *Mesh, $vertex_type: Type, m
     triangle_removed  := make_bit_array(greatest_triangle_count,, temp);
     tri_neighbors     := make_static_array([3]u32, greatest_triangle_count,, temp);
 
-    edges: CT_Table(u64, [2]u32);
-    table_init(*edges, greatest_triangle_count,, temp);
+    edges: Table(u64, [2]u32, LOAD_FACTOR_PERCENT=80);
+    init(*edges, xx ceil(cast(float) greatest_triangle_count * 101.0 / 80.0),, temp);
 
     for section, si : in_mesh.sections {
         #if vertex_type == Skinned_Mesh_Vertex {
@@ -42,7 +42,7 @@ create_convex_mesh_impl :: (in_mesh: *Mesh, convex: *Mesh, $vertex_type: Type, m
         if si != 0 {
             clear_all_bits(*triangle_searched);
             clear_all_bits(*triangle_removed);
-            table_reset_keeping_memory(*edges);
+            table_reset(*edges);
         }
         memset(tri_neighbors.data, 0xff, size_of(type_of(tri_neighbors[0])) * tri_neighbors.count);
 
@@ -105,7 +105,7 @@ create_convex_mesh_impl :: (in_mesh: *Mesh, convex: *Mesh, $vertex_type: Type, m
             } else if tri_neighbors[neighbor_index][2] == search_origin {
                 neighbor_edge = 2;
             } else {
-                assert(false, "invalid neighbooooorrrr");
+                assert(false, "invalid neighbor");
             }
 
             bridge_vert          := decrement_wrap(edge, 0, 2);
@@ -156,7 +156,7 @@ get_ascending_tri :: (a: u32, b: u32, c: u32) -> u32, u32, u32 #expand {
 
 try_meet_neighbor :: (this_tri: int, this_edge: int, edge_a: u32, edge_b: u32) #expand {
     ab := pack_indices(edge_a, edge_b);
-    ab_edge := table_get(*`edges, ab);
+    ab_edge := table_find_pointer(*`edges, ab);
 
     if ab_edge == null {
         table_set(*`edges, ab, .[cast(u32) this_tri, cast(u32) this_edge]);

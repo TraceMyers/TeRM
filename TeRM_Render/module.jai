@@ -46,6 +46,7 @@ scope_set_renderer :: (in_renderer: *Renderer) #expand {
 #import "Sort";
 #import "stb_image";
 #import "Input";
+#import "Hash_Table";
 
 #import "TeRM/TeRM_Allocation";
 #import "TeRM/TeRM_Scope";

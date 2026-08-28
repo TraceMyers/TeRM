@@ -1,6 +1,6 @@
 // todo: debug proc to validate that templates aren't being altered
 Physical_World :: struct {
-    body_templates: Linear_Table(string, Physics_Body_Template);
+    body_templates: Table(string, Physics_Body_Template);
     unique_properties: Pool(Physics_Properties);
     unique_colliders: Pool(Physics_Collider);
     body_data: Physics_Body_SOA;
@@ -25,7 +25,7 @@ Physical_World :: struct {
 
     allocator: Allocator;
 
-    contact_grid: CT_Table(u32, Contact_Cell, true, 1024);
+    contact_grid: Table(u32, Contact_Cell, (key: u32) -> u32 { return key; });
     contact_grid_cell_allocator: Super_Allocator;
 
     // todo: probably don't need to keep these. delete or section off in a per-frame field if so.
@@ -70,7 +70,8 @@ create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique
 
     assert(bodies_max < U16_MAX); // using u16's as body indexes internally
 
-    table_init(*out_world.body_templates, body_templates_max, true);
+    // ceil(max * 101/70) is to avoid the table reallocating.
+    init(*out_world.body_templates, xx ceil(body_templates_max * (101.0 / 70.0)));
     pool_init(*out_world.unique_properties, unique_properties_max, true);
     pool_init(*out_world.unique_colliders, unique_colliders_max, true);
 
@@ -80,7 +81,7 @@ create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique
     soa_set_allocator(*out_world.body_data, no_allocator);
 
     // note: contact grid allocation is not locked, in case a bug comes of it
-    table_init(*out_world.contact_grid, 65536);
+    init(*out_world.contact_grid, 65536);
     initialize_super_allocator(*out_world.contact_grid_cell_allocator, add_chunk_lists=16);
 
     out_world.allocator = context.allocator;
@@ -93,8 +94,9 @@ destroy_physical_world :: (in_world: *Physical_World) {
     context.allocator = in_world.allocator;
     defer context.allocator = save_allocator;
 
-    table_set_allocator(*in_world.body_templates, in_world.allocator);
+    in_world.body_templates.allocator = in_world.allocator;
     table_reset(*in_world.body_templates);
+    deinit(*in_world.body_templates);
 
     pool_set_allocator(*in_world.unique_properties, in_world.allocator);
     pool_reset(*in_world.unique_properties);

@@ -605,6 +605,7 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
 #import "Hash";
 #import "Bit_Array";
 #import "stb_image";
+#import "Hash_Table";
 
 #import "TeRM/TeRM_Color";
 #import "TeRM/TeRM_Allocation";

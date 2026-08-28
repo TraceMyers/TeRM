@@ -95,9 +95,9 @@ text_encoder_procedure :: #type (src: *u8, dst: *u8, src_size: int, dst_size: in
 Text_Encoder :: struct($proc: text_encoder_procedure) {
     encode_from: Text_Encoding;
     encode_to:   Text_Encoding;
-    // user_data = same user data that was passed into encode_text and the encoder proc
     // encoded   = the string that was encoded
     // dst       = bytes where terminator bytes (e.g. nulls) can be written.
+    // user_data = same user data that was passed into encode_text and the encoder proc
     // this procedure is called once or twice. first time, dst is null, and it should
     // return how many terminating bytes it wants at the end. the second time, dst points
     // to the end, so that the terminating bytes can be written. return written byte count.
@@ -146,14 +146,10 @@ is_ascii :: inline (in: u32) -> bool {
 }
 
 write_null_bytes :: (encoded: string, dst: *u8, user_data: *void, count: s8) -> int {
-    if dst == null {
-        return count;
-    } else {
-        for 0..count-1 {
-            (dst + it).* = 0;
-        }
-        return count;
+    if dst != null && count > 0 {
+        memset(dst, 0, count);
     }
+    return count;
 }
 
 write_1_null_byte  :: #bake_arguments write_null_bytes(count=1);

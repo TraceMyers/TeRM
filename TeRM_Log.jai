@@ -9,6 +9,8 @@ term_log_passthrough_callback: (log_text: string);
 // if true, don't log to stdout - only send contextualized log text to the passthrough callback
 call_term_log_passthrough_only := false;
 
+// log api
+
 trm_error :: (fmt: string, args: ..Any, log_location := true, caller_loc := #caller_location) #expand {
     log_context := #procedure_name();
     report_impl(fmt, ..args, log_context=log_context, log_location, caller_loc, "ERROR");
@@ -22,6 +24,45 @@ trm_warning :: (fmt: string, args: ..Any, log_location := true, caller_loc := #c
 trm_log :: (fmt: string, args: ..Any, log_location := false, caller_loc := #caller_location, header := "LOG", add_newline := true) #expand {
     log_context := #procedure_name();
     report_impl(fmt, ..args, log_context=log_context, log_location, caller_loc, header, add_newline);
+}
+
+// formatting helpers
+
+_fmt_commas :: (x: $T) -> FormatInt #expand #modify { return T.(*Type_Info).type == .INTEGER; } {
+    return FormatInt.{value=x, digits_per_comma=3, comma_string=","};
+}
+
+_fmt_commas :: (x: $T) -> FormatFloat #expand #modify { return T.(*Type_Info).type == .FLOAT; } {
+    return FormatFloat.{value=x, thousand_separators=true};
+}
+
+_fmt_hex :: (x: $T, minimum_digits := 0) -> FormatInt #expand {
+    return FormatInt.{value=x, base=16, minimum_digits=minimum_digits};
+}
+
+_fmt_oct :: (x: $T, minimum_digits := 0) -> FormatInt #expand {
+    return FormatInt.{value=x, base=8, minimum_digits=minimum_digits};
+}
+
+_fmt_bin :: (x: $T, minimum_digits := 0) -> FormatInt #expand {
+    return FormatInt.{value=x, base=2, minimum_digits=minimum_digits};
+}
+
+_fmt_verbose :: (x: $T, draw_type_name := true) -> FormatStruct #expand #modify { return T.(*Type_Info).type == .STRUCT; } {
+    return FormatStruct.{
+        value                                        = x, 
+        draw_type_name                               = draw_type_name, 
+        use_long_form_if_more_than_this_many_members = 0, 
+        use_newlines_if_long_form                    = true
+    };
+}
+
+_fmt_verbose :: (x: $T) -> FormatArray #expand #modify{ return T.(*Type_Info).type == .ARRAY; } {
+    return FormatArray.{
+        value                                  = x,
+        separator                              = "\n",
+        stop_printing_after_this_many_elements = 1000
+    };
 }
 
 #scope_file

@@ -1396,10 +1396,9 @@ compose_float :: (base: string, fraction: string, exponent: string) -> float64, 
 }
 
 // compose a float, as in (201, "0001", -2) -> 2.010001
-// WARNING: produced by Claude. I don't feel 100% great about it, but it 
-// tested well enough for my uses, and it works the way I wanted it to.
-// thanks to whoever wrote the code that was stolen. I will put a repo link or license 
-// info here, or replace the procedure if somebody informs me (main@tracemyers.com).
+// WARNING: produced by Claude. I don't feel 100% great about it, but it tested well enough for my uses, 
+// and it works the way I wanted it to. thanks to whoever wrote the code that was stolen, if it clearly was. 
+// I will put a repo link or license info here, or replace the procedure if somebody informs me (main@tracemyers.com).
 compose_float :: (base: s64, fraction: string, exponent: s64) -> float64 {
     sign: s64 = ---;
     significand: u64 = ---;

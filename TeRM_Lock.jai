@@ -122,8 +122,7 @@ try_acquire_loop :: (mutex: *RW_Mutex, key: s64, $lock_acquired: (s64) -> bool) 
                     }
                 }
                 if wait_event.handle != null {
-                    remove_front(mutex);
-                    wake_front(mutex);
+                    move_front(mutex);
                 }
                 return;
             }
@@ -158,7 +157,7 @@ wake_front :: inline (mutex: *RW_Mutex, do_lock := true) {
     if do_lock then unlock(*mutex.wait_events_mutex);
 }
 
-remove_front :: (mutex: *RW_Mutex) {
+move_front :: (mutex: *RW_Mutex) {
     scope_lock(*mutex.wait_events_mutex);
     assert(mutex.wait_events.count > 0);
     front_event := mutex.wait_events[0];

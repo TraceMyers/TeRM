@@ -59,9 +59,11 @@ HERE,
         renderer_version_string(API_VERSION)
     );
 
+    render_log("wd before %", get_working_directory());
     if options.populate_shader_data_in_working_directory {
         if !populate_shader_data() then return false;
     }
+    render_log("wd after %", get_working_directory());
 
     pool_init(*gpu_heap_pool, MAX_GPU_HEAPS,     true);
     pool_init(*image_pool,    max_texture_count, true);
@@ -113,41 +115,48 @@ init_renderer_unique_data :: (thread_local_renderer: *Renderer) -> bool {
 //
 // todo: packaging = this needs to turn off 100%
 populate_shader_data :: () -> bool {
-    project_working_directory := get_working_directory();
-    defer set_working_directory(project_working_directory);
+    working_directory := get_working_directory();
+    convert_to_forward_slashes(working_directory);
+    defer set_working_directory(working_directory);
 
-    path_of_this_file := get_final_path(#filepath,, temp);
-    term_render_path  := move_path_back_one_directory(path_of_this_file);
-    term_shaders_path := tprint("%\\vulkan_shaders", term_render_path);
+    final_filepath := get_final_path(#filepath,, temp);
+    convert_to_forward_slashes(final_filepath);
 
-    fully_exists, _:= how_much_of_path_exists_on_the_local_filesystem(parse_path(term_shaders_path,, temp));
+    dest_path           := parse_path(working_directory, true,, temp);
+    path_of_this_file   := parse_path(final_filepath, true,, temp);
+
+    // term_render_path  := move_path_back_one_directory(path_of_this_file);
+    term_shaders_path := tprint("%vulkan_shaders", path_to_string(path_of_this_file, path_of_this_file.words.count-1,, temp));
+
+    fully_exists, _ := how_much_of_path_exists_on_the_local_filesystem(parse_path(term_shaders_path,, temp));
 
     spiel := "render init options have 'populate_shader_data_in_working_directory' set to true";
 
     if !fully_exists {
-        render_log("%, but the TeRM/Render structure is unable to find path to copy shaders from. expected path is one TeRM_Render/vulkan_shaders.", spiel);
+        render_log("%, but the TeRM/Render structure is unable to find path to copy shaders from. expected path is one TeRM_Render/vulkan_shaders. shaders path: %", spiel, term_shaders_path);
         return false;
     }
 
-    source_path  := term_shaders_path;
-    dest_path    := move_path_forward_one_directory(project_working_directory, "shaders");
-    copy_success := copy_directory(source_path, dest_path,, temp);
+    array_add(*dest_path.words, "shaders",, temp);
+    project_shaders_path := path_to_string(dest_path,, temp);
+    copy_success := copy_directory(term_shaders_path, project_shaders_path,, temp);
 
     if !copy_success {
-        render_log("%, but the copy failed for an unknown reason. this can either be investigated at the system level or it might just be easier to copy by hand from the % to %.", spiel, source_path, dest_path);
+        render_log("%, but the copy failed for an unknown reason. this can either be investigated at the system level or it might just be easier to copy by hand from the % to %.", spiel, term_shaders_path, project_shaders_path);
         return false;
     } 
 
-    spirv_directory := move_path_forward_one_directory(dest_path, "spirv");
-    make_directory_if_it_does_not_exist(spirv_directory);
-    fully_exists, _ = how_much_of_path_exists_on_the_local_filesystem(parse_path(spirv_directory,, temp));
+    array_add(*dest_path.words, "spirv",, temp);
+    spirv_path := path_to_string(dest_path,, temp);
+    make_directory_if_it_does_not_exist(spirv_path);
+    fully_exists, _ = how_much_of_path_exists_on_the_local_filesystem(dest_path);
 
     if !fully_exists {
-        render_log("tried to create directory for shader compilation spirv output at %, but failed", spirv_directory);
+        render_log("tried to create directory for shader compilation spirv output at %, but failed", spirv_path);
         return false;
     }
 
-    set_working_directory(dest_path);
+    set_working_directory(project_shaders_path);
 
     // assumes jai compiler is in your environment variables, used for shader compilation
     result := run_command("jai", "compile_shaders.jai");
@@ -157,7 +166,7 @@ populate_shader_data :: () -> bool {
     }
     print("\n");
 
-    render_log("%, so the default shader datas were copied from % to % and the shaders were compiled. this is on by default for ease of use, but it can be turned off now.", spiel, source_path, dest_path);
+    render_log("%, so the default shader datas were copied from % to % and the shaders were compiled. this is on by default for ease of use, but it can be turned off now.", spiel, term_shaders_path, project_shaders_path);
     return true;
 }
 

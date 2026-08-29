@@ -52,7 +52,8 @@ get_final_path :: (path: string) -> string {
         assert(index_of_drive_colon > 0);
 
         // windows adds \\?\ before the drive letter sometimes/all the time (?) to indicate
-        // that the path is final.
+        // that the path is final. I'm deleting it because it's a potentially unfamiliar
+        // syntax whatever code is making use of the path.
         index_of_drive_letter := index_of_drive_colon - 1;
         out_path = alloc_string(out_path_len - index_of_drive_letter);
         memcpy(out_path.data, path_buffer.data + index_of_drive_letter, out_path_len - index_of_drive_letter);

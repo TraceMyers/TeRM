@@ -49,7 +49,6 @@ scope_set_renderer :: (in_renderer: *Renderer) #expand {
 #import "Hash_Table";
 
 #import "TeRM/TeRM_Allocation";
-#import "TeRM/TeRM_Scope";
 #import "TeRM/TeRM_Log";
 #import "TeRM/TeRM_Array";
 #import "TeRM/TeRM_String";

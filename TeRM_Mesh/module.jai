@@ -609,7 +609,6 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
 
 #import "TeRM/TeRM_Color";
 #import "TeRM/TeRM_Allocation";
-#import "TeRM/TeRM_Scope";
 #import "TeRM/TeRM_Metaprogram";
 #import "TeRM/TeRM_Array";
 #import "TeRM/TeRM_Math";

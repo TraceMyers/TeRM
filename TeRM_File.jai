@@ -1,3 +1,9 @@
+scope_set_working_directory :: (dir: string) #expand {
+    cwd := get_working_directory();
+    set_working_directory(dir);
+    `defer set_working_directory(cwd);   
+}
+
 move_path_back_one_directory :: (path: string) -> path: string, success: bool {
     if path.count == 0 {
         return "", false;

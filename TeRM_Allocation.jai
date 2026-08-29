@@ -15,6 +15,12 @@ Allocator_Heap_Snapshot :: struct {
     allocated_blocks: [..][2]s32;
 }
 
+scope_set_allocator :: (allocator: Allocator) #expand {
+    original_allocator := context.allocator;
+    context.allocator = allocator;
+    `defer context.allocator = original_allocator;
+}
+
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------- :Bump_Allocator
 // bump/arena, no auto resize

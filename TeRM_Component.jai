@@ -1,7 +1,8 @@
 // this is close to the simplest thing you can reasonably call an "entity component system",
 // or at least the "component system" part. store all components of a type in a single
-// array, then associate an entity ID with its component, which allows for systematic
-// management of the component pointers on the entities via id_to_entity_proc().
+// array, then associate an entity ID with its component, which allows for automatic tight
+// packing of components + management of the component pointers on the entities when
+// component data moves around.
 //
 // when importing this module, you need to pass one type and two procedures. (replace 'your' entries with your stuff)
 //
@@ -22,14 +23,17 @@
 //
 //      Entity :: struct {
 //          id: u64;
-//          left_cheek:  *Entity_Cheek; <----------- only the first pointer will be set
-//          right_cheek: *Entity_Cheek;              during component_array_add()
+//          left_cheek:  *Entity_Cheek; <----------- only the first pointer will be valid
+//          right_cheek: *Entity_Cheek;              after component_array_add()
 //      }                                              |
 //                                                     |
 //      e := Entity.{id=1};                            |
 //                                                     |
 //      component_array_add(*entity_cheeks, e.id); o---+
+//      component_array_add(*entity_cheeks, e.id, *e.right_cheek); <-- setting the other cheek
 // }
+//
+// the consistency and simplicity of this approach makes it easier to manage than other implementations.
 //
 // the intended way to use this module:
 //  
@@ -62,8 +66,8 @@
 // 
 // destroy_entity :: (entity: *Entity) {
 // ...
-//      component_array_remove(*world.hair_components, entity.hair_component);
-//      component_array_remove(*world.personality_components, entity.personality_component);
+//      component_array_remove(*world.hair_components, entity.id);
+//      component_array_remove(*world.personality_components, entity.id);
 // ...
 // } -
 
@@ -106,17 +110,17 @@ component_array_init :: (array: *Component_Array, size: int) {
     array.initialized = true;
 }
 
-component_array_add :: (array: *Component_Array, id: user_types.entity_id_type) {
+component_array_add :: (array: *Component_Array($component_type), id: user_types.entity_id_type, component: **component_type = null) {
     assert(array.components.count == array.ids.count);
 
-    component_type           :: #run type_of(array.*).component_type;
-    component_pointer_offset :: #run get_component_pointer_offset(component_type);
-
+    component_ptr: **component_type;
+    component_ptr_offset: int;
     data_after, data_before: *component_type;
+
     // scoped so that 'entity' var isn't accidentally used below when looping over entities via their components
     {
         entity := user_types.id_to_entity_proc(id);
-        component_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
+        component_ptr, component_ptr_offset := get_component_pointer_and_offset(array, entity, component);
         data_before = array.components.data;
         component_ptr.* = array_add(*array.components);
         data_after  = array.components.data;
@@ -125,21 +129,23 @@ component_array_add :: (array: *Component_Array, id: user_types.entity_id_type) 
     
     // potential hotspot here. for very long component arrays, try preallocating more than you need.
     if data_after != data_before {
-        fix_component_pointers(array);
+        fix_component_pointers(array, component_ptr_offset);
     }
 }
 
-component_array_remove :: (array: *Component_Array, component: *type_of(array).component_type, auto_shrink := true) {
+// pass 'component' (pointer to the component member on the entity) for additional validation.
+component_array_remove :: (array: *Component_Array($component_type), id: user_types.entity_id_type, component: **component_type = null, auto_shrink := false) {
     assert(array.components.count == array.ids.count);
 
-    component_type           :: #run type_of(array.*).component_type;
-    component_pointer_offset :: #run get_component_pointer_offset(component_type);
+    entity := user_types.id_to_entity_proc(id);
+    component_ptr, component_ptr_offset := get_component_pointer_and_offset(array, entity, component);
+    if component != null {
+        assert(component_ptr.* == component.*);
+    }
 
-    index := component - array.components.data;
-    assert(index >= 0 && index < array.components.count);
+    index := component_ptr.* - array.components.data;
+    assert(array.ids[index] == id); // make sure we're not removing a component out from under another entity
 
-    entity := user_types.id_to_entity_proc(array.ids[index]);
-    component_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
     component_ptr.* = null;
 
     if index < array.components.count - 1 {
@@ -147,7 +153,7 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
         array.components[index] = array.components[array.components.count-1];
         array.ids[index]        = array.ids[array.components.count-1];
         entity_at_end          := user_types.id_to_entity_proc(array.ids[index]);
-        component_ptr  = cast(**component_type) ((cast(*u8) entity_at_end) + component_pointer_offset);
+        component_ptr           = cast(**component_type) ((cast(*u8) entity_at_end) + component_ptr_offset);
         component_ptr.*         = *array.components[index];
     } 
 
@@ -156,7 +162,7 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
 
     // potential hotspot here. for very long component arrays, try setting auto_shrink to false
     if auto_shrink && component_array_shrink_if_small_enough(array) {
-        fix_component_pointers(array);
+        fix_component_pointers(array, component_ptr_offset);
     }
 }
 
@@ -171,15 +177,35 @@ component_array_shrink_if_small_enough :: (array: *Component_Array, realloc_if_u
 // iterate over all entities owning this component and fix the component pointers so they're pointing 
 // into the component array. this should not need to be called outside this module, but it's 
 // potentially useful for debugging.
-fix_component_pointers :: inline (array: *Component_Array) {
-    component_type           :: #run type_of(array.*).component_type;
-    component_pointer_offset :: #run get_component_pointer_offset(component_type);
+fix_component_pointers :: inline (array: *Component_Array, component_ptr_offset_override: int = -1) {
+    component_type             :: #run type_of(array.*).component_type;
+    first_component_ptr_offset :: #run get_first_component_pointer_offset(component_type);
+    component_ptr_offset := ifx component_ptr_offset_override == -1 then first_component_ptr_offset else component_ptr_offset_override;
 
     for 0..array.ids.count-1 { 
         entity     := user_types.id_to_entity_proc(array.ids[it]);
-        e_cmp_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
+        e_cmp_ptr  := cast(**component_type) ((cast(*u8) entity) + component_ptr_offset);
         e_cmp_ptr.* = *array.components[it];
     }
+}
+
+get_component_pointer_and_offset :: inline (array: *Component_Array($component_type), entity: *$Entity_Type, component_ptr_override: **component_type) -> **component_type, int {
+    first_component_ptr_offset :: #run get_first_component_pointer_offset(component_type);
+
+    component_ptr_offset: int = -1;
+    component_ptr: **component_type;
+
+    if component_ptr_override {
+        component_ptr_offset = cast(*u8) component_ptr_override - cast(*u8) entity;
+        component_ptr        = component_ptr_override;
+        // todo: debug on = do check at runtime that there is truly component of that type at the override offset
+    } else {
+        component_ptr_offset = first_component_ptr_offset;
+        component_ptr = cast(**component_type) ((cast(*u8) entity) + component_ptr_offset);
+    }
+
+    assert(component_ptr_offset >= 0 && component_ptr_offset < size_of(type_of(entity.*)));
+    return component_ptr, component_ptr_offset;
 }
 
 // pass a pointer to an instance of a struct that has component array members
@@ -200,13 +226,14 @@ debug__validate_component_arrays_initialized :: (entity_components: *$Entity_Com
     }
 }
 
-debug__validate_component_pointers :: (array: *Component_Array) {
-    component_type           :: #run type_of(array.*).component_type;
-    component_pointer_offset :: #run get_component_pointer_offset(component_type);
+debug__validate_component_pointers :: (array: *Component_Array, component_ptr_offset_override: int = -1) {
+    component_type             :: #run type_of(array.*).component_type;
+    first_component_ptr_offset :: #run get_first_component_pointer_offset(component_type);
+    component_ptr_offset := ifx component_ptr_offset_override == -1 then first_component_ptr_offset else component_ptr_offset_override;
 
      for id : array.ids {
         e := user_types.id_to_entity_proc(id);
-        e_cmp_ptr  := cast(**type_of(array.*).component_type) ((cast(*u8) e) + component_pointer_offset);
+        e_cmp_ptr  := cast(**type_of(array.*).component_type) ((cast(*u8) e) + component_ptr_offset);
         assert(e_cmp_ptr.* == *array.components[it_index]);
     }
 }
@@ -220,7 +247,7 @@ entity_type :: #run -> Type {
     return (cast(*Type) *(arg_pointer_tinfo.pointer_to)).*;
 }
 
-get_component_pointer_offset :: (component_type: Type) -> int {
+get_first_component_pointer_offset :: (component_type: Type) -> int {
     entity_tinfo := cast(*Type_Info_Struct) type_info(entity_type);
     for member : entity_tinfo.members {
         if member.type.type == .POINTER {

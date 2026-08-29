@@ -136,7 +136,7 @@ populate_shader_data :: () -> bool {
         return false;
     }
 
-    move_down_directory(*dst_path, "shades");
+    move_down_directory(*dst_path, "shaders");
     project_shaders_path := path_to_string_ext(*dst_path);
     copy_success := copy_directory(term_shaders_path, project_shaders_path,, temp);
 

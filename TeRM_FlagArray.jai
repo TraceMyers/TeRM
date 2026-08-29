@@ -1,4 +1,4 @@
-// convenient for making one big flag set that might expand beyond 64 flags.
+// convenient for making one big flag set that expands or might expand beyond 64 flags.
 // uses an enum as an indexer to the bits in an array.
 
 Flag_Array_Indexer :: struct {
@@ -11,7 +11,7 @@ Flag_Array :: struct($Enum_Type: Type) {
     flag_sets: [#run div_ceil(FLAG_COUNT, 8)]u8;
 }
 
-convert_to_lfa_indexer :: inline (int_val: s32) -> Flag_Array_Indexer {
+convert_to_lfa_indexer :: inline (int_val: s64) -> Flag_Array_Indexer {
     return .{xx ((int_val & ~0x07) >> 3), xx (int_val & 0x07)};
 }
 

@@ -33,7 +33,7 @@ term_encode_text_allow_log := () -> bool { return true; };
 
 /*
 
-// obviously you could just modify this module and that works fine, but if you don't like doing
+// you could just modify this module and that works fine, but if you don't like doing
 // that, this was made to be modified externally, and to have those external parts work
 // exactly like the default internal ones.
 
@@ -44,11 +44,11 @@ term_encode_text_allow_log := () -> bool { return true; };
 
 // then, I would need to define conversion procedures for any conversions I want to make, like this:
 
-cp850_to_utf8 :: (in: *u8, out: *u8, in_size: int, out_size: int) -> s8, s8, Text_Encode_Status { ... }
+cp850_to_utf8 :: (in: *u8, out: *u8, in_size: int, out_size: int) -> Text_Encode_Result { ... }
 
 // then, I can make an encoder:
 
-CP850_TO_UTF8 :: Text_Encoder(cp850_to_utf8).{.CP850, .UTF8, 0};
+CP850_TO_UTF8 :: Text_Encoder(cp850_to_utf8).{.CP850, .UTF8};
 
 // and use it:
 
@@ -97,9 +97,9 @@ Text_Encoder :: struct($proc: text_encoder_procedure) {
     encode_from: Text_Encoding;
     encode_to:   Text_Encoding;
     // encoded   = the string that was encoded
-    // dst       = bytes where terminator bytes (e.g. nulls) can be written.
+    // dst       = location where terminator bytes (e.g. nulls) can be written.
     // user_data = same user data that was passed into encode_text and the encoder proc
-    // this procedure is called once or twice. first time, dst is null, and it should
+    // this procedure is called once or twice. first time, dst will be null. the terminator it should
     // return how many terminating bytes it wants at the end. the second time, dst points
     // to the end, so that the terminating bytes can be written. return written byte count.
     // if the proc is null, no terminating bytes will be added.

@@ -93,11 +93,19 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
     array.ids.count        -= 1;
 }
 
+// pass a pointer to an instance of a struct that has component array members
+// and validate that those arrays are initialized.
 debug__validate_component_arrays_initialized :: (entity_components: *$Entity_Components) {
     components_info := cast(*Type_Info_Struct) type_info(Entity_Components);
     assert(components_info.type == .STRUCT);
     for member : components_info.members {
-        component_array := cast(*Component_Array(u8)) (cast(*u8) entity_components + member.offset_in_bytes);
+        member_type := (cast(*Type) *member.type).*;
+        if !is_subclass_of(member.type, "Component_Array") {
+            continue;
+        }
+        // all component array types specializations have their members at the same offsets.
+        // so, (void) just means the specialization doesn't matter.
+        component_array := cast(*Component_Array(void)) (cast(*u8) entity_components + member.offset_in_bytes);
         assert(component_array.initialized, "entity component array % uninitialized!", member.name);
     }
 }
@@ -138,6 +146,7 @@ get_component_pointer_offset :: (component_type: Type) -> int {
 }
 
 #import "Basic";
+#import "Compiler";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

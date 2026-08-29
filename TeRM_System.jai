@@ -102,10 +102,9 @@ clear_console :: () {
 
 MIN_CPU_PAUSE_CYCLES : u64 : 320;
 
-// try to pause the cpu at least some number of tsc cycles.
-// if wait_cycles < min value, just calls pause() once, because that resolution is 
-// too small for the procedure to handle.
-// this was tuned for an optimized build, so it may be less accurate in a debug build.
+// try to pause the cpu at least some number of tsc cycles while minimizing overshoot. if wait_cycles < min value, 
+// just calls pause() once, because that resolution is too small for the procedure to handle. this was tuned for 
+// an optimized build, so it may be less accurate in a debug build.
 cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
     if wait_cycles <= MIN_CPU_PAUSE_CYCLES-1 {
         pause();
@@ -150,7 +149,7 @@ cpu_pause :: inline (wait_cycles: u64 = MIN_CPU_PAUSE_CYCLES-1) {
     //      newest rdtscp time point   <-- time point 1
     //      newest rdtscp cost
     // if you subtract time point 0 from time point 1, the difference leaves out the leading costs and the 
-    // latest rdtscp cost, so those need to be added back transiently every iteration OR just subtracted 
+    // latest rdtscp call cost, so those need to be added back transiently every iteration OR just subtracted 
     // once at the beginning. the cost of this line is not expliclity accounted for because it's in-between 
     // the oldest and newest timestamps, so that would be double-dipping.
     wait_cycles -= LEADING_COST + rdtscp_cycle_count;
@@ -197,7 +196,8 @@ wait_until :: (time: float64) -> time_spent_ms: float64, end_time: float64 {
     return time_spent_ms, end_time;
 }
 
-// progressive backoff starting with OS-level timer then cpu pauses.
+// progressive backoff starting with OS-level timer then cpu pauses. waits until at least wait_ms time
+// has passed, and tries to wait no longer.
 wait :: (start_time: float64, wait_ms: float64) -> time_spent_ms: float64, end_time: float64 {
     if wait_ms <= 0 {
         return 0, start_time;

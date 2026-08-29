@@ -43,21 +43,25 @@ component_array_add :: (array: *Component_Array, id: user_types.entity_id_type) 
     component_type           :: #run type_of(array.*).component_type;
     component_pointer_offset :: #run get_component_pointer_offset(component_type);
 
-    entity := user_types.id_to_entity_proc(id);
-    component_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
-    data_before := array.components.data;
-    component_ptr.* = array_add(*array.components);
-    data_after  := array.components.data;
-    array_add(*array.ids, id);
+    data_after, data_before: *component_type;
+    // scoped so that 'entity' var isn't accidentally used below when looping over entities via their components
+    {
+        entity := user_types.id_to_entity_proc(id);
+        component_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
+        data_before = array.components.data;
+        component_ptr.* = array_add(*array.components);
+        data_after  = array.components.data;
+        array_add(*array.ids, id);
+    }
     
-    // note: potential hotspot here. for very long component arrays, try preallocating more than you need 
+    // potential hotspot here. for very long component arrays, try preallocating more than you need 
     // so you don't realloc and deal with this for loop cost.
     if data_after != data_before {
-        for id : array.ids {
-            if it_index == array.ids.count - 1 then break;
-            e := user_types.id_to_entity_proc(id);
-            e_cmp_ptr  := cast(**component_type) ((cast(*u8) e) + component_pointer_offset);
-            e_cmp_ptr.* = *array.components[it_index];
+        // -2 because the last component ptr doesn't need to be repointed (it was just set above).
+        for 0..array.ids.count-2 { 
+            entity     := user_types.id_to_entity_proc(array.ids[it]);
+            e_cmp_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
+            e_cmp_ptr.* = *array.components[it];
         }
     }
 }

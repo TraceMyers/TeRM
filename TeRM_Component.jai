@@ -33,7 +33,7 @@
 //      component_array_add(*entity_cheeks, e.id, *e.right_cheek); <-- setting the other cheek
 // }
 //
-// the consistency and simplicity of this approach makes it easier to manage than other implementations.
+// the consistency and simplicity of this approach makes it easier to manage than other implementations I have tried.
 //
 // the intended way to use this module:
 //  

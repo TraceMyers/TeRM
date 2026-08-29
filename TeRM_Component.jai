@@ -94,7 +94,9 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
 }
 
 // pass a pointer to an instance of a struct that has component array members
-// and validate that those arrays are initialized.
+// and validate that those arrays are initialized. useful if you put all of
+// your component arrays on one struct - makes it a runtime error to add a new component
+// array without initializing it.
 debug__validate_component_arrays_initialized :: (entity_components: *$Entity_Components) {
     components_info := cast(*Type_Info_Struct) type_info(Entity_Components);
     assert(components_info.type == .STRUCT);

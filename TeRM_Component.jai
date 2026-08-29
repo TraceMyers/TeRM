@@ -3,7 +3,7 @@
 // array, then associate an entity ID with its component, which allows for systematic
 // management of the component pointers on the entities via id_to_entity_proc().
 //
-// an import of this module looks something like this:
+// an import of this module looks like this (replace 'your' entries):
 //
 // #import "TeRM/TeRM_Component"(
 //     user_types = struct {

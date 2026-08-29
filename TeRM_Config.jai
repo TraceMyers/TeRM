@@ -1,4 +1,4 @@
-// define your own config type and use this module to manage loading and saving.
+// define your own config types and use this module to manage loading and saving.
 // saves as a simple editable text format (todo: pretty print)
 //
 // usage:
@@ -42,16 +42,17 @@ save_config :: (filename: string, data: *$T) {
     write_entire_file(filename, *save_data.file_builder);
 }
 
-// all string fields are allocated into one buffer. that buffer is returned
-// so all strings can be freed with an array_reset on that buffer.
-load_config :: (filename: string, data: *$T, shrink_strings_buffer := true, post_clear_callback: (*T) = null) -> []u8 {
+// all string fields are allocated into one buffer. that buffer is returned so all strings can be 
+// freed with an array_reset on that buffer. data is re-initialized just because that will make for fewer 
+// bugs. data_init pointer provided so that callers can do additional initialization before load.
+load_config :: (filename: string, data: *$T, shrink_strings_buffer := true, data_init: (*T) = null) -> []u8 {
     assert(initialized);
     mark := get_temporary_storage_mark();
     defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(mark);
     defer array_reset_keeping_memory(*string_buffer);
 
     data.* = {};
-    post_clear_callback(data);
+    data_init(data);
 
     file_data, success := read_entire_file(filename,, temp);
     if !success {

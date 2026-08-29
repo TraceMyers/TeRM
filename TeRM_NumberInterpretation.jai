@@ -1,5 +1,4 @@
-// wasn't sure where else to put this. I think other things will eventually make
-// their way here...
+// wasn't sure where else to put this. I think other things will eventually make their way here...
 
 num64 :: union {
     _f64: float64;

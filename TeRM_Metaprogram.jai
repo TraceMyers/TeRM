@@ -27,55 +27,62 @@ align_of_element_type :: inline ($T: Type) -> int {
     return type_alignment(info.element_type);
 }
 
-struct_alignment :: (info: *Type_Info, align_of_depth := 0, max_depth := 10) -> int {
-    assert(info.type == .STRUCT);
+align_of :: (info: *Type_Info, max_depth := 50) -> int {
+    assert(max_depth >= 1);
 
-    if align_of_depth >= max_depth {
-        return 8;
+    align := 1;
+
+    Stack_Item :: struct {
+        info: *Type_Info;
+        member: s32;
     }
 
-    struct_info := info.(*Type_Info_Struct);
-    max_align: int = 1;
+    type_stack: [..]Stack_Item;
+    type_stack.allocator = temp;
+    array_reserve(*type_stack, max_depth + 1);
 
-    for struct_info.members {
-        max_align = max(max_align, align_of(xx it.type, align_of_depth, max_depth));
-    }
+    array_add(*type_stack, {info, 0});
 
-    return max_align;
-}
+    while type_stack.count > 0 {
+        top   := *type_stack[type_stack.count-1];
+        depth := type_stack.count; 
 
-align_of :: inline (info: *Type_Info, start_depth := 0, max_depth := 10) -> int {
-    use_info := info;
-
-    i := start_depth;
-    while i < max_depth {
-        defer i += 1;
-        if use_info.type == {
-        case .INTEGER;
-            return info.runtime_size;
-        case .FLOAT;
-            return info.runtime_size; 
-        case .POINTER;
-            return info.runtime_size;
-        case .PROCEDURE;
-            return info.runtime_size;
-        case .ENUM;
-            return info.runtime_size;
+        if top.info.type == {
+        case .INTEGER;      #through;
+        case .FLOAT;        #through;
+        case .POINTER;      #through;
+        case .PROCEDURE;    #through;
+        case .ENUM;         #through;
         case .BOOL;
-            return info.runtime_size;
+            align = max(align, info.runtime_size);
         case .STRING;
-            return 8;
+            align = max(align, size_of(*u8));
         case .STRUCT;
-            return struct_alignment(use_info, i, max_depth);
+            top_info_struct := cast(*Type_Info_Struct) top.info;
+            if top.member < top_info_struct.members.count && depth + 1 <= max_depth {
+                array_add(*type_stack, {top_info_struct.members[top.member].type, 0});
+                top.member += 1;
+                continue;
+            }
         case .ARRAY;
-            tinfo_array := cast(*Type_Info_Array) info;
-            use_info = tinfo_array.element_type;
+            top_info_array := cast(*Type_Info_Array) top.info;
+            if top_info_array.array_type == .FIXED {
+                if top.member == 0 && depth + 1 <= max_depth {
+                    array_add(*type_stack, {top_info_array.element_type, 0});
+                    top.member += 1;
+                    continue;
+                }
+            } else {
+                align = max(align, size_of(*u8));
+                align = max(align, size_of(int));
+            }
         case;
-            break;
         }
+
+        type_stack.count -= 1;
     }
 
-    return 8;
+    return align;
 }
 
 get_struct_field :: (s: *$struct_type, $field_type: Type) -> *field_type {

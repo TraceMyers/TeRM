@@ -471,7 +471,7 @@ read_texture :: (tex: *Texture, file: string, pos: *int) {
 }
 
 allocate_self_array :: ($T: Type, count: int) -> []T {
-    buf_pos := align_up(context.term_mesh_self_allocation.count, align_of(T));
+    buf_pos := align_up(context.term_mesh_self_allocation.count, #run align_of(T));
     buf_end := buf_pos + size_of(T) * count;
     assert(context.term_mesh_self_allocation.allocated >= buf_end);
     array_resize(*context.term_mesh_self_allocation, buf_end);

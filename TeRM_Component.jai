@@ -113,19 +113,12 @@ component_array_init :: (array: *Component_Array, size: int) {
 component_array_add :: (array: *Component_Array($component_type), id: user_types.entity_id_type, component: **component_type = null) {
     assert(array.components.count == array.ids.count);
 
-    component_ptr: **component_type;
-    component_ptr_offset: int;
-    data_after, data_before: *component_type;
-
-    // scoped so that 'entity' var isn't accidentally used below when looping over entities via their components
-    {
-        entity := user_types.id_to_entity_proc(id);
-        component_ptr, component_ptr_offset := get_component_pointer_and_offset(array, entity, component);
-        data_before = array.components.data;
-        component_ptr.* = array_add(*array.components);
-        data_after  = array.components.data;
-        array_add(*array.ids, id);
-    }
+    entity := user_types.id_to_entity_proc(id);
+    component_ptr, component_ptr_offset := get_component_pointer_and_offset(array, entity, component);
+    data_before := array.components.data;
+    component_ptr.* = array_add(*array.components);
+    data_after  := array.components.data;
+    array_add(*array.ids, id);
     
     // potential hotspot here. for very long component arrays, try preallocating more than you need.
     if data_after != data_before {

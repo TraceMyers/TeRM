@@ -37,6 +37,15 @@
 //      component_array_add(*world.personality_components, new_entity.id);
 // ...
 // }
+//
+// style_entity_hairs :: () {
+// ...
+//      for world.hair_components {
+//          entity := id_to_entity(it.entity_id);
+//          style_hair(entity, it.component);
+//      }
+// ...
+// }
 // 
 // destroy_entity :: (entity: *Entity) {
 // ...

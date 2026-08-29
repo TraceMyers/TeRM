@@ -1,22 +1,35 @@
-// close to the simplest thing you can reasonably call an "entity component system",
+// this is close to the simplest thing you can reasonably call an "entity component system",
 // or at least the "component system" part. store all components of a type in a single
 // array, then associate an entity ID with its component, which allows for systematic
 // management of the component pointers on the entities via id_to_entity_proc().
 //
-// an import of this module looks like this (replace 'your' entries):
+// when importing this module, you need to pass one type and two procedures. (replace 'your' entries with your stuff)
 //
 // #import "TeRM/TeRM_Component"(
 //     user_types = struct {
-//         entity_id_type      :: Your_Entity_Ref;
-//         entity_to_id_proc   :: your_entity_to_id;
-//         id_to_entity_proc   :: your_id_to_entity;
+//         entity_id_type      :: Your_Entity_ID;       // your entity id data type
+//         entity_to_id_proc   :: your_entity_to_id;    // your procedure, type: (*entity) -> entity id
+//         id_to_entity_proc   :: your_id_to_entity;    // your procedure, type: (entity id) -> *entity
 //     }
 // );
 //
-// .. where you pass your entity's ID type, as well as ID -> *entity and *entity -> ID
-// procedures. 'entity' in this case just means a struct that has a pointer
-// to an instance of the relevant component type. the first pointer of the component's 
-// type on said entity struct is assumed to be the relevant component pointer.
+// 'entity' in this case just means a struct that has a pointer to an instance of the relevant component type. 
+// the first pointer of the component's type on said entity struct is assumed to be the relevant component pointer.
+//
+// e.g. 
+// {
+//      entity_cheeks: Component_Array(Entity_Cheek);
+//
+//      Entity :: struct {
+//          id: u64;
+//          left_cheek:  *Entity_Cheek; <----------- only the first pointer will be set
+//          right_cheek: *Entity_Cheek;              during component_array_add()
+//      }                                              |
+//                                                     |
+//      e := Entity.{id=1};                            |
+//                                                     |
+//      component_array_add(*entity_cheeks, e.id); o---+
+// }
 //
 // the intended way to use this module:
 //  
@@ -141,10 +154,18 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
     array.components.count -= 1;
     array.ids.count        -= 1;
 
-    // potential hotspot here. for very long component arrays, try not shrinking
+    // potential hotspot here. for very long component arrays, try setting auto_shrink to false
     if auto_shrink && component_array_shrink_if_small_enough(array) {
         fix_component_pointers(array);
     }
+}
+
+component_array_shrink_if_small_enough :: (array: *Component_Array, realloc_if_using_leq_proportion := 0.35, remove_free_proportion := 0.75, minimum_allocated := 8) -> bool {
+    if array_shrink_if_small_enough(*array.components, realloc_if_using_leq_proportion, remove_free_proportion, minimum_allocated) {
+        array.ids.count = array.components.count;
+        array_shrink(*array.ids, remove_free_proportion);
+        return true;
+    } else return false;
 }
 
 // iterate over all entities owning this component and fix the component pointers so they're pointing 
@@ -159,14 +180,6 @@ fix_component_pointers :: inline (array: *Component_Array) {
         e_cmp_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
         e_cmp_ptr.* = *array.components[it];
     }
-}
-
-component_array_shrink_if_small_enough :: (array: *Component_Array, realloc_if_using_leq_proportion := 0.35, remove_free_proportion := 0.75, minimum_allocated := 8) -> bool {
-    if array_shrink_if_small_enough(*array.components, realloc_if_using_leq_proportion, remove_free_proportion, minimum_allocated) {
-        array.ids.count = array.components.count;
-        array_shrink(*array.ids, remove_free_proportion);
-        return true;
-    } else return false;
 }
 
 // pass a pointer to an instance of a struct that has component array members

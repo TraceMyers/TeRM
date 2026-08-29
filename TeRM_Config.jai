@@ -1,7 +1,25 @@
-// string buffer has static allocation to make loading simpler. this must be called.
-// this is not done automatically because you should be intentional about what allocator
-// you call this procedure with.
-init_config :: (max_byte_count_for_all_strings := 8192) {
+// define your own config type and use this module to manage loading and saving.
+// saves as a simple editable text format (todo: pretty print)
+//
+// usage:
+//
+// My_Config :: struct {
+//      clear_color := Color3f.{r=1};
+// }
+// config_path := "path/to/config_file";
+//
+// // during program startup...
+// init_config();
+// config: My_Config;
+// load_config(config_path, *config);
+//
+// // during program shutdown... 
+// save_config(config_path, *config);
+
+// must be called. not done automatically because you should be intentional about what allocator you 
+// call this procedure with. creates a statically-sized buffer for string loading. the buffer can't reallocate
+// because that'd overcomplicate loading.
+init_config :: (max_byte_count_for_all_strings := 16384) {
     // would cause issues since temp is assumed to be free-able during load
     assert(context.allocator.proc != temp.proc);
     initialized = true;

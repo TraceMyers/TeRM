@@ -24,7 +24,8 @@ term_encode_text_allow_log := () -> bool { return true; };
 // -- sections --
 // How to Add Text Encodings From Your Program (or here)
 // Types and Helpers
-// Encode String
+// encode_text
+// read and rewind
 // Conversion
 
 // -----------------------------------------------------------------------------------
@@ -63,16 +64,16 @@ utf8_str, success := my_encode_text(cp850_str);
 
 // to make a new encoder procedure, consider this example:
 
-ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     if is_ascii(in.*) {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 1);
         out.* = in.*;
-        return 1, 1, 0;
+        return {1, 1, 0};
     } else {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 2);
         out[0] = (0xc0).(u8) | ((in.* & 0xc0) >> 6);
         out[1] = (0x80).(u8) |  (in.* & 0x3f);
-        return 1, 2, 0;
+        return {1, 2, 0};
     }
 }
 
@@ -90,7 +91,7 @@ ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused:
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------- :Types and Helpers
 
-text_encoder_procedure :: #type (src: *u8, dst: *u8, src_size: int, dst_size: int, user_data: *void=null) -> read_byte_count: s8, wrote_byte_count: s8, error_code: Text_Encode_Status;
+text_encoder_procedure :: #type (src: *u8, dst: *u8, src_size: int, dst_size: int, user_data: *void=null) -> Text_Encode_Result;
 
 Text_Encoder :: struct($proc: text_encoder_procedure) {
     encode_from: Text_Encoding;
@@ -119,7 +120,7 @@ Text_Encoding :: enum u8 {
     };
 }
 
-Text_Encode_Status :: enum u32 {
+Text_Encode_Status :: enum u16 {
     SUCCESS :: 0;
     INVALID_ENCODER_PROCEDURE;
     TRUNCATED_BYTES_IN_INPUT;
@@ -135,6 +136,12 @@ Text_Encode_Status :: enum u32 {
         }
         return builder_to_string(*builder);
     };
+}
+
+Text_Encode_Result :: struct {
+    read_count:  s8;
+    write_count: s8;
+    status:      Text_Encode_Status;
 }
 
 is_ansi :: inline (in: u32) -> bool {
@@ -173,7 +180,7 @@ UTF32_TO_UTF16 :: Text_Encoder(utf32_to_utf16).{.UTF32, .UTF16, write_2_null_byt
 UTF32_TO_ANSI  :: Text_Encoder(utf32_to_ansi) .{.UTF32, .ANSI,  write_1_null_byte};
 
 // -----------------------------------------------------------------------------------
-// -------------------------------------------------------------------- :Encode String
+// ---------------------------------------------------------------------- :encode_text
 
 // translate a string from one encoding to another
 encode_text :: (src: string, encoder: Text_Encoder, user_data: *void = null, caller_loc := #caller_location) -> string, bool {
@@ -204,24 +211,23 @@ encode_text :: (src: string, encoder: Text_Encoder, user_data: *void = null, cal
             src_remain := src.count - src_index;
 
             #if #run encoder.proc != null {
-                read_count, write_count, encode_failure := inline encoder.proc(src.data + src_index, out_buffer + out_index, src_remain, out_remain, user_data);
-                assert(write_count <= MAX_WRITE_SIZE);
+                result := inline encoder.proc(src.data + src_index, out_buffer + out_index, src_remain, out_remain, user_data);
+                assert(result.write_count <= MAX_WRITE_SIZE);
             } else {
                 // cannot use an encoder with no procedure
-                read_count, write_count: s8;
-                encode_failure := Text_Encode_Status.INVALID_ENCODER_PROCEDURE;
+                result := Text_Encode_Result.{status=.INVALID_ENCODE_PROCEDURE};
             }
 
-            if encode_failure != 0 {
+            if result.status != 0 {
                 src_truncated := string.{min(100, src.count), src.data};
-                report_module_error("failed to encode string '%' from % to %. error: %. callsite: %.", src_truncated, encoder.encode_from, encoder.encode_to, encode_failure, caller_loc);
+                report_module_error("failed to encode string '%' from % to %. error: %. callsite: %.", src_truncated, encoder.encode_from, encoder.encode_to, result.status, caller_loc);
                 // making sure this happens regardless of what context.allocator is (see defer at top)
                 set_temporary_storage_mark(temp_storage_mark);
                 return "", false;
             }
 
-            src_index += read_count;
-            out_index += write_count;
+            src_index += result.read_count;
+            out_index += result.write_count;
         }
     } else {
         // an encode with the same src and dst encoding is just a string copy.
@@ -256,6 +262,193 @@ encode_text :: (src: string, encoder: Text_Encoder, user_data: *void = null, cal
 }
 
 // -----------------------------------------------------------------------------------
+// ------------------------------------------------------------------ :read and rewind
+// if you need to seat some logic in the middle of encode or read backwards without having gone forward first, 
+// these procedures are available and they're primitively typed to make it easier to hook whatever logic in.
+
+read_utf8 :: (stream: **u8, read_max: int, $advance_past_null := false) -> utf8_symbol: u32, symbol_size: u8, success: bool {
+    out: num32;
+    if (stream[0] & 0x80) == 0 {
+        if read_max < 1 {
+            return 0, 0, false;
+        }
+        out._u8[0] = (stream.* + 0).*;
+        if out._u8[0] != 0 || advance_past_null {
+            stream.* += 1;
+        }
+        return out._u32, 1, true;
+    } else if (stream[0] & 0xe0) == 0xc0 {
+        if read_max < 2 {
+            return 0, 0, false;
+        }
+        if !is_valid_utf8_trailing_byte(stream[1]) {
+            return 0, 0, false;
+        }
+        out._u8[0] = (stream.* + 0).*;
+        out._u8[1] = (stream.* + 1).*;
+        stream.* += 2;
+        return out._u32, 2, true;
+    } else if (stream[0] & 0xf0) == 0xe0 {
+        if read_max < 3 {
+            return 0, 0, false;
+        }
+        if !is_valid_utf8_trailing_byte(stream[1]) || !is_valid_utf8_trailing_byte(stream[2]) {
+            return 0, 0, false;
+        }
+        out._u8[0] = (stream.* + 0).*;
+        out._u8[1] = (stream.* + 1).*;
+        out._u8[2] = (stream.* + 2).*;
+        stream.* += 3;
+        return out._u32, 3, true;
+    } else if (stream[0] & 0xf8) == 0xf0 {
+        if read_max < 4 {
+            return 0, 0, false;
+        }
+        if !is_valid_utf8_trailing_byte(stream[1]) || !is_valid_utf8_trailing_byte(stream[2]) || !is_valid_utf8_trailing_byte(stream[3]) {
+            return 0, 0, false;
+        }
+        out._u8[0] = (stream.* + 0).*;
+        out._u8[1] = (stream.* + 1).*;
+        out._u8[2] = (stream.* + 2).*;
+        out._u8[3] = (stream.* + 3).*;
+        stream.* += 4;
+        return out._u32, 4, true;
+    }
+    return 0, 0, false;
+}
+
+read_utf16 :: (stream: **u8, read_max: int, $advance_past_null := false) -> utf16_symbol: u32, symbol_size: u8, success: bool {
+    out: num32;
+    out._u16[0] = (cast(*u16, force) (stream.*)).*;
+    high_surrogate := out._u16[0];
+    if high_surrogate < UTF16_HIGH_SURROGATE_MIN || high_surrogate > UTF16_HIGH_SURROGATE_MAX {
+        if read_max < 2 {
+            return 0, 0, false;
+        }
+        if out._u16[0] != 0 || advance_past_null {
+            stream.* += 2;
+        }
+        return out._u32, 2, true;
+    } else {
+        if read_max < 4 {
+            return 0, 0, false;
+        }
+        out._u16[1] = (cast(*u16, force) (stream.* + 2)).*;
+        stream.* += 4;
+        return out._u32, 4, true;
+    }
+}
+
+read_utf32 :: (stream: **u8, read_max: int, $advance_past_null := false) -> utf32_symbol: u32, symbol_size: u8, success: bool {
+    if read_max < 4 {
+        return 0, 0, false;
+    }
+    out_u32 := (cast(*u32, force) (stream.*)).*;
+    if out_u32 != 0 || advance_past_null {
+        stream.* += 4;
+    }
+    return out_u32;
+}
+
+read_ansi :: (stream: **u8, read_max: int, $advance_past_null := false) -> ansi_symbol: u32, symbol_size: u8, success: bool {
+    if read_max < 1 {
+        return 0, 0, false;
+    }
+    out_u32 : u32 = stream.*.*;
+    if out_u32 != 0 || advance_past_null {
+        stream.* += 1;
+    }
+    return out._u32, 1, true;
+}
+
+rewind_utf8 :: (stream: **u8, rewind_max: int) -> utf8_symbol: u32, symbol_size: u8, success: bool {
+    temp_stream := stream.* - 1;
+    trailing_byte_count: u8;
+    valid_header_bits: u8;
+
+    if rewind_max < 1 {
+        return 0, 0, false;
+    }
+
+    while is_valid_utf8_trailing_byte(temp_stream.*) {
+        valid_header_bits |= (cast(u8) 0xc0 >> trailing_byte_ct);
+        temp_stream -= 1;
+        trailing_byte_ct := stream.* - temp_stream;
+
+        if rewind_max < trailing_byte_ct + 1 {
+            return 0, 0, false;
+        }
+        if trailing_byte_ct >= 4 { // this module only handles up to 4 byte utf8. 4 trailing bytes means bigger.
+            return 0, 0, false;
+        }
+    }
+
+    total_byte_ct := trailing_byte_ct + 1;
+
+    if total_byte_ct == 1 {
+        if (temp_stream.* & 0x80) != 0 {
+            return 0, 0, false;
+        }
+        stream.* = temp_stream;
+        return stream.*.*, 1, true;
+    }
+    
+    valid_header_mask := valid_header_bits | (valid_header_bits >> 1);
+    if (temp_stream.* & valid_header_mask) != valid_header_bits {
+        return 0, 0, false;
+    }
+
+    stream.* = temp_stream;
+    
+    out: num32;
+    for 0..total_cyte_ct - 1 {
+        out._u8[it] = (stream.* + it).*;
+    }
+
+    return out._u32, total_byte_ct, true;
+}
+
+rewind_utf16 :: (stream: **u8, rewind_max: int) -> utf16_symbol: u32, symbol_size: u8, success: bool {
+    back_once := (cast(*u16, force) (stream.* - 2)).*;
+    if back_once >= UTF16_LOW_SURROGATE_MIN && low_surrogate <= UTF16_LOW_SURROGATE_MAX {
+        if rewind_max < 4 {
+            return 0, 0, false;
+        }
+        back_twice := (cast(*u16, force) (stream.* - 4)).*;
+        if back_twice < UTF16_HIGH_SURROGATE_MIN || back_twice > UTF16_HIGH_SURROGATE_MAX {
+            return 0, 0, false;
+        }
+        stream.* -= 4;
+        return (cast(u32) back_twice) | ((cast(u32) back_once) << 16), 4, true;
+    } else {
+        if rewind_max < 2 {
+            return 0, 0, false;
+        }
+        if back_once >= UTF16_HIGH_SURROGATE_MIN && back_once <= UTF16_HIGH_SURROGATE_MAX {
+            return 0, 0, false;
+        }
+        stream.* -= 2;
+        return back_once, 2, true;
+    }
+}
+
+rewind_utf32 :: (stream: **u8, rewind_max: int) -> utf32_symbol: u32, symbol_size: u8, success: bool {
+    if rewind_max < 4 {
+        return 0, 0, false;
+    }
+    stream.* -= 4;
+    return (cast(**u32) stream).*.*, 4, true;
+}
+
+rewind_ansi :: (stream: **u8, rewind_max: int) -> ansi_symbol: u32, symbol_size: u8, success: bool {
+    if rewind_max < 1 {
+        return 0, 0, false;
+    }
+    stream.* -= 1;
+    return stream.*.*, 1, true;
+}
+
+// -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------- :Conversion
 // for all encode procs: 
 // - if the Text_Encode_Status value is 0, the first two values are how many bytes were read, and how many were written.
@@ -263,41 +456,41 @@ encode_text :: (src: string, encoder: Text_Encoder, user_data: *void = null, cal
 
 // ansi -> ...
 
-ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+ansi_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     if is_ascii(in.*) {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 1);
         out.* = in.*;
-        return 1, 1, 0;
+        return {1, 1, 0};
     } else {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 2);
         out[0] = (0xc0).(u8) | ((in.* & 0xc0) >> 6);
         out[1] = (0x80).(u8) |  (in.* & 0x3f);
-        return 1, 2, 0;
+        return {1, 2, 0};
     }
 }
 
-ansi_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+ansi_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 2);
     out_utf16 := out.(*u16,force);
     out_utf16.* = in.*;
-    return 1, 2, 0;
+    return {1, 2, 0};
 }
 
-ansi_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+ansi_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 4);
     out_utf32 := out.(*u32,force);
     out_utf32.* = in.*;
-    return 1, 4, 0;
+    return {1, 4, 0};
 }
 
 // utf8 -> ...
 
-utf8_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+utf8_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     if (in[0] & 0x80) == 0 {
         // 1 byte utf8 code point
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 1);
         out.* = in.*;
-        return 1, 1, 0;
+        return {1, 1, 0};
     } else if (in[0] & 0xfc) == 0x80 {
         // 2 byte utf8 code point
         // the only valid 2 byte utf8 -> ansi bits look like this:
@@ -305,165 +498,165 @@ utf8_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused:
         return_if_not_valid_encode(in_buf_size, out_buf_size, 2, 1);
         return_if_invalid_utf8_trailing_byte(in[1], 2, 1);
         out.* =  ((in[0] & 0x03) << 6) | (in[1] & 0x3f);
-        return 2, 1, 0;
+        return {2, 1, 0};
     } else {
         // utf8 encoding is saying it has more than 8 bits to deliver, which is ansi's limit
-        return 0, 0, .IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT;
+        return {0, 0, .IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT};
     }
 }
 
-utf8_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+utf8_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     // utf8 and utf16 are both types that require actual decoding. so, encoding while decoding
     // is sort of possible but practically you always need to decode first. so, we decode
     // to utf32 the encode to utf16.
     dummy_utf32: u32 = ---;
-    read_utf8_bytes, _, fail_code_1 := inline utf8_to_utf32(in, xx *dummy_utf32, in_buf_size, 4, null);
-    if fail_code_1 != 0 {
-        return read_utf8_bytes, 0, fail_code_1;
+    result_1 := inline utf8_to_utf32(in, xx *dummy_utf32, in_buf_size, 4, null);
+    if result_1.status != 0 {
+        return {result_1.read_count, 0, result_1.status};
     }
-    _, write_utf16_bytes, fail_code_2 := inline utf32_to_utf16(xx *dummy_utf32, out, 4, out_buf_size, null);
-    return read_utf8_bytes, write_utf16_bytes, fail_code_2;
+    result_2 := inline utf32_to_utf16(xx *dummy_utf32, out, 4, out_buf_size, null);
+    return {result_1.read_count, result_2.write_count, result_2.status};
 }
 
-utf8_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+utf8_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     out_utf32 := out.(*u32,force);
     if (in[0] & 0x80) == 0 {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 4);
         out_utf32.* = in.*;
-        return 1, 4, 0;
+        return {1, 4, 0};
     } else if (in[0] & 0xe0) == 0xc0 {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 2, 4);
         return_if_invalid_utf8_trailing_byte(in[1], 2, 4);
         out_utf32.* = ((in[0] & 0x1f).(u32) << 6) | (in[1] & 0x3f).(u32);
-        return 2, 4, 0;
+        return {2, 4, 0};
     } else if (in[0] & 0xf0) == 0xe0 {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 3, 4);
         return_if_invalid_utf8_trailing_byte(in[1], 3, 4);
         return_if_invalid_utf8_trailing_byte(in[2], 3, 4);
         out_utf32.* = ((in[0] & 0x0f).(u32) << 12) | ((in[1] & 0x3f).(u32) << 6) | (in[2] & 0x3f).(u32);
-        return 3, 4, 0;
+        return {3, 4, 0};
     } else if (in[0] & 0xf8) == 0xf0 {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 4);
         return_if_invalid_utf8_trailing_byte(in[1], 4, 4);
         return_if_invalid_utf8_trailing_byte(in[2], 4, 4);
         return_if_invalid_utf8_trailing_byte(in[3], 4, 4);
         out_utf32.* = ((in[0] & 0x07) << 18).(u32) | ((in[1] & 0x3f).(u32) << 12) | ((in[2] & 0x3f).(u32) << 6) | (in[3] & 0x3f).(u32);
-        return 4, 4, 0;
+        return {4, 4, 0};
     } else {
         // either the utf8 is malformed, or it's reporting a number of bytes (> 4), which is unsupported by this encoder
-        return 0, 0, .UNSUPPORTED_UTF8_CODE_POINT_SIZE;
+        return {0, 0, .UNSUPPORTED_UTF8_CODE_POINT_SIZE};
     }
 }
 
 // utf16 -> ...
 
-utf16_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+utf16_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 2, 1);
     in_utf16 := in.(*u16,force);
     if in_utf16.* > 255 {
-        return 0, 0, .IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT;
+        return {0, 0, .IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT};
     }
     out.* = in.*;
-    return 2, 1, 0;
+    return {2, 1, 0};
 }
 
-utf16_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+utf16_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     // utf8 and utf16 are both types that require actual decoding. so, encoding while decoding
     // is sort of possible but practically you always need to decode first. so, we decode
     // to utf32 the encode to utf8.
     dummy_utf32: u32 = ---;
-    read_utf16_bytes, _, fail_code_1 := inline utf16_to_utf32(in, xx *dummy_utf32, in_buf_size, 4, null);
-    if fail_code_1 != 0 {
-        return read_utf16_bytes, 0, fail_code_1;
+    result_1 := inline utf16_to_utf32(in, xx *dummy_utf32, in_buf_size, 4, null);
+    if result_1.status != 0 {
+        return {result_1.read_count, 0, result_1.status};
     }
-    _, write_utf8_bytes, fail_code_2 := inline utf32_to_utf8(xx *dummy_utf32, out, 4, out_buf_size, null);
-    return read_utf16_bytes, write_utf8_bytes, fail_code_2;
+    result_2 := inline utf32_to_utf8(xx *dummy_utf32, out, 4, out_buf_size, null);
+    return {result_1.read_count, result_2.write_count, result_2.status};
 }
 
-utf16_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+utf16_to_utf32 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 2, 4);
     in_utf16 := in.(*u16,force);
     out_utf32 := out.(*u32,force);
     high_surrogate := in_utf16.*;
     if high_surrogate < UTF16_HIGH_SURROGATE_MIN || high_surrogate > UTF16_HIGH_SURROGATE_MAX {
         out_utf32.* = in_utf16.*;
-        return 2, 4, 0;
+        return {2, 4, 0};
     } else {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 4);
         low_surrogate := (in + 2).(*u16,force).*;
         if low_surrogate < UTF16_LOW_SURROGATE_MIN || low_surrogate > UTF16_LOW_SURROGATE_MAX {
-            return 4, 4, .MALFORMED_INPUT;
+            return {4, 4, .MALFORMED_INPUT};
         }
         _20_bit_high := (high_surrogate.(u32) - UTF16_HIGH_SURROGATE_MIN) << 10;
         _20_bit_low := low_surrogate.(u32) - UTF16_LOW_SURROGATE_MIN;
         out_utf32.* = (_20_bit_high | _20_bit_low) + 0x1_00_00;
-        return 4, 4, 0;
+        return {4, 4, 0};
     }
 }
 
 // utf32 -> ...
 
-utf32_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+utf32_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 1);
     in_utf32 := in.(*u32,force);
     if in_utf32.* > 255 {
-        return 0, 0, .IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT;
+        return {0, 0, .IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT};
     }
     out.* = in.*;
-    return 4, 1, 0;
+    return {4, 1, 0};
 }
 
-utf32_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+utf32_to_utf8 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 1);
     c := in.(*u32,force).*;
     if (c & 0x7f) == c {
         out.* = in.*;
-        return 4, 1, 0;
+        return {4, 1, 0};
     } else if (c & 0x07_ff) == c {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 2);
         out[0] = (0xc0).(u8) | ((c & 0x07_c0) >> 6 ).(u8);
         out[1] = (0x80).(u8) | ( c & 0x00_3f       ).(u8);
-        return 4, 2, 0;
+        return {4, 2, 0};
     } else if (c & 0xff_ff) == c {
         return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 3);
         out[0] = (0xe0).(u8) | ((c & 0xf0_00) >> 12).(u8);
         out[1] = (0x80).(u8) | ((c & 0x0f_c0) >>  6).(u8);
         out[2] = (0x80).(u8) | ( c & 0x00_3f       ).(u8);
-        return 4, 3, 0;
+        return {4, 3, 0};
     } else {
         if (c & 0xff_e0_00_00) != 0 {
             // only support code points representable with 4 bytes in utf8
-            return 0, 0, .UNSUPPORTED_UTF8_CODE_POINT_SIZE;
+            return {0, 0, .UNSUPPORTED_UTF8_CODE_POINT_SIZE};
         }
         return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 4);
         out[0] = (0xf0).(u8) | ((c & 0x1c_00_00) >> 18).(u8);
         out[1] = (0x80).(u8) | ((c & 0x03_f0_00) >> 12).(u8);
         out[2] = (0x80).(u8) | ((c & 0x00_0f_c0) >>  6).(u8);
         out[3] = (0x80).(u8) | ( c & 0x00_00_3f       ).(u8);
-        return 4, 4, 0;
+        return {4, 4, 0};
     }
 }
 
-utf32_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> s8, s8, Text_Encode_Status {
+utf32_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused: *void = null) -> Text_Encode_Result {
     in_utf32 := in.(*u32,force);
     out_utf16 := out.(*u16,force);
     return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 2);
     if in_utf32.* > U16_MAX {
         if in_utf32.* > 0x10ffff {
-            return 4, 4, .IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT;
+            return {4, 4, .IMPOSSIBLE_TRANSLATION_OR_MALFORMED_INPUT};
         }
         return_if_not_valid_encode(in_buf_size, out_buf_size, 4, 4);
         utf32_20_bit := in_utf32.* - 0x1_00_00;
         out_utf16[0] = (((utf32_20_bit & UTF16_HIGH_MASK) >> 10) + UTF16_HIGH_SURROGATE_MIN).(u16); // high surrogate
         out_utf16[1] = ((utf32_20_bit & UTF16_LOW_MASK) + UTF16_LOW_SURROGATE_MIN).(u16); // low surrogate
-        return 4, 4, 0;
+        return {4, 4, 0};
     } else {
         // this range is reserved for utf16 encoding. invalid range for a code point.
         if in_utf32.* >= UTF16_HIGH_SURROGATE_MIN && in_utf32.* <= UTF16_LOW_SURROGATE_MAX {
-            return 4, 2, .MALFORMED_INPUT;
+            return {4, 2, .MALFORMED_INPUT};
         }
         out_utf16.* = xx in_utf32.*;
-        return 4, 2, 0;
+        return {4, 2, 0};
     }
 }
 
@@ -471,17 +664,21 @@ utf32_to_utf16 :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unuse
 
 return_if_not_valid_encode :: (in_buf_size: int, out_buf_size: int, read_size: int, write_size: int) #expand {
     if in_buf_size < read_size {
-        `return read_size, write_size, Text_Encode_Status.TRUNCATED_BYTES_IN_INPUT;
+        `return {read_size, write_size, Text_Encode_Status.TRUNCATED_BYTES_IN_INPUT};
     }
     if out_buf_size < write_size {
-        `return read_size, write_size, Text_Encode_Status.OUTPUT_BUFFER_IMPROPERLY_SIZED_BY_SYSTEM;
+        `return {read_size, write_size, Text_Encode_Status.OUTPUT_BUFFER_IMPROPERLY_SIZED_BY_SYSTEM};
     }
 }
 
 return_if_invalid_utf8_trailing_byte :: (b: u8, read_size: int, write_size: int) #expand {
-    if (b & 0xc0) != 0x80 {
-        `return read_size, write_size, Text_Encode_Status.INVALID_UTF8_TRAILING_BYTES;
+    if !is_valid_utf8_trailing_byte(b) {
+        `return {read_size, write_size, Text_Encode_Status.INVALID_UTF8_TRAILING_BYTES};
     }
+}
+
+is_valid_utf8_trailing_byte :: inline (b: u8) -> bool {
+    return (b & 0xc0) == 0x80;
 }
 
 UTF16_HIGH_SURROGATE_MIN : u32 : 0xd800;

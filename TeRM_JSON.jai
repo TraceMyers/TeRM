@@ -1081,18 +1081,18 @@ parse_hex_bytes :: (parser: *JSON_Parser) -> bool {
     }
 
     utf8: [6]u8;
-    read_byte_count, write_byte_count, failure := utf16_to_utf8(xx utf16.data, utf8.data, utf16.count*2, utf8.count);
+    result := utf16_to_utf8(xx utf16.data, utf8.data, utf16.count*2, utf8.count);
 
-    if failure != 0 {
+    if result.status != 0 {
         add_load_error(._INTERNAL_FAILED_TRANSLATING_UTF16_TO_UTF8, parser.pos, .FATAL);
         return false;
     }
-    if read_byte_count * 2 != word_count {
+    if result.read_count * 2 != word_count {
         add_load_error(._INTERNAL_UNEXPECTED_UTF16_READ_BYTE_COUNT, parser.pos, .FATAL);
         return false;
     }
 
-    utf8_str := string.{write_byte_count, utf8.data};
+    utf8_str := string.{result.write_count, utf8.data};
     push_bytes(parser, utf8_str);
     return true;
 }

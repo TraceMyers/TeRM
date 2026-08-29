@@ -178,7 +178,6 @@ debug__validate_component_arrays_initialized :: (entity_components: *$Entity_Com
     components_info := cast(*Type_Info_Struct) type_info(Entity_Components);
     assert(components_info.type == .STRUCT);
     for member : components_info.members {
-        member_type := (cast(*Type) *member.type).*;
         if !is_subclass_of(member.type, "Component_Array") {
             continue;
         }

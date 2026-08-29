@@ -18,6 +18,33 @@
 // to an instance of the relevant component type in its definition. the first 
 // pointer of the component's type on said entity struct is assumed to be the 
 // relevant component pointer.
+//
+// the intended way to use this module:
+//  
+// Entity_Components :: struct {
+//      hair_components: Component_Array(Hair);
+//      personality_components: Component_Array(Personality);
+// }
+//
+// World :: struct {
+// ...
+//      using entity_components: Entity_Components;
+// ...
+// }
+//
+// spawn_entity :: () -> *Entity {
+// ...
+//      component_array_add(*world.hair_components, new_entity.id);
+//      component_array_add(*world.personality_components, new_entity.id);
+// ...
+// }
+// 
+// destroy_entity :: (entity: *Entity) {
+// ...
+//      component_array_remove(*world.hair_components, entity.hair_component);
+//      component_array_remove(*world.personality_components, entity.personality_component);
+// ...
+// }
 
 #module_parameters(
     user_types: $I/interface Type_Provider_Default = Type_Provider_Default
@@ -75,19 +102,13 @@ component_array_add :: (array: *Component_Array, id: user_types.entity_id_type) 
         array_add(*array.ids, id);
     }
     
-    // potential hotspot here. for very long component arrays, try preallocating more than you need 
-    // so you don't realloc and deal with this for loop cost.
+    // potential hotspot here. for very long component arrays, try preallocating more than you need.
     if data_after != data_before {
-        // -2 because the last component ptr doesn't need to be repointed (it was just set above).
-        for 0..array.ids.count-2 { 
-            entity     := user_types.id_to_entity_proc(array.ids[it]);
-            e_cmp_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
-            e_cmp_ptr.* = *array.components[it];
-        }
+        fix_component_pointers(array);
     }
 }
 
-component_array_remove :: (array: *Component_Array, component: *type_of(array).component_type) {
+component_array_remove :: (array: *Component_Array, component: *type_of(array).component_type, auto_shrink := true) {
     assert(array.components.count == array.ids.count);
 
     component_type           :: #run type_of(array.*).component_type;
@@ -111,6 +132,30 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
 
     array.components.count -= 1;
     array.ids.count        -= 1;
+
+    // potential hotspot here. for very long component arrays, try not shrinking
+    if auto_shrink && component_array_shrink_if_small_enough(array) {
+        fix_component_pointers(array);
+    }
+}
+
+fix_component_pointers :: inline (array: *Component_Array) {
+    component_type           :: #run type_of(array.*).component_type;
+    component_pointer_offset :: #run get_component_pointer_offset(component_type);
+
+    for 0..array.ids.count-1 { 
+        entity     := user_types.id_to_entity_proc(array.ids[it]);
+        e_cmp_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
+        e_cmp_ptr.* = *array.components[it];
+    }
+}
+
+component_array_shrink_if_small_enough :: (array: *Component_Array, realloc_if_using_leq_proportion := 0.35, remove_free_proportion := 0.75, minimum_allocated := 8) -> bool {
+    if array_shrink_if_small_enough(*array.components, realloc_if_using_leq_proportion, remove_free_proportion, minimum_allocated) {
+        array.ids.count = array.components.count;
+        array_shrink(*array.ids, remove_free_proportion);
+        return true;
+    } else return false;
 }
 
 // pass a pointer to an instance of a struct that has component array members
@@ -169,6 +214,8 @@ get_component_pointer_offset :: (component_type: Type) -> int {
 
 #import "Basic";
 #import "Compiler";
+
+#import "TeRM/TeRM_Array";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

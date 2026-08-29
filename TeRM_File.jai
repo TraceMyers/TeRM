@@ -12,6 +12,29 @@ convert_to_forward_slashes :: (path: string) {
     }
 }
 
+// 1. converst to forward slashes
+// 2. always temp
+parse_path_ext :: (in_path: string, reduce := true) -> Path {
+    path := string_copy(in_path,, temp);
+    convert_to_forward_slashes(path);
+    return parse_path(path, reduce,, temp);
+}
+
+// 1. subtract words instead of using sum
+// 2. always temp
+path_to_string_ext :: (path: *Path, subtract_count := 0) -> string {
+    return path_to_string(path.*, path.words.count - subtract_count,, temp);
+}
+
+move_down_directory :: (path: *Path, directory: string) {
+    array_add(*path.words, directory);
+}
+
+move_up_directory :: (path: *Path) {
+    assert(path.words.count > 0);
+    path.words.count -= 1;
+}
+
 // resolve '..' and symlinks 
 get_final_path :: (path: string) -> string {
     #if OS == .WINDOWS {

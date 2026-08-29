@@ -116,19 +116,18 @@ init_renderer_unique_data :: (thread_local_renderer: *Renderer) -> bool {
 // todo: packaging = this needs to turn off 100%
 populate_shader_data :: () -> bool {
     working_directory := get_working_directory();
-    convert_to_forward_slashes(working_directory);
     defer set_working_directory(working_directory);
 
     final_filepath := get_final_path(#filepath,, temp);
-    convert_to_forward_slashes(final_filepath);
 
-    dest_path           := parse_path(working_directory, true,, temp);
-    path_of_this_file   := parse_path(final_filepath, true,, temp);
+    dst_path := parse_path_ext(working_directory);
+    src_path := parse_path_ext(final_filepath);
 
-    // term_render_path  := move_path_back_one_directory(path_of_this_file);
-    term_shaders_path := tprint("%vulkan_shaders", path_to_string(path_of_this_file, path_of_this_file.words.count-1,, temp));
+    move_up_directory(*src_path);
+    move_down_directory(*src_path, "vulkan_shaders");
+    term_shaders_path := path_to_string_ext(*src_path);
 
-    fully_exists, _ := how_much_of_path_exists_on_the_local_filesystem(parse_path(term_shaders_path,, temp));
+    fully_exists, _ := how_much_of_path_exists_on_the_local_filesystem(src_path);
 
     spiel := "render init options have 'populate_shader_data_in_working_directory' set to true";
 
@@ -137,8 +136,8 @@ populate_shader_data :: () -> bool {
         return false;
     }
 
-    array_add(*dest_path.words, "shaders",, temp);
-    project_shaders_path := path_to_string(dest_path,, temp);
+    move_down_directory(*dst_path, "shades");
+    project_shaders_path := path_to_string_ext(*dst_path);
     copy_success := copy_directory(term_shaders_path, project_shaders_path,, temp);
 
     if !copy_success {
@@ -146,10 +145,10 @@ populate_shader_data :: () -> bool {
         return false;
     } 
 
-    array_add(*dest_path.words, "spirv",, temp);
-    spirv_path := path_to_string(dest_path,, temp);
+    move_down_directory(*dst_path, "spirv");
+    spirv_path := path_to_string_ext(*dst_path);
     make_directory_if_it_does_not_exist(spirv_path);
-    fully_exists, _ = how_much_of_path_exists_on_the_local_filesystem(dest_path);
+    fully_exists, _ = how_much_of_path_exists_on_the_local_filesystem(dst_path);
 
     if !fully_exists {
         render_log("tried to create directory for shader compilation spirv output at %, but failed", spirv_path);
@@ -161,7 +160,7 @@ populate_shader_data :: () -> bool {
     // assumes jai compiler is in your environment variables, used for shader compilation
     result := run_command("jai", "compile_shaders.jai");
     if result.exit_code != 0 {
-        render_log("tried to compile shaders in % using the compile.bat in there, but failed with exit code %", dest_path, result.exit_code);
+        render_log("tried to compile shaders in % using the compile.bat in there, but failed with exit code %", dst_path, result.exit_code);
         return false;
     }
     print("\n");

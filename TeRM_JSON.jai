@@ -338,8 +338,7 @@ for_each_json_element_proc :: #type (
 ) -> continue_searching: bool, search_element_if_it_is_a_container: bool;
 
 JSON_Load_Result :: struct {
-    // recursive-intrusive list of all elements. 
-    // first element is file root element
+    // list of all elements in the tree. first element is file root element
     elements: []JSON_Element;
     // all of the strings in one buffer
     strings: []u8;
@@ -698,8 +697,8 @@ reserve_allocations :: (using parser: *JSON_Parser) {
         strings_per_file_byte      = 0.005769;
     }
 
-    // overshoot by a little, avoiding reallocations
-    OVERSHOOT_FACTOR :: 1.04;
+    // overshoot to avoid reallocations
+    OVERSHOOT_FACTOR :: 1.25;
     elements_est := parser.text.count * elements_per_file_byte     * OVERSHOOT_FACTOR;
     bytes_est    := parser.text.count * string_bytes_per_file_byte * OVERSHOOT_FACTOR;
     strings_est  := parser.text.count * strings_per_file_byte      * OVERSHOOT_FACTOR;

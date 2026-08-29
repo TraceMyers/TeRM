@@ -41,8 +41,8 @@
 // style_entity_hairs :: () {
 // ...
 //      for world.hair_components {
-//          entity := your_id_to_entity(it.entity_id);
-//          style_hair(entity, it.component);
+//          entity := your_id_to_entity(it.entity_id); // get associated entity if you need to
+//          style_hair(it.component);
 //      }
 // ...
 // }
@@ -147,9 +147,8 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
     }
 }
 
-// iterate over all entities owning this component and fix the component
-// pointers so they're pointing into the component array.
-// this should not need to be called outside this module, but outside it's 
+// iterate over all entities owning this component and fix the component pointers so they're pointing 
+// into the component array. this should not need to be called outside this module, but it's 
 // potentially useful for debugging.
 fix_component_pointers :: inline (array: *Component_Array) {
     component_type           :: #run type_of(array.*).component_type;

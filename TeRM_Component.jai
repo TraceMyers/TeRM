@@ -7,9 +7,9 @@
 //
 // #import "TeRM/TeRM_Component"(
 //     user_types = struct {
-//         your_entity_id_type      :: Entity_Ref;
-//         your_entity_to_id_proc   :: cmp_entity_to_id;
-//         your_id_to_entity_proc   :: get_entity;
+//         entity_id_type      :: Your_Entity_Ref;
+//         entity_to_id_proc   :: your_entity_to_id;
+//         id_to_entity_proc   :: your_id_to_entity;
 //     }
 // );
 //
@@ -41,7 +41,7 @@
 // style_entity_hairs :: () {
 // ...
 //      for world.hair_components {
-//          entity := id_to_entity(it.entity_id);
+//          entity := your_id_to_entity(it.entity_id);
 //          style_hair(entity, it.component);
 //      }
 // ...

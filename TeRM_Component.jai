@@ -139,6 +139,10 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
     }
 }
 
+// iterate over all entities owning this component and fix the component
+// pointers so they're pointing into the component array.
+// this should not need to be called outside this module, but outside it's 
+// potentially useful for debugging.
 fix_component_pointers :: inline (array: *Component_Array) {
     component_type           :: #run type_of(array.*).component_type;
     component_pointer_offset :: #run get_component_pointer_offset(component_type);

@@ -1,3 +1,23 @@
+// close to the simplest thing you can reasonably call an "entity component system",
+// or at least the "component system" part. store all components of a type in a single
+// array, then associate an entity ID with its component, which allows for systematic
+// management of the component pointers on the entities via id_to_entity_proc().
+//
+// an import of this module looks something like this:
+//
+// #import "TeRM/TeRM_Component"(
+//     user_types = struct {
+//         your_entity_id_type      :: Entity_Ref;
+//         your_entity_to_id_proc   :: cmp_entity_to_id;
+//         your_id_to_entity_proc   :: get_entity;
+//     }
+// );
+//
+// .. where you pass your entity's ID type, as well as ID -> *entity and *entity -> ID
+// procedures. 'entity' in this case just means a struct that has a pointer
+// to the relevant component type in its definition. the first pointer of the component's
+// type on said entity struct is assumed to be the relevant component pointer.
+
 #module_parameters(
     user_types: $I/interface Type_Provider_Default = Type_Provider_Default
 ) {
@@ -65,7 +85,6 @@ component_array_add :: (array: *Component_Array, id: user_types.entity_id_type) 
         }
     }
 }
-
 
 component_array_remove :: (array: *Component_Array, component: *type_of(array).component_type) {
     assert(array.components.count == array.ids.count);

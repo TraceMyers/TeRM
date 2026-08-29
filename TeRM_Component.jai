@@ -11,7 +11,6 @@
 Component_Array :: struct ($component_type: Type) {
     components: [..]component_type;
     ids:        [..]user_types.entity_id_type;
-    allocator: Allocator;
     initialized: bool;
 }
 
@@ -33,38 +32,41 @@ for_expansion :: (array: Component_Array, body: Code, flags: For_Flags) #expand 
 
 component_array_init :: (array: *Component_Array, size: int) {
     array_type :: #run type_of(array);
-
     array_reserve(*array.components, size);
     array_reserve(*array.ids, size);
-
-    // locking allocation to keep pointers valid
-    array.components.allocator = {};
-    array.ids.allocator        = {};
-
-    // saving allocator if user wants to free later
-    array.allocator = context.allocator;
-
     array.initialized = true;
 }
 
 component_array_add :: (array: *Component_Array, id: user_types.entity_id_type) {
     assert(array.components.count == array.ids.count);
 
-    array_type               :: #run type_of(array);
-    component_type           :: #run array_type.component_type;
+    component_type           :: #run type_of(array.*).component_type;
     component_pointer_offset :: #run get_component_pointer_offset(component_type);
 
     entity := user_types.id_to_entity_proc(id);
     component_ptr  := cast(**component_type) ((cast(*u8) entity) + component_pointer_offset);
+    data_before := array.components.data;
     component_ptr.* = array_add(*array.components);
+    data_after  := array.components.data;
     array_add(*array.ids, id);
+    
+    // note: potential hotspot here. for very long component arrays, try preallocating more than you need 
+    // so you don't realloc and deal with this for loop cost.
+    if data_after != data_before {
+        for id : array.ids {
+            if it_index == array.ids.count - 1 then break;
+            e := user_types.id_to_entity_proc(id);
+            e_cmp_ptr  := cast(**component_type) ((cast(*u8) e) + component_pointer_offset);
+            e_cmp_ptr.* = *array.components[it_index];
+        }
+    }
 }
+
 
 component_array_remove :: (array: *Component_Array, component: *type_of(array).component_type) {
     assert(array.components.count == array.ids.count);
 
-    array_type               :: #run type_of(array);
-    component_type           :: #run array_type.component_type;
+    component_type           :: #run type_of(array.*).component_type;
     component_pointer_offset :: #run get_component_pointer_offset(component_type);
 
     index := component - array.components.data;
@@ -85,6 +87,26 @@ component_array_remove :: (array: *Component_Array, component: *type_of(array).c
 
     array.components.count -= 1;
     array.ids.count        -= 1;
+}
+
+debug__validate_component_arrays_initialized :: (entity_components: *$Entity_Components) {
+    components_info := cast(*Type_Info_Struct) type_info(Entity_Components);
+    assert(components_info.type == .STRUCT);
+    for member : components_info.members {
+        component_array := cast(*Component_Array(u8)) (cast(*u8) entity_components + member.offset_in_bytes);
+        assert(component_array.initialized, "entity component array % uninitialized!", member.name);
+    }
+}
+
+debug__validate_component_pointers :: (array: *Component_Array) {
+    component_type           :: #run type_of(array.*).component_type;
+    component_pointer_offset :: #run get_component_pointer_offset(component_type);
+
+     for id : array.ids {
+        e := user_types.id_to_entity_proc(id);
+        e_cmp_ptr  := cast(**type_of(array.*).component_type) ((cast(*u8) e) + component_pointer_offset);
+        assert(e_cmp_ptr.* == *array.components[it_index]);
+    }
 }
 
 #scope_module

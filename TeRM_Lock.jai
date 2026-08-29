@@ -116,13 +116,11 @@ try_acquire_loop :: (mutex: *RW_Mutex, key: s64, $lock_acquired: (s64) -> bool) 
         if inline lock_acquired(mutex.state) {
             pre_lock_value := atomic_add(*mutex.state, key);           
             if inline lock_acquired(pre_lock_value) {
-
                 #if ENABLE_RW_MUTEX_SPIN_TEST {
                     if try_count > 0 {
                         atomic_add(*mutex.contended_spin_acquistion_count, 1);
                     }
                 }
-
                 if wait_event.handle != null {
                     remove_front(mutex);
                     wake_front(mutex);

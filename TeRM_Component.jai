@@ -43,7 +43,7 @@
 //      component_array_remove(*world.hair_components, entity.hair_component);
 //      component_array_remove(*world.personality_components, entity.personality_component);
 // ...
-// }
+// } -
 
 #module_parameters(
     user_types: $I/interface Type_Provider_Default = Type_Provider_Default

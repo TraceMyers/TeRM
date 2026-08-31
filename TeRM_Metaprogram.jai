@@ -18,6 +18,10 @@ align_of :: inline ($T: Type) -> int {
 align_of :: (info: *Type_Info, max_depth := 50, max_align := S64_MAX) -> int {
     assert(max_depth >= 1);
 
+    if max_align <= 1 {
+        return 1;
+    }
+
     align := 1;
 
     Stack_Item :: struct {

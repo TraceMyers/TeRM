@@ -27,7 +27,7 @@ get_joint_transforms :: inline (skeleton: *Skeleton, animation: *Skeletal_Animat
 }
 
 free_pose :: (pose: *Skeletal_Pose) {
-    free(pose.allocation);
+    free(pose.allocation.data);
     pose.* = {};
 }
 
@@ -59,12 +59,15 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
     joint_count     := skeleton.joints.count;
     
     pose.skeleton = skeleton;
-    if pose.allocation == null {
-        pose.allocation = alloc(allocation_size);
-    }
-    memset(pose.allocation, 0, allocation_size);
 
-    pose.local_joints.data     = xx pose.allocation;
+    if pose.allocation.count != allocation_size {
+        pose.allocation.data  = realloc(pose.allocation.data, allocation_size, pose.allocation.count);
+        pose.allocation.count = allocation_size;
+    }
+
+    array_init(pose.allocation);
+
+    pose.local_joints.data     = xx pose.allocation.data;
     pose.local_joints.count    = joint_count;
     pose.model_joints.data     = xx ((cast(*u8) pose.local_joints.data) + size_of(Joint_Transform) * joint_count);
     pose.model_joints.count    = joint_count;

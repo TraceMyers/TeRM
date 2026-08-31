@@ -5,6 +5,10 @@ copy_items :: inline (dest: *$T, src: *T, count: s64) {
     memcpy(dest, src, count * size_of(T));
 }
 
+array_init :: inline (array: []$T) {
+    init_range(array.data, 0, array.count);
+}
+
 make_dynamic_array :: inline ($T: Type, reserve_count := 0) -> [..]T {
     array: [..]T;
     array.allocator = context.allocator;
@@ -16,26 +20,6 @@ make_static_array :: inline ($T: Type, count := 0) -> []T {
     array: []T;
     array_resize(*array, count);
     return array;
-}
-
-make_local_static_array :: inline ($T: Type, $max: int, count := 0, $id := "") -> []T #expand {
-    assert(count <= max);
-    array_name :: #run tprint("`_local_static_array_storage_%", id);
-    #insert #run tprint("%: [max]T;", array_name);
-    array: []T;
-    array.data = #insert #run tprint("%.data;", array_name);
-    array.count = count;
-    return array;
-}
-
-static_array_add :: inline (array: *[]$T, item: T, upper_bound: s64) -> bool {
-    if array.count >= upper_bound {
-        return false;
-    } else {
-        array.count += 1;
-        array.data[array.count-1] = item;
-        return true;
-    }
 }
 
 array_element_index :: inline (array: []T, item: *$T) -> s64 {
@@ -56,53 +40,47 @@ array_append :: (a: *[..]$T, b: []T) {
     copy_items(a.data + prev_count, b.data, b.count);
 }
 
-array_concatenate :: (a: []$T, b: []T) -> []T {
-    arr := make_static_array(T, a.count + b.count);
-    copy_items(arr.data, a.data, a.count);
-    copy_items(arr.data + a.count, b.data, b.count);
-    return arr;
-}
-
-array_copy :: inline (dest: *[]$T, src: []T) {
-    assert(dest.count >= src.count);
-    copy_items(dest.data, src.data, dest.count);
-}
-
-array_duplicate :: (array: []$T) -> []T {
-    duplicate := make_static_array(T, array.count);
-    array_copy(*duplicate, array);
-    return duplicate;
-}
-
-array_init :: inline (array: *[]$T) {
-    init_range(array.data, 0, array.count);
-}
-
-array_sum :: inline (array: []$T) -> T 
-#modify {
-    tinfo := cast(*Type_Info) T;
-    return tinfo.type == .FLOAT || tinfo.type == .INTEGER;
-} {
-    sum: T;
-    for array {
-        sum += it;
+array_concatenate :: (arrays: ..[]$T) -> []T {
+    out_count := 0;
+    for arrays {
+        out_count += it.count;
     }
-    return sum;
+
+    if out_count <= 0 {
+        return .[];
+    }
+
+    out_array := make_static_array(out_count);
+    dst_index := 0;
+
+    for arrays {
+        copy_size := it.count * size_of(T);
+        memcpy(out_array.data + dst_index, it.data, copy_size);
+        dst_index += it.count;
+    }
+    assert(dst_index == out_array.count);
+
+    return out_array;
 }
 
-array_average :: inline (array: []$T) -> T 
-#modify {
-    tinfo := cast(*Type_Info) T;
-    return tinfo.type == .FLOAT || tinfo.type == .INTEGER;
-} {
-    if array.count == 0 {
-        return xx 0;
+make_local_static_array :: inline ($T: Type, $max: int, count := 0, $id := "") -> []T #expand {
+    assert(count <= max);
+    array_name :: #run tprint("`_local_static_array_storage_%", id);
+    #insert #run tprint("%: [max]T;", array_name);
+    array: []T;
+    array.data = #insert #run tprint("%.data;", array_name);
+    array.count = count;
+    return array;
+}
+
+static_array_add :: inline (array: *[]$T, item: T, upper_bound: s64) -> bool {
+    if array.count >= upper_bound {
+        return false;
+    } else {
+        array.count += 1;
+        array.data[array.count-1] = item;
+        return true;
     }
-    sum: T;
-    for array {
-        sum += it;
-    }
-    return sum / array.count;
 }
 
 copy_range_inside_array :: (array: *[]$T, dst: s64, src: s64, count: s64) {

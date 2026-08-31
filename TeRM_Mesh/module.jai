@@ -336,7 +336,7 @@ Skeletal_Animation :: struct {
 
 Skeletal_Pose :: struct {
     skeleton:        *Skeleton;
-    allocation:      *u8;
+    allocation:      []u8;
     local_joints:    []Joint_Transform;
     model_joints:    []Matrix4;    // local accumulated up the hierarchy
     skinning_joints: []Matrix4;    // world * inverse_bind_pose, uploaded to gpu

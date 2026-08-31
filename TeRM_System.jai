@@ -196,14 +196,19 @@ wait_until :: (time: float64) -> time_spent_ms: float64, end_time: float64 {
     return time_spent_ms, end_time;
 }
 
-// progressive backoff starting with OS-level timer then cpu pauses. waits until at least wait_ms time
-// has passed, and tries to wait no longer.
-wait :: (start_time: float64, wait_ms: float64) -> time_spent_ms: float64, end_time: float64 {
+// progressive backoff starting with OS-level timer then cpu pauses. waits until at least 
+// wait_ms time has passed, and tries to wait no longer.
+// it's slightly awkward to pass in start_time, but it's the most reasonable way to
+// use this for a frame sync (start_time = beginning of this frame). maybe I should 
+// make an explicit frame_sync proc instead?
+wait :: (start_time: float64, wait_ms: float64) -> time_spent_ms: float64, begin_wait_time: float64, end_wait_time: float64 {
+    begin_wait_time := seconds_since_init();
+    end_time        := begin_wait_time;
+
     if wait_ms <= 0 {
-        return 0, start_time;
+        return 0, begin_wait_time, end_time;
     }
 
-    end_time := start_time;
     spent_ms: float64;
 
     roomy_wait_time_ms := wait_ms - 1.5;
@@ -231,7 +236,7 @@ wait :: (start_time: float64, wait_ms: float64) -> time_spent_ms: float64, end_t
         spent_ms = (end_time - start_time) * 1000.0;
     }
 
-    return spent_ms, end_time;
+    return spent_ms, begin_wait_time, end_time;
 }
 
 // used by wait(), but also good if you want something more accurate than sleep_milliseconds(1)
@@ -269,9 +274,10 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
         }
 
         return spent_ms, end_time;
-    } else {
-        sleep_milliseconds(max(cast(s32) wait_ms, 1));
     }
+    // } else {
+    //     sleep_milliseconds(max(cast(s32) wait_ms, 1));
+    // }
 }
 
 sample_cycle_count :: ($code: string, cycle_count: *u64, default_value_if_failure: u64) -> bool {

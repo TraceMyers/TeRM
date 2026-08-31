@@ -15,7 +15,7 @@ convert_to_forward_slashes :: (path: string) {
 // 1. converts to forward slashes because parse_path doesn't recognize backslashes -.-
 // 2. always temp
 parse_path_ext :: (in_path: string, reduce := true) -> Path {
-    path := string_copy(in_path,, temp);
+    path := copy_string(in_path,, temp);
     convert_to_forward_slashes(path);
     return parse_path(path, reduce,, temp);
 }

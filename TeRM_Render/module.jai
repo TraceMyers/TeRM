@@ -5,14 +5,14 @@
     API := "VULKAN"
 );
 
+#add_context renderer: *Renderer;
+
 TERM_RENDER_VERSION_MAJOR : u32 : 0;
 TERM_RENDER_VERSION_MINOR : u32 : 1;
 
 #if API == {
 case "VULKAN";
     #load "vulkan_frontend/vulkan_frontend.jai";
-// case "DIRECT3D";
-//     #load "direct3d_frontend.jai";
 }
 
 #scope_module
@@ -24,8 +24,6 @@ module_path :: () -> string {
 render_target_width: u32;
 render_target_height: u32;
 should_recreate_swapchain: bool;
-
-#add_context renderer: *Renderer;
 
 scope_set_renderer :: (in_renderer: *Renderer) #expand {
     context.renderer = in_renderer;

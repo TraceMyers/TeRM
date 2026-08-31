@@ -234,6 +234,8 @@ wait :: (start_time: float64, wait_ms: float64) -> time_spent_ms: float64, end_t
     return spent_ms, end_time;
 }
 
+// used by wait(), but also good if you want something more accurate than sleep_milliseconds(1)
+// and doesn't burn any cycles unnecessarily.
 wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time: float64 {
     #if OS == .WINDOWS {
         start_time := seconds_since_init();

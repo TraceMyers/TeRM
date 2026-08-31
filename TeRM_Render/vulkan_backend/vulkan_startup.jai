@@ -11,12 +11,13 @@
 // -----------------------------------------------------------------------------------
 // ---------------------------------------------------------------------- :vk instance
 
+// todo: figure out how to make this not take 1,000,000,000 years.
+// seems it's mostly vkCreateInstance()
 create_vk_instance :: () -> bool {
     using context.renderer;
     auto_release_temp();
     
-    // todo: this call takes a while... why?
-    // if !validate(instance_extensions_are_supported(required_instance_extensions), "required instance extensions unsupported") then return false;
+    if !validate(instance_extensions_are_supported(required_instance_extensions), "required instance extensions unsupported") then return false;
 
     if !validate(instance_layers_are_supported(required_layers), "required instance layers unsupported") then return false;
 

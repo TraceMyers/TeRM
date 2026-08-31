@@ -3,7 +3,7 @@
 
 TO_LOWER_LETTER_DIFFERENCE :: #char "a" - #char "A";
 
-string_reset :: inline (s: *string) {
+reset :: inline (s: *string) {
     if s.data != null {
         free(s.data);
         s.data = null;
@@ -61,7 +61,7 @@ concatenate :: (strings: ..string) -> string {
     return out_str;
 }
 
-string_reverse :: (str: string) {
+reverse :: (str: string) {
     b: s64;
     half_count := str.count >> 1;
     while b <= half_count {
@@ -69,13 +69,6 @@ string_reverse :: (str: string) {
         str[b], str[e] = str[e], str[b];
         b += 1;
     }
-}
-
-string_copy :: (s: string) -> string {
-    if s.count == 0 return "";
-    copy := alloc_string(s.count);
-    memcpy(copy.data, s.data, s.count);
-    return copy;
 }
 
 is_alpha_upper :: inline (code_point: u32) -> bool {
@@ -149,9 +142,10 @@ hex_text_to_bytes :: (hex_text: string) -> string, bool {
 
 // for expansion. process a string per line. usage = 'for :per_line your_string { .. }'
 per_line :: (str: *string, body: Code, flags: For_Flags) #expand {
-    // todo: could implement going over lines from last to first line
-    // getting a pointer to a local string instantiation doesn't do anything helpful.
+    // - getting a pointer to a local string instantiation doesn't do anything helpful.
     // you can modify the data and the count regardless
+    // - going from last to first line might be useful to somebody, but I'm not sure it's
+    // useful enough to implement here.
     #assert(flags == 0);
 
     line_count: s64;
@@ -268,29 +262,6 @@ for_expansion :: (exchange: *String_Exchange, body: Code, flags: For_Flags) #exp
     }
 }
 
-float_text_center_align :: (str: string, put_period_at_position: int, target_width: int) -> string {
-    for str {
-        if it_index >= put_period_at_position {
-            break;
-        } else if it == #char "." {
-            leading_space_count := put_period_at_position - it_index - 1;
-            trailing_space_count := max(target_width - (str.count + leading_space_count), 0);
-            new_str := alloc_string(leading_space_count + str.count + trailing_space_count,, temp);
-            for 0..leading_space_count-1 {
-                new_str[it] = #char " ";
-            }
-            memcpy(new_str.data + leading_space_count, str.data, str.count);
-            if trailing_space_count > 0 {
-                begin_trailing_spaces := leading_space_count + str.count;
-                for begin_trailing_spaces..begin_trailing_spaces+trailing_space_count-1 {
-                    new_str[it] = #char " ";
-                }
-            }
-            return new_str;
-        }
-    }
-    return copy_string(str,, temp);
-}
 
 String_Stack :: struct {
     bytes: [..]u8;

@@ -278,7 +278,7 @@ init :: inline (stack: *String_Stack) {
     }
 }
 
-free_path :: (stack: *String_Stack) {
+free_stack :: (stack: *String_Stack) {
     array_reset(*stack.bytes);
     array_reset(*stack.sizes);
 }

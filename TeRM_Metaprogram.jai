@@ -164,7 +164,7 @@ struct_visit_impl :: no_inline (parent_stack: *[..]Struct_Visit_Item, user_data:
 
     path: String_Stack;
     init(*path);
-    defer free_path(*path);
+    defer free_stack(*path);
 
     while parent_stack.count > 0 {
 

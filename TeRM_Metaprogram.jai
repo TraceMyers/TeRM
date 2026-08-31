@@ -11,23 +11,11 @@ code_string :: ($code: Code) -> string #expand {
     return builder_to_string(*builder);
 }
 
-type_has_tag :: (T: Type, tag: Type_Info_Tag) -> bool {
-    info := T.(*Type_Info);
-    return info.type == tag;
-}
-
 align_of :: inline ($T: Type) -> int {
     return align_of(T.(*Type_Info));
 }
 
-align_of_element_type :: inline ($T: Type) -> int {
-    info := T.(*Type_Info);
-    assert(info.type == .ARRAY);
-    array_info := T.(*Type_Info_Array);
-    return type_alignment(info.element_type);
-}
-
-align_of :: (info: *Type_Info, max_depth := 50) -> int {
+align_of :: (info: *Type_Info, max_depth := 50, max_align := S64_MAX) -> int {
     assert(max_depth >= 1);
 
     align := 1;
@@ -79,6 +67,12 @@ align_of :: (info: *Type_Info, max_depth := 50) -> int {
         case;
         }
 
+        // only use case I can think of is early-out at, say, 8 bytes. might be worth it.
+        if align >= max_align {
+            align = max_align;
+            break;
+        }
+
         type_stack.count -= 1;
     }
 
@@ -107,12 +101,12 @@ get_struct_field :: (s: *$struct_type, $field_type: Type) -> *field_type {
     }
 }
 
+// because T2 == *T1 is valid syntax in only one situation I've seen.
 type_2_is_pointer_to_type_1 :: (T1: Type, T2: Type) -> bool {
     tinfo_ptr := cast(*Type_Info_Pointer) T2;
     if tinfo_ptr.type != .POINTER then return false;
     return tinfo_ptr.pointer_to == cast(*Type_Info) T1;
 }
-
 
 Struct_Visit_Item :: struct {
     data: *u8;
